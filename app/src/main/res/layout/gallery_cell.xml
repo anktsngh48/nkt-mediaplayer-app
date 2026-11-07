@@ -37,4 +37,21 @@
         android:layout_margin="5dp"
         android:background="@drawable/bg_hidden_dot"
         android:visibility="gone" />
+    <View
+        android:id="@+id/gc_dim"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#5900E5FF"
+        android:visibility="gone" />
+
+    <ImageView
+        android:id="@+id/gc_check"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:layout_gravity="top|start"
+        android:layout_margin="6dp"
+        android:contentDescription="@null"
+        android:src="@drawable/ic_circle"
+        android:tint="#FFFFFFFF"
+        android:visibility="gone" />
 </com.nkt.mediaplayer.SquareFrame>

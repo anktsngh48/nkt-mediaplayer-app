@@ -89,7 +89,7 @@
     <string name="viewer_hint">Pinch or double-tap to zoom</string>
     <string name="n_of_total">%1$s · %2$d of %3$d</string>
     <string name="show_hidden">Show hidden files &amp; folders</string>
-    <string name="show_hidden_sub">Folders starting with a dot, or with a .nomedia file</string>
+    <string name="show_hidden_sub">Folders starting with a dot, or with a .nomedia file (not .thumbnails)</string>
     <string name="hidden_prefix">Hidden · </string>
     <string name="hidden_title">Allow access to all files</string>
     <string name="hidden_explain">Android hides these folders from normal apps. To show them, turn on “Allow access to manage all files” for NKT Media Player on the next screen, then come back.</string>
@@ -196,7 +196,7 @@
     <string name="share_restarted">Restarted with the new setting</string>
     <string name="share_help">On a Windows PC: open File Explorer, type the address in the bar at the top and press Enter.\nOn a Mac: Finder → Go → Connect to Server.\nOn another phone: use a file manager that supports FTP.\nThe computer can open, copy, add, rename and delete files. Sharing stays on until you press STOP.</string>
     <string name="share_access_title">Allow file access</string>
-    <string name="share_access_text">So the computer can read and write your files, turn on “Allow access to manage all files” for NKT Media Player on the next screen, then come back. Sharing starts by itself.</string>
+    <string name="share_access_text">So the computer can reach your files, turn on “Allow access to manage all files” for NKT Media Player on the next screen, then come back. Sharing starts by itself.</string>
     <string name="start_caps">START</string>
     <string name="stop_caps">STOP</string>
     <string name="copy">Copy</string>
@@ -218,6 +218,170 @@
     <string name="access_rw">Read &amp; write · no time limit</string>
     <string name="access_need">Tap to allow file access</string>
 
+    <!-- v1.0 additions -->
+    <string name="tab_settings">SETTINGS</string>
+    <string name="view_grid">GRID</string>
+    <string name="search_settings_hint">Search settings…</string>
+    <string name="sort">Sort</string>
+    <string name="sort_by">Sort by</string>
+    <string name="sort_name">Name (A–Z)</string>
+    <string name="sort_name_desc">Name (Z–A)</string>
+    <string name="sort_artist">Artist</string>
+    <string name="sort_album">Album</string>
+    <string name="sort_new">Newest first</string>
+    <string name="sort_old">Oldest first</string>
+    <string name="sort_long">Longest first</string>
+    <string name="sort_short">Shortest first</string>
+    <string name="sort_large">Biggest files first</string>
+    <string name="sort_small">Smallest files first</string>
+    <string name="sort_plays">Most played</string>
+    <string name="sort_most">Most items</string>
+    <string name="sort_s_artist">ARTIST</string>
+    <string name="sort_s_album">ALBUM</string>
+    <string name="sort_s_new">NEWEST</string>
+    <string name="sort_s_old">OLDEST</string>
+    <string name="sort_s_length">LENGTH</string>
+    <string name="sort_s_size">SIZE</string>
+    <string name="sort_s_plays">PLAYS</string>
+    <string name="sort_s_most">MOST</string>
+
+    <string name="n_selected">%1$d selected</string>
+    <string name="select">Select</string>
+    <string name="select_all">Select all</string>
+    <string name="add_n_to_playlist">Add %1$d items to playlist</string>
+    <string name="delete_file">Delete</string>
+    <string name="delete_warning">The files will be removed from your phone. This can\'t be undone.</string>
+    <string name="delete_failed">Couldn\'t delete</string>
+    <string name="cd_close_player">Stop and close the player</string>
+    <string name="open">Open</string>
+    <string name="favourite">♥ Favourite</string>
+    <string name="unfavourite">Remove from favourites</string>
+    <string name="fav_added_to">Added to %1$s</string>
+    <string name="fav_removed_from">Removed from %1$s</string>
+    <string name="fav_video_added">♥ Added to favourite videos</string>
+    <string name="fav_video_removed">Removed from favourite videos</string>
+    <string name="fav_photo_added">♥ Added to favourite photos</string>
+    <string name="fav_photo_removed">Removed from favourite photos</string>
+    <string name="video_in_background">Video · playing in background</string>
+    <string name="search">Search</string>
+
+    <string name="history">History</string>
+    <string name="history_empty">Nothing opened yet</string>
+    <string name="history_off">History is off. Turn it on in Settings.</string>
+    <string name="history_off_short">Off</string>
+    <string name="clear_history">Clear history</string>
+    <string name="clear_history_confirm">Clear the list of opened files? The files themselves stay.</string>
+    <string name="today_at">Today %1$s</string>
+    <string name="yesterday_at">Yesterday %1$s</string>
+    <string name="kind_song">Song</string>
+    <string name="kind_video">Video</string>
+    <string name="kind_photo">Photo</string>
+
+    <string name="set_library">LIBRARY</string>
+    <string name="set_playback">PLAYBACK</string>
+    <string name="set_history">HISTORY</string>
+    <string name="set_sharing">SHARING</string>
+    <string name="set_about">ABOUT</string>
+    <string name="show_thumbs">Show .thumbnails folders</string>
+    <string name="show_thumbs_sub">Small preview pictures your phone makes. Separate from the switch above.</string>
+    <string name="eq_and_karaoke">Equalizer &amp; karaoke</string>
+    <string name="eq_and_karaoke_sub">Presets, bass, surround, remove vocals</string>
+    <string name="video_rotation">Video rotation</string>
+    <string name="autonext">Play next video automatically</string>
+    <string name="autonext_sub">When off, a video stops at the end</string>
+    <string name="keep_history">Keep history</string>
+    <string name="keep_history_sub">Songs, videos and photos you open, newest first (Playlists → History)</string>
+    <string name="nkt_share_sub">Share files with a computer on Wi-Fi</string>
+    <string name="version_line">Version 1.0</string>
+
+    <!-- video player -->
+    <string name="pip">Mini video window</string>
+    <string name="pip_unavailable">The mini video window isn\'t available on this phone</string>
+    <string name="background_play">Background play (sound only)</string>
+    <string name="save_sound">Save sound as audio</string>
+    <string name="saving_sound">Saving the sound…</string>
+    <string name="sound_saved">Saved in %1$s</string>
+    <string name="sound_failed">Couldn\'t save the sound from this video</string>
+    <string name="autonext_on">Auto-play next video: ON</string>
+    <string name="autonext_off">Auto-play next video: OFF</string>
+    <string name="autonext_now_on">Next video plays automatically</string>
+    <string name="autonext_now_off">Stops after this video</string>
+    <string name="zoom_fill_menu">Zoom: fill screen</string>
+    <string name="zoom_fit_menu">Zoom: fit</string>
+    <string name="watch_video">WATCH VIDEO</string>
+
+    <!-- links, downloads, YouTube, share list -->
+    <string name="download">Download</string>
+    <string name="download_caps">DOWNLOAD</string>
+    <string name="download_started">Downloading %1$s — see the notification</string>
+    <string name="download_failed">Couldn\'t start the download</string>
+    <string name="youtube_bad_link">That YouTube link has no video in it</string>
+    <string name="youtube_no_download">YouTube videos can\'t be downloaded</string>
+    <string name="share_nothing">Nothing to play in what was shared</string>
+    <string name="shared_folder_name">Shared</string>
+    <string name="play_caps">PLAY</string>
+
+    <!-- lyrics -->
+    <string name="opt_lyrics">Lyrics</string>
+    <string name="lyr_looking">Looking for lyrics…</string>
+    <string name="lyr_none">No lyrics found.\nTap 🔍 to search with a different title or artist.</string>
+    <string name="lyr_instrumental">♪ Instrumental — no words</string>
+    <string name="lyr_plain">No timing — lyrics shown as text</string>
+    <string name="lyr_sync">Sync %1$s s</string>
+    <string name="lyr_sooner">Show lines sooner</string>
+    <string name="lyr_later">Show lines later</string>
+    <string name="lyr_search_again">Search lyrics online</string>
+    <string name="lyr_search_help">Fix the title or artist if needed. Lyrics come from LRCLIB, a free lyrics library.</string>
+
+    <!-- karaoke status -->
+    <string name="karaoke_working">● Working on this song</string>
+    <string name="karaoke_mono">This song is mono (one channel), so the voice can\'t be separated</string>
+    <string name="karaoke_waiting">Play a song to hear it</string>
+
+    <!-- ringtone -->
+    <string name="set_as_ringtone">Set as ringtone</string>
+    <string name="set_as_ringtone_for">Use “%1$s” as…</string>
+    <string name="rt_phone">Phone ringtone</string>
+    <string name="rt_notification">Notification sound</string>
+    <string name="rt_alarm">Alarm sound</string>
+    <string name="ringtone_set">Set as %1$s</string>
+    <string name="ringtone_failed">Couldn\'t set the ringtone</string>
+    <string name="ringtone_local_only">Only songs saved on this phone can be ringtones</string>
+    <string name="ringtone_perm_title">Allow changing sounds</string>
+    <string name="ringtone_perm_text">To set a ringtone, turn on “Allow modifying system settings” for NKT Media Player on the next screen, then come back and try again.</string>
+
+    <!-- NKT Share: folder & access -->
+    <string name="fp_title">Choose a folder to share</string>
+    <string name="fp_use">SHARE THIS FOLDER</string>
+    <string name="fp_up">⬆ Up one folder</string>
+    <string name="fp_all_places">⬆ All storage</string>
+    <string name="fp_places">Storage</string>
+    <string name="fp_phone">Phone storage</string>
+    <string name="fp_card">SD card / USB (%1$s)</string>
+    <string name="fp_pick_one">Open a storage first</string>
+    <string name="access_title">What can the computer do?</string>
+    <string name="access_rw_choice">Read &amp; write — open, copy, add, rename, delete</string>
+    <string name="access_ro_choice">Read only — open and copy, can\'t change anything</string>
+    <string name="access_ro">Read only · no time limit</string>
+
+    <string-array name="orientations">
+        <item>Auto rotate</item>
+        <item>Lock portrait</item>
+        <item>Lock landscape</item>
+    </string-array>
+
+    <plurals name="folders">
+        <item quantity="one">%d folder</item>
+        <item quantity="other">%d folders</item>
+    </plurals>
+    <plurals name="delete_title">
+        <item quantity="one">Delete %d file?</item>
+        <item quantity="other">Delete %d files?</item>
+    </plurals>
+    <plurals name="deleted">
+        <item quantity="one">Deleted %d file</item>
+        <item quantity="other">Deleted %d files</item>
+    </plurals>
     <plurals name="devices">
         <item quantity="one">%d device connected</item>
         <item quantity="other">%d devices connected</item>

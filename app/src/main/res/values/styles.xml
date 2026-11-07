@@ -62,4 +62,21 @@
         <item name="android:textColor">@color/muted</item>
         <item name="android:textSize">10sp</item>
     </style>
+
+    <style name="NKTBarButton">
+        <item name="android:layout_width">44dp</item>
+        <item name="android:layout_height">44dp</item>
+        <item name="android:background">?android:attr/selectableItemBackgroundBorderless</item>
+        <item name="android:tint">@color/accent</item>
+        <item name="android:scaleType">center</item>
+    </style>
+
+    <style name="NKTCtrl">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">46dp</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:background">?android:attr/selectableItemBackgroundBorderless</item>
+        <item name="android:tint">#FFFFFFFF</item>
+        <item name="android:scaleType">center</item>
+    </style>
 </resources>

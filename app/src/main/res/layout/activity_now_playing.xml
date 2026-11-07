@@ -69,17 +69,81 @@
             android:textSize="12sp"
             android:visibility="gone" />
 
-        <!-- Album art -->
-        <ImageView
-            android:id="@+id/np_art"
-            android:layout_width="280dp"
-            android:layout_height="280dp"
-            android:layout_marginTop="18dp"
-            android:background="@drawable/bg_art"
+        <!-- Album art, or the lyrics in its place -->
+        <FrameLayout
+            android:id="@+id/np_stage"
+            android:layout_width="match_parent"
+            android:layout_height="300dp"
+            android:layout_marginTop="14dp">
+
+            <ImageView
+                android:id="@+id/np_art"
+                android:layout_width="280dp"
+                android:layout_height="280dp"
+                android:layout_gravity="center"
+                android:background="@drawable/bg_art"
                 android:contentDescription="@null"
-            android:elevation="12dp"
-            android:outlineSpotShadowColor="@color/accent"
-            android:padding="0dp" />
+                android:elevation="12dp"
+                android:outlineSpotShadowColor="@color/accent" />
+
+            <LinearLayout
+                android:id="@+id/np_lyrics"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/bg_options_bar"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="4dp">
+
+                    <TextView
+                        android:id="@+id/lyr_sync"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:maxLines="1"
+                        android:textColor="@color/muted"
+                        android:textSize="11sp" />
+
+                    <ImageButton android:id="@+id/lyr_minus" style="@style/NKTBarButton" android:layout_width="36dp" android:layout_height="36dp" android:contentDescription="@string/lyr_later" android:src="@drawable/ic_minus" />
+                    <ImageButton android:id="@+id/lyr_plus" style="@style/NKTBarButton" android:layout_width="36dp" android:layout_height="36dp" android:contentDescription="@string/lyr_sooner" android:src="@drawable/ic_plus" />
+                    <ImageButton android:id="@+id/lyr_search" style="@style/NKTBarButton" android:layout_width="36dp" android:layout_height="36dp" android:contentDescription="@string/lyr_search_again" android:src="@drawable/ic_search" />
+                    <ImageButton android:id="@+id/lyr_close" style="@style/NKTBarButton" android:layout_width="36dp" android:layout_height="36dp" android:contentDescription="@string/cancel" android:src="@drawable/ic_close" />
+                </LinearLayout>
+
+                <FrameLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1">
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/lyr_list"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:clipToPadding="false"
+                        android:paddingStart="16dp"
+                        android:paddingTop="90dp"
+                        android:paddingEnd="16dp"
+                        android:paddingBottom="120dp" />
+
+                    <TextView
+                        android:id="@+id/lyr_status"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:gravity="center"
+                        android:padding="20dp"
+                        android:textColor="@color/muted"
+                        android:textSize="14sp" />
+                </FrameLayout>
+            </LinearLayout>
+        </FrameLayout>
 
         <TextView
             android:id="@+id/np_title"
@@ -196,6 +260,24 @@
                 android:src="@drawable/ic_repeat" />
         </LinearLayout>
 
+        <!-- A video playing in the background: go back to watching it -->
+        <TextView
+            android:id="@+id/np_watch"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:layout_marginTop="16dp"
+            android:background="@drawable/bg_pill_btn"
+            android:drawableStart="@drawable/ic_movie"
+            android:drawablePadding="8dp"
+            android:drawableTint="@color/accent"
+            android:gravity="center"
+            android:paddingStart="18dp"
+            android:paddingEnd="20dp"
+            android:text="@string/watch_video"
+            android:textColor="@color/accent"
+            android:textSize="12sp"
+            android:visibility="gone" />
+
         <!-- MX-style options -->
         <LinearLayout
             android:layout_width="match_parent"
@@ -208,9 +290,9 @@
             <TextView android:id="@+id/opt_eq" style="@style/NKTOption" android:drawableTop="@drawable/ic_eq" android:text="@string/opt_eq" />
             <TextView android:id="@+id/opt_timer" style="@style/NKTOption" android:drawableTop="@drawable/ic_timer" android:text="@string/opt_timer" />
             <TextView android:id="@+id/opt_speed" style="@style/NKTOption" android:drawableTop="@drawable/ic_speed" android:text="@string/opt_speed" />
+            <TextView android:id="@+id/opt_lyrics" style="@style/NKTOption" android:drawableTop="@drawable/ic_lyrics" android:text="@string/opt_lyrics" />
             <TextView android:id="@+id/opt_queue" style="@style/NKTOption" android:drawableTop="@drawable/ic_playlist" android:text="@string/opt_queue" />
             <TextView android:id="@+id/opt_fav" style="@style/NKTOption" android:drawableTop="@drawable/ic_heart" android:text="@string/opt_fav" />
-            <TextView android:id="@+id/opt_share" style="@style/NKTOption" android:drawableTop="@drawable/ic_share" android:text="@string/share" />
         </LinearLayout>
 
         <!-- Up next -->

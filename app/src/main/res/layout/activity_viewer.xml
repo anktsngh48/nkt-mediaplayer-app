@@ -58,6 +58,15 @@
         </LinearLayout>
 
         <ImageButton
+            android:id="@+id/vw_fav"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="@android:color/transparent"
+            android:contentDescription="@string/favourite"
+            android:src="@drawable/ic_heart"
+            android:tint="@color/text" />
+
+        <ImageButton
             android:id="@+id/vw_share"
             android:layout_width="48dp"
             android:layout_height="48dp"

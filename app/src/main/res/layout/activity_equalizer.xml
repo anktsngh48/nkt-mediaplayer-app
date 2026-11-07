@@ -90,6 +90,15 @@
                     android:text="@string/karaoke_sub"
                     android:textColor="@color/muted"
                     android:textSize="12sp" />
+
+                <TextView
+                    android:id="@+id/eq_karaoke_status"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:textColor="@color/success"
+                    android:textSize="12sp"
+                    android:visibility="gone" />
             </LinearLayout>
 
             <Switch

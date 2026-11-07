@@ -21,4 +21,13 @@
         <item name="android:windowBackground">@drawable/dialog_bg</item>
         <item name="android:textColorPrimary">@color/text</item>
     </style>
+
+    <!-- Invisible screen behind the "Share to NKT Media Player" pop-up -->
+    <style name="Theme.NKT.Translucent">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
 </resources>
