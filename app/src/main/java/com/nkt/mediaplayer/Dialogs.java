@@ -10,7 +10,6 @@ import android.text.format.DateFormat;
 import android.text.format.Formatter;
 import android.widget.EditText;
 import android.widget.FrameLayout;
-import android.widget.Toast;
 
 import java.util.List;
 
@@ -41,7 +40,7 @@ public final class Dialogs {
                     String name = input.getText().toString().trim();
                     if (name.isEmpty()) return;
                     if (!Playlists.create(a, name)) {
-                        Toast.makeText(a, R.string.playlist_exists, Toast.LENGTH_SHORT).show();
+                        Ui.toast(a, R.string.playlist_exists);
                         return;
                     }
                     cb.done(name);
@@ -52,22 +51,33 @@ public final class Dialogs {
 
     public static void addToPlaylist(Activity a, MediaInfo m) {
         if (m == null) return;
+        List<MediaInfo> one = new java.util.ArrayList<>();
+        one.add(m);
+        addToPlaylist(a, one, null);
+    }
+
+    /** Adds one or many items; done (may be null) runs after adding. */
+    public static void addToPlaylist(Activity a, List<MediaInfo> items, Runnable done) {
+        if (items == null || items.isEmpty()) return;
         List<String> names = Playlists.names(a);
         String[] choices = new String[names.size() + 1];
         choices[0] = a.getString(R.string.new_playlist_dots);
         for (int i = 0; i < names.size(); i++) choices[i + 1] = names.get(i);
         builder(a)
-                .setTitle(R.string.add_to_playlist)
+                .setTitle(items.size() == 1 ? a.getString(R.string.add_to_playlist)
+                        : a.getString(R.string.add_n_to_playlist, items.size()))
                 .setItems(choices, (d, which) -> {
                     if (which == 0) {
                         newPlaylist(a, name -> {
-                            Playlists.add(a, name, m);
-                            Toast.makeText(a, a.getString(R.string.added_to, name), Toast.LENGTH_SHORT).show();
+                            for (MediaInfo m : items) Playlists.add(a, name, m);
+                            Ui.toast(a, a.getString(R.string.added_to, name));
+                            if (done != null) done.run();
                         });
                     } else {
                         String name = names.get(which - 1);
-                        Playlists.add(a, name, m);
-                        Toast.makeText(a, a.getString(R.string.added_to, name), Toast.LENGTH_SHORT).show();
+                        for (MediaInfo m : items) Playlists.add(a, name, m);
+                        Ui.toast(a, a.getString(R.string.added_to, name));
+                        if (done != null) done.run();
                     }
                 })
                 .setNegativeButton(R.string.cancel, null)

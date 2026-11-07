@@ -82,7 +82,9 @@ public class PlaybackService extends MediaSessionService {
         player.setSkipSilenceEnabled(Prefs.sp(this).getBoolean("skip_silence", false));
         player.addListener(new Player.Listener() {
             @Override public void onMediaItemTransition(MediaItem item, int reason) {
-                if (item != null) Prefs.countPlay(PlaybackService.this, item.mediaId);
+                if (item == null) return;
+                Prefs.countPlay(PlaybackService.this, item.mediaId);
+                History.record(PlaybackService.this, Media.info(item, 0));
             }
             @Override public void onPlayWhenReadyChanged(boolean playWhenReady, int reason) {
                 if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM && sleepEndOfSong) {

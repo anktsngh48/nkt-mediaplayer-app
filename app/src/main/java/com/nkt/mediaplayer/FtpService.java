@@ -90,6 +90,10 @@ public class FtpService extends Service {
         return new File(r).isDirectory() ? r : def;
     }
 
+    /** Read & write (default) or read only. */
+    public static boolean writeAllowed(Context c) { return Prefs.sp(c).getBoolean("share_rw", true); }
+    public static void setWriteAllowed(Context c, boolean v) { Prefs.sp(c).edit().putBoolean("share_rw", v).apply(); }
+
     public static void setRoot(Context c, String path) { Prefs.sp(c).edit().putString("share_root", path).apply(); }
 
     /** The phone's address on Wi-Fi (or its own hotspot), or null if not on a network. */
@@ -169,6 +173,7 @@ public class FtpService extends Service {
         final String home = root(this);
         final boolean pwOn = passwordOn(this);
         final String pw = password(this);
+        final boolean rw = writeAllowed(this);
         new Thread(() -> {
             try {
                 FtpServerFactory sf = new FtpServerFactory();
@@ -191,7 +196,7 @@ public class FtpService extends Service {
                 NativeFileSystemFactory fs = new NativeFileSystemFactory();
                 fs.setCreateHome(true);
                 sf.setFileSystem(fs);
-                sf.setUserManager(new SimpleUsers(home, pwOn, pw));
+                sf.setUserManager(new SimpleUsers(home, pwOn, pw, rw));
 
                 sf.getFtplets().put("count", new DefaultFtplet() {
                     @Override public FtpletResult onConnect(FtpSession s) { connected.incrementAndGet(); return FtpletResult.DEFAULT; }
@@ -242,13 +247,13 @@ public class FtpService extends Service {
         super.onDestroy();
     }
 
-    // ── Users: anyone (no password) or nkt + password. Always read & write. ──
+    // ── Users: anyone (no password) or nkt + password. Read & write, or read only. ──
 
     private static final class SimpleUsers implements UserManager {
         private final String home, pw;
-        private final boolean pwOn;
+        private final boolean pwOn, rw;
 
-        SimpleUsers(String home, boolean pwOn, String pw) { this.home = home; this.pwOn = pwOn; this.pw = pw; }
+        SimpleUsers(String home, boolean pwOn, String pw, boolean rw) { this.home = home; this.pwOn = pwOn; this.pw = pw; this.rw = rw; }
 
         private User make(String name) {
             BaseUser u = new BaseUser();
@@ -257,7 +262,7 @@ public class FtpService extends Service {
             u.setEnabled(true);
             u.setMaxIdleTime(0);
             List<Authority> a = new ArrayList<>();
-            a.add(new WritePermission());
+            if (rw) a.add(new WritePermission());
             a.add(new ConcurrentLoginPermission(30, 30));
             a.add(new TransferRatePermission(0, 0));
             u.setAuthorities(a);

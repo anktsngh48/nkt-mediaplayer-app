@@ -50,6 +50,7 @@ public class MediaInfo {
     public String subtitle() {
         String d = durationMs > 0 ? Ui.time(durationMs) : "";
         String pre = hidden ? "Hidden · " : "";
+        if (image) return pre + folder;
         if (video) return pre + folder + (d.isEmpty() ? "" : " · " + d);
         if (artist.isEmpty()) return pre + d;
         return pre + artist + (d.isEmpty() ? "" : " · " + d);
@@ -69,6 +70,10 @@ public class MediaInfo {
             o.put("video", video);
             o.put("hidden", hidden);
             o.put("path", path);
+            o.put("image", image);
+            o.put("name", fileName);
+            o.put("date", dateMs);
+            o.put("size", size);
         } catch (Exception ignored) { }
         return o;
     }
@@ -79,6 +84,10 @@ public class MediaInfo {
                 o.optString("folder"), o.optLong("dur"), o.optBoolean("video"));
         m.hidden = o.optBoolean("hidden");
         m.path = o.optString("path");
+        m.image = o.optBoolean("image");
+        m.fileName = o.optString("name");
+        m.dateMs = o.optLong("date");
+        m.size = o.optLong("size");
         return m;
     }
 }

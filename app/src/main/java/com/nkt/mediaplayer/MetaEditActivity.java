@@ -23,7 +23,6 @@ import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -42,12 +41,12 @@ public class MetaEditActivity extends Activity {
     public static void open(Context c, MediaInfo m) {
         if (m == null) return;
         if (Build.VERSION.SDK_INT < 26) {
-            Toast.makeText(c, R.string.meta_needs_8, Toast.LENGTH_LONG).show();
+            Ui.toast(c, R.string.meta_needs_8);
             return;
         }
         String scheme = m.uri.getScheme();
         if (!"content".equals(scheme) && !"file".equals(scheme)) {
-            Toast.makeText(c, R.string.meta_only_local, Toast.LENGTH_SHORT).show();
+            Ui.toast(c, R.string.meta_only_local);
             return;
         }
         c.startActivity(new Intent(c, MetaEditActivity.class)
@@ -102,7 +101,7 @@ public class MetaEditActivity extends Activity {
         findViewById(R.id.me_art_change).setOnClickListener(v -> {
             Intent pick = new Intent(Intent.ACTION_GET_CONTENT).setType("image/*").addCategory(Intent.CATEGORY_OPENABLE);
             try { startActivityForResult(Intent.createChooser(pick, getString(R.string.change_art)), REQ_ART); }
-            catch (Exception e) { Toast.makeText(this, R.string.no_picker, Toast.LENGTH_SHORT).show(); }
+            catch (Exception e) { Ui.toast(this, R.string.no_picker); }
         });
         findViewById(R.id.me_art_remove).setOnClickListener(v -> {
             if (data == null) return;
@@ -140,7 +139,7 @@ public class MetaEditActivity extends Activity {
                 });
             } catch (Throwable t) {
                 ui.post(() -> {
-                    Toast.makeText(this, R.string.meta_cant_read, Toast.LENGTH_LONG).show();
+                    Ui.toast(this, R.string.meta_cant_read);
                     finish();
                 });
             }
@@ -172,7 +171,7 @@ public class MetaEditActivity extends Activity {
             new Thread(() -> {
                 byte[] jpg = toJpeg(img);
                 ui.post(() -> {
-                    if (jpg == null) { Toast.makeText(this, R.string.bad_image, Toast.LENGTH_SHORT).show(); return; }
+                    if (jpg == null) { Ui.toast(this, R.string.bad_image); return; }
                     data.art = jpg;
                     artChanged = true;
                     showArt();
@@ -180,7 +179,7 @@ public class MetaEditActivity extends Activity {
             }).start();
         } else if (requestCode == REQ_WRITE) {
             if (resultCode == RESULT_OK) writeBack();
-            else { setBusy(false); Toast.makeText(this, R.string.meta_no_permission, Toast.LENGTH_LONG).show(); }
+            else { setBusy(false); Ui.toast(this, R.string.meta_no_permission); }
         }
     }
 
@@ -219,7 +218,7 @@ public class MetaEditActivity extends Activity {
                 TagIO.write(work, data, artChanged);
                 ui.post(this::askAndWrite);
             } catch (Throwable t) {
-                ui.post(() -> { setBusy(false); Toast.makeText(this, R.string.meta_cant_write, Toast.LENGTH_LONG).show(); });
+                ui.post(() -> { setBusy(false); Ui.toast(this, R.string.meta_cant_write); });
             }
         }).start();
     }
@@ -247,7 +246,7 @@ public class MetaEditActivity extends Activity {
         super.onRequestPermissionsResult(requestCode, permissions, results);
         if (requestCode != REQ_LEGACY) return;
         if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) writeBack();
-        else { setBusy(false); Toast.makeText(this, R.string.meta_no_permission, Toast.LENGTH_LONG).show(); }
+        else { setBusy(false); Ui.toast(this, R.string.meta_no_permission); }
     }
 
     private void writeBack() {
@@ -267,11 +266,11 @@ public class MetaEditActivity extends Activity {
                     IntentSender is = ((RecoverableSecurityException) t).getUserAction().getActionIntent().getIntentSender();
                     ui.post(() -> {
                         try { startIntentSenderForResult(is, REQ_WRITE, null, 0, 0, 0); }
-                        catch (Exception e) { setBusy(false); Toast.makeText(this, R.string.meta_no_permission, Toast.LENGTH_LONG).show(); }
+                        catch (Exception e) { setBusy(false); Ui.toast(this, R.string.meta_no_permission); }
                     });
                     return;
                 }
-                ui.post(() -> { setBusy(false); Toast.makeText(this, R.string.meta_cant_write, Toast.LENGTH_LONG).show(); });
+                ui.post(() -> { setBusy(false); Ui.toast(this, R.string.meta_cant_write); });
             }
         }).start();
     }
@@ -280,7 +279,7 @@ public class MetaEditActivity extends Activity {
         String p = path.isEmpty() && "file".equals(uri.getScheme()) ? uri.getPath() : path;
         if (p != null && !p.isEmpty()) MediaScannerConnection.scanFile(this, new String[]{p}, null, null);
         Thumbs.forget(new MediaInfo(-1, uri, "", "", "", -1, "", 0, false));
-        Toast.makeText(this, R.string.meta_saved, Toast.LENGTH_SHORT).show();
+        Ui.toast(this, R.string.meta_saved);
         setResult(RESULT_OK);
         finish();
     }

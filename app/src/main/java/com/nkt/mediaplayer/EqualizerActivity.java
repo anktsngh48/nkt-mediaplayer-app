@@ -52,6 +52,7 @@ public class EqualizerActivity extends Activity {
         karaoke.setOnCheckedChangeListener((b, v) -> {
             KaraokeProcessor.enabled = v;
             Prefs.sp(this).edit().putBoolean("karaoke", v).apply();
+            karaokeStatus();
         });
         findViewById(R.id.eq_karaoke_row).setOnClickListener(v -> karaoke.toggle());
 
@@ -80,6 +81,34 @@ public class EqualizerActivity extends Activity {
     protected void onStop() {
         MediaController.releaseFuture(future);
         super.onStop();
+    }
+
+    private final Runnable statusTick = new Runnable() {
+        @Override public void run() { karaokeStatus(); ui.postDelayed(this, 1000); }
+    };
+
+    @Override
+    protected void onResume() { super.onResume(); ui.post(statusTick); }
+
+    @Override
+    protected void onPause() { ui.removeCallbacks(statusTick); super.onPause(); }
+
+    /** Tells you whether karaoke is working on the current song. */
+    private void karaokeStatus() {
+        TextView t = findViewById(R.id.eq_karaoke_status);
+        if (!KaraokeProcessor.enabled) { t.setVisibility(View.GONE); return; }
+        boolean playing = System.currentTimeMillis() - KaraokeProcessor.lastAudioMs < 2500;
+        t.setVisibility(View.VISIBLE);
+        if (KaraokeProcessor.status == 2) {
+            t.setText(R.string.karaoke_mono);
+            t.setTextColor(getColor(R.color.accent));
+        } else if (playing) {
+            t.setText(R.string.karaoke_working);
+            t.setTextColor(getColor(R.color.success));
+        } else {
+            t.setText(R.string.karaoke_waiting);
+            t.setTextColor(getColor(R.color.muted));
+        }
     }
 
     private void put(String k, Object v) { try { s.put(k, v); } catch (Exception ignored) { } }

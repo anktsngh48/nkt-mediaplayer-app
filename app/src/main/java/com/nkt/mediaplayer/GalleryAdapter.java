@@ -16,12 +16,15 @@ import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
-/** Photo + video grid with date headers (by day, or by month when zoomed out). */
+/** Photo + video grid with date headers (by day, or by month when zoomed out). Also the Videos grid (no headers). */
 public class GalleryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     private static final int HEADER = 0, CELL = 1;
 
-    public interface Listener { void onOpen(MediaInfo m, List<MediaInfo> all); }
+    public interface Listener {
+        void onOpen(MediaInfo m, List<MediaInfo> all);
+        void onLong(MediaInfo m);
+    }
 
     private static class Entry {
         final String header; final MediaInfo media;
@@ -32,12 +35,14 @@ public class GalleryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
     private final List<MediaInfo> media = new ArrayList<>();
     private final Listener listener;
     private int cols = 3;
+    private final Selection selection;
 
-    public GalleryAdapter(Listener l) { listener = l; }
+    public GalleryAdapter(Listener l, Selection s) { listener = l; selection = s; }
 
     public List<MediaInfo> media() { return media; }
 
-    public void set(List<MediaInfo> items, int columns) {
+    /** dateHeaders=false: plain grid (videos tab, or gallery sorted by name/size). */
+    public void set(List<MediaInfo> items, int columns, boolean dateHeaders) {
         cols = columns;
         media.clear();
         media.addAll(items);
@@ -45,11 +50,23 @@ public class GalleryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
         boolean byMonth = columns >= 5;
         String last = null;
         for (MediaInfo m : items) {
-            String h = byMonth ? monthLabel(m.dateMs) : dayLabel(m.dateMs);
-            if (!h.equals(last)) { entries.add(new Entry(h, null)); last = h; }
+            if (dateHeaders) {
+                String h = byMonth ? monthLabel(m.dateMs) : dayLabel(m.dateMs);
+                if (!h.equals(last)) { entries.add(new Entry(h, null)); last = h; }
+            }
             entries.add(new Entry(null, m));
         }
         notifyDataSetChanged();
+    }
+
+    /** For the side scroll bar: the date (or first letter) at a position. */
+    public String label(int position, boolean byDate) {
+        if (position < 0 || position >= entries.size()) return "";
+        for (int p = position; p >= 0; p--) if (entries.get(p).header != null) return entries.get(p).header;
+        Entry e = entries.get(position);
+        if (e.media == null) return "";
+        if (byDate) return monthLabel(e.media.dateMs);
+        return e.media.title.isEmpty() ? "" : e.media.title.substring(0, 1).toUpperCase(Locale.getDefault());
     }
 
     public GridLayoutManager.SpanSizeLookup spans() {
@@ -104,7 +121,15 @@ public class GalleryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
         c.badge.setVisibility(m.video ? View.VISIBLE : View.GONE);
         c.badge.setText(m.video && m.durationMs > 0 ? Ui.time(m.durationMs) : "");
         c.hidden.setVisibility(m.hidden ? View.VISIBLE : View.GONE);
-        c.itemView.setOnClickListener(v -> listener.onOpen(m, media));
+        boolean picking = selection.active(), picked = picking && selection.has(m);
+        c.check.setVisibility(picking ? View.VISIBLE : View.GONE);
+        c.check.setImageResource(picked ? R.drawable.ic_check_circle : R.drawable.ic_circle);
+        c.dim.setVisibility(picked ? View.VISIBLE : View.GONE);
+        c.itemView.setOnClickListener(v -> {
+            if (selection.active()) { selection.toggle(m); notifyItemChanged(c.getBindingAdapterPosition()); }
+            else listener.onOpen(m, media);
+        });
+        c.itemView.setOnLongClickListener(v -> { listener.onLong(m); return true; });
     }
 
     static class HeaderVH extends RecyclerView.ViewHolder {
@@ -113,9 +138,11 @@ public class GalleryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
     }
 
     static class CellVH extends RecyclerView.ViewHolder {
-        final ImageView img; final TextView badge; final View hidden;
+        final ImageView img, check; final TextView badge; final View hidden, dim;
         CellVH(View v) {
             super(v);
+            check = v.findViewById(R.id.gc_check);
+            dim = v.findViewById(R.id.gc_dim);
             img = v.findViewById(R.id.gc_img);
             badge = v.findViewById(R.id.gc_badge);
             hidden = v.findViewById(R.id.gc_hidden);

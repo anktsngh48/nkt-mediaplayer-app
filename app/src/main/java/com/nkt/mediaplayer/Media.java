@@ -25,7 +25,8 @@ public final class Media {
         MediaMetadata.Builder md = new MediaMetadata.Builder()
                 .setTitle(m.title)
                 .setArtist(m.artist.isEmpty() ? null : m.artist)
-                .setAlbumTitle(m.album.isEmpty() ? null : m.album);
+                .setAlbumTitle(m.album.isEmpty() ? null : m.album)
+                .setMediaType(m.video ? MediaMetadata.MEDIA_TYPE_VIDEO : MediaMetadata.MEDIA_TYPE_MUSIC);
         // Older phones: point the notification at the album art. Newer ones read it from the file itself.
         if (!m.video && m.albumId > 0 && Build.VERSION.SDK_INT < 29) {
             md.setArtworkUri(ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), m.albumId));
@@ -65,11 +66,15 @@ public final class Media {
                 md.title == null ? "Unknown" : md.title.toString(),
                 md.artist == null ? "" : md.artist.toString(),
                 md.albumTitle == null ? "" : md.albumTitle.toString(),
-                -1, "", Math.max(0, durationMs), false);
+                -1, "", Math.max(0, durationMs), isVideo(md));
         if ("file".equals(uri.getScheme()) && uri.getPath() != null) {
             m.path = uri.getPath();
             m.fileName = uri.getLastPathSegment() == null ? "" : uri.getLastPathSegment();
         }
         return m;
+    }
+
+    public static boolean isVideo(MediaMetadata md) {
+        return md != null && md.mediaType != null && md.mediaType == MediaMetadata.MEDIA_TYPE_VIDEO;
     }
 }

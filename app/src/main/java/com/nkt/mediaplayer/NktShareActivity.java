@@ -14,15 +14,11 @@ import android.view.View;
 import android.widget.ImageView;
 import android.widget.Switch;
 import android.widget.TextView;
-import android.widget.Toast;
 
-import java.io.File;
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * NKT Share: one tap to START. Shows the address to type on the computer.
- * Default: no password, whole storage, read & write, no time limit.
+ * Default: no password, whole storage, read & write, no time limit. Folder and read-only can be chosen.
  */
 public class NktShareActivity extends Activity {
 
@@ -69,7 +65,7 @@ public class NktShareActivity extends Activity {
         findViewById(R.id.sh_copy).setOnClickListener(v -> {
             ClipboardManager cm = getSystemService(ClipboardManager.class);
             cm.setPrimaryClip(ClipData.newPlainText("NKT Share", address.getText()));
-            Toast.makeText(this, R.string.copied, Toast.LENGTH_SHORT).show();
+            Ui.toast(this, R.string.copied);
         });
 
         pw.setChecked(FtpService.passwordOn(this));
@@ -77,7 +73,7 @@ public class NktShareActivity extends Activity {
         findViewById(R.id.sh_pw_row).setOnClickListener(v -> pw.toggle());
         newPw.setOnClickListener(v -> { FtpService.newPassword(this); settingsChanged(); });
         findViewById(R.id.sh_folder_row).setOnClickListener(v -> pickFolder());
-        findViewById(R.id.sh_access_row).setOnClickListener(v -> { if (!canWrite()) askAccess(); });
+        findViewById(R.id.sh_access_row).setOnClickListener(v -> { if (!canWrite()) askAccess(); else pickAccess(); });
     }
 
     @Override
@@ -103,7 +99,7 @@ public class NktShareActivity extends Activity {
 
     private void tryStart() {
         if (FtpService.ipAddress() == null) {
-            Toast.makeText(this, R.string.share_no_wifi, Toast.LENGTH_LONG).show();
+            Ui.toast(this, R.string.share_no_wifi);
             return;
         }
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -143,36 +139,26 @@ public class NktShareActivity extends Activity {
         if (FtpService.running) {
             FtpService.stop(this);
             ui.postDelayed(() -> FtpService.start(this), 700);
-            Toast.makeText(this, R.string.share_restarted, Toast.LENGTH_SHORT).show();
+            Ui.toast(this, R.string.share_restarted);
         }
         update();
     }
 
-    // ── Shared folder ────────────────────────────────────────────────────────
+    // ── Shared folder & access ───────────────────────────────────────────────
 
-    @SuppressWarnings("deprecation")
     private void pickFolder() {
-        File base = Environment.getExternalStorageDirectory();
-        List<String> names = new ArrayList<>();
-        List<String> paths = new ArrayList<>();
-        names.add(getString(R.string.whole_storage)); paths.add(base.getAbsolutePath());
-        String[][] common = {
-                {getString(R.string.f_music), Environment.DIRECTORY_MUSIC},
-                {getString(R.string.f_download), Environment.DIRECTORY_DOWNLOADS},
-                {getString(R.string.f_camera), Environment.DIRECTORY_DCIM},
-                {getString(R.string.f_pictures), Environment.DIRECTORY_PICTURES},
-                {getString(R.string.f_movies), Environment.DIRECTORY_MOVIES},
-                {getString(R.string.f_documents), Environment.DIRECTORY_DOCUMENTS}};
-        for (String[] c : common) {
-            File f = new File(base, c[1]);
-            if (f.isDirectory()) { names.add(c[0]); paths.add(f.getAbsolutePath()); }
-        }
-        String cur = FtpService.root(this);
-        int checked = Math.max(0, paths.indexOf(cur));
+        FolderPicker.show(this, FtpService.root(this), path -> {
+            FtpService.setRoot(this, path);
+            settingsChanged();
+        });
+    }
+
+    private void pickAccess() {
+        String[] choices = {getString(R.string.access_rw_choice), getString(R.string.access_ro_choice)};
         Dialogs.builder(this)
-                .setTitle(R.string.shared_folder)
-                .setSingleChoiceItems(names.toArray(new String[0]), checked, (d, w) -> {
-                    FtpService.setRoot(this, paths.get(w));
+                .setTitle(R.string.access_title)
+                .setSingleChoiceItems(choices, FtpService.writeAllowed(this) ? 0 : 1, (d, w) -> {
+                    FtpService.setWriteAllowed(this, w == 0);
                     d.dismiss();
                     settingsChanged();
                 })
@@ -213,11 +199,12 @@ public class NktShareActivity extends Activity {
 
         String root = FtpService.root(this);
         String base = Environment.getExternalStorageDirectory().getAbsolutePath();
-        folder.setText(root.equals(base) ? getString(R.string.whole_storage) : root.replace(base, getString(R.string.phone_short)));
+        folder.setText(root.equals(base) ? getString(R.string.whole_storage)
+                : FolderPicker.pretty(this, FolderPicker.roots(this), new java.io.File(root)));
         boolean pwOn = FtpService.passwordOn(this);
         pwSub.setText(pwOn ? getString(R.string.share_login, FtpService.user(), FtpService.password(this)) : getString(R.string.no_password_sub));
         newPw.setVisibility(pwOn ? View.VISIBLE : View.GONE);
-        access.setText(canWrite() ? R.string.access_rw : R.string.access_need);
+        access.setText(!canWrite() ? R.string.access_need : FtpService.writeAllowed(this) ? R.string.access_rw : R.string.access_ro);
         access.setTextColor(getColor(canWrite() ? R.color.muted : R.color.accent));
     }
 }

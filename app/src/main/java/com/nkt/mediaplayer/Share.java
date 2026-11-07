@@ -3,7 +3,8 @@ package com.nkt.mediaplayer;
 import android.app.Activity;
 import android.content.Intent;
 import android.net.Uri;
-import android.widget.Toast;
+import java.util.ArrayList;
+import java.util.List;
 
 import androidx.core.content.FileProvider;
 
@@ -33,7 +34,35 @@ public final class Share {
                     .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             a.startActivity(Intent.createChooser(i, a.getString(R.string.share)));
         } catch (Exception e) {
-            Toast.makeText(a, R.string.cant_share, Toast.LENGTH_SHORT).show();
+            Ui.toast(a, R.string.cant_share);
+        }
+    }
+
+    /** Several files at once. */
+    public static void sendMany(Activity a, List<MediaInfo> items) {
+        if (items == null || items.isEmpty()) return;
+        if (items.size() == 1) { send(a, items.get(0)); return; }
+        try {
+            ArrayList<Uri> uris = new ArrayList<>();
+            boolean allAudio = true, allVideo = true, allImage = true;
+            for (MediaInfo m : items) {
+                Uri u = m.uri;
+                if ("file".equals(u.getScheme())) u = FileProvider.getUriForFile(a, a.getPackageName() + ".files", new File(u.getPath()));
+                else if (!"content".equals(u.getScheme())) continue;
+                uris.add(u);
+                allAudio &= !m.video && !m.image;
+                allVideo &= m.video;
+                allImage &= m.image;
+            }
+            if (uris.isEmpty()) { Ui.toast(a, R.string.cant_share); return; }
+            String type = allImage ? "image/*" : allVideo ? "video/*" : allAudio ? "audio/*" : "*/*";
+            Intent i = new Intent(Intent.ACTION_SEND_MULTIPLE)
+                    .setType(type)
+                    .putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            a.startActivity(Intent.createChooser(i, a.getString(R.string.share)));
+        } catch (Exception e) {
+            Ui.toast(a, R.string.cant_share);
         }
     }
 }

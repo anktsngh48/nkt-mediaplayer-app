@@ -38,9 +38,14 @@ public class ViewerActivity extends Activity {
     private static int pendingIndex = 0;
 
     public static void open(Context c, List<MediaInfo> photos, int index) {
+        prepare(photos, index);
+        c.startActivity(new Intent(c, ViewerActivity.class));
+    }
+
+    /** Sets the list for the next start (used when the start intent is built elsewhere). */
+    public static void prepare(List<MediaInfo> photos, int index) {
         pending = new ArrayList<>(photos);
         pendingIndex = index;
-        c.startActivity(new Intent(c, ViewerActivity.class));
     }
 
     private final ExecutorService pool = Executors.newFixedThreadPool(2);
@@ -51,6 +56,8 @@ public class ViewerActivity extends Activity {
     private View topBar, bottomBar;
     private TextView title, sub;
     private int current = 0;
+    private android.widget.ImageButton favBtn;
+    private String recorded;
     private boolean barsVisible = true;
     private FilmAdapter filmAdapter;
 
@@ -60,6 +67,15 @@ public class ViewerActivity extends Activity {
         setContentView(R.layout.activity_viewer);
         Ui.fullScreen(this);
         items = pending;
+        Intent in = getIntent();
+        if (Intent.ACTION_VIEW.equals(in.getAction()) && in.getData() != null) {
+            // "Open with NKT Media Player" on a photo
+            MediaInfo m = MediaInfo.link(in.getData(), Ui.displayName(this, in.getData()), false);
+            m.image = true;
+            items = new ArrayList<>();
+            items.add(m);
+            pendingIndex = 0;
+        }
         current = Math.max(0, Math.min(pendingIndex, items.size() - 1));
         if (items.isEmpty()) { finish(); return; }
 
@@ -68,6 +84,12 @@ public class ViewerActivity extends Activity {
         title = findViewById(R.id.vw_title);
         sub = findViewById(R.id.vw_sub);
         findViewById(R.id.vw_back).setOnClickListener(v -> finish());
+        favBtn = findViewById(R.id.vw_fav);
+        favBtn.setOnClickListener(v -> {
+            MediaInfo m = items.get(current);
+            Ui.toast(this, Prefs.toggleFavourite(this, m) ? R.string.fav_photo_added : R.string.fav_photo_removed);
+            updateFav();
+        });
         findViewById(R.id.vw_share).setOnClickListener(v -> Share.send(this, items.get(current)));
         findViewById(R.id.vw_info).setOnClickListener(v -> Dialogs.details(this, items.get(current)));
 
@@ -93,8 +115,16 @@ public class ViewerActivity extends Activity {
         updateBars();
     }
 
+    private void updateFav() {
+        boolean fav = Prefs.isFavourite(this, items.get(current));
+        favBtn.setImageResource(fav ? R.drawable.ic_heart_filled : R.drawable.ic_heart);
+        favBtn.setColorFilter(getColor(fav ? R.color.accent : R.color.text));
+    }
+
     private void updateBars() {
         MediaInfo m = items.get(current);
+        if (favBtn != null) updateFav();
+        if (!m.key().equals(recorded)) { recorded = m.key(); History.record(this, m); }
         title.setText(m.dateMs > 0
                 ? DateFormat.getMediumDateFormat(this).format(new Date(m.dateMs)) + ", " + DateFormat.getTimeFormat(this).format(new Date(m.dateMs))
                 : m.fileName);

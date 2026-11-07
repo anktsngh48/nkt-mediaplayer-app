@@ -53,30 +53,39 @@ public final class HiddenScanner {
         return i;
     }
 
-    public static Result scan() {
+    /** Everything in hidden folders (if hidden=true) and/or inside ".thumbnails" folders (if thumbs=true). */
+    public static Result scan(boolean hidden, boolean thumbs) {
         Result r = new Result();
         File root = Environment.getExternalStorageDirectory();
-        walk(root, false, 0, r);
+        walk(root, false, false, 0, hidden, thumbs, r);
         Collections.sort(r.audio, (a, b) -> a.title.compareToIgnoreCase(b.title));
         Collections.sort(r.video, (a, b) -> Long.compare(b.dateMs, a.dateMs));
         Collections.sort(r.images, (a, b) -> Long.compare(b.dateMs, a.dateMs));
         return r;
     }
 
-    private static void walk(File dir, boolean insideHidden, int depth, Result r) {
+    public static boolean isThumbnailPath(String path) {
+        return path != null && path.toLowerCase(Locale.ROOT).contains("/.thumbnails");
+    }
+
+    private static void walk(File dir, boolean insideHidden, boolean insideThumbs, int depth,
+                             boolean wantHidden, boolean wantThumbs, Result r) {
         if (depth > 12) return;
         File[] files = dir.listFiles();
         if (files == null) return;
         String name = dir.getName();
         if (depth == 1 && name.equals("Android")) return;            // app data: not accessible anyway
+        boolean thumbsHere = insideThumbs || name.equalsIgnoreCase(".thumbnails");
+        if (thumbsHere && !wantThumbs) return;                       // .thumbnails has its own switch
         boolean hiddenHere = insideHidden || (depth > 0 && name.startsWith("."));
         if (!hiddenHere) {
             for (File f : files) if (f.getName().equals(".nomedia")) { hiddenHere = true; break; }
         }
+        boolean collect = thumbsHere ? wantThumbs : (hiddenHere && wantHidden);
         for (File f : files) {
             if (f.isDirectory()) {
-                walk(f, hiddenHere, depth + 1, r);
-            } else if (hiddenHere) {
+                walk(f, hiddenHere, thumbsHere, depth + 1, wantHidden, wantThumbs, r);
+            } else if (collect) {
                 add(f, name, r);
             }
         }

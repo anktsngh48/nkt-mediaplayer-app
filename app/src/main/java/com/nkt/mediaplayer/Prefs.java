@@ -48,6 +48,13 @@ public final class Prefs {
         return out;
     }
 
+    public static java.util.Map<String, Integer> playCounts(Context c) {
+        java.util.Map<String, Integer> out = new java.util.HashMap<>();
+        SharedPreferences p = c.getApplicationContext().getSharedPreferences("plays", Context.MODE_PRIVATE);
+        for (java.util.Map.Entry<String, ?> e : p.getAll().entrySet()) out.put(e.getKey(), asInt(e.getValue()));
+        return out;
+    }
+
     private static int asInt(Object o) { return o instanceof Integer ? (Integer) o : 0; }
 
     // ── Equalizer ──
@@ -56,13 +63,64 @@ public final class Prefs {
     }
     public static void setEq(Context c, JSONObject o) { sp(c).edit().putString("eq", o.toString()).apply(); }
 
-    // ── Favourites (a playlist with a fixed name) ──
-    public static final String FAVOURITES = "♥ Favourites";
+    // ── Favourites: one playlist each for songs, videos and photos ──
+    public static final String FAV_SONGS = "♥ Favourite songs";
+    public static final String FAV_VIDEOS = "♥ Favourite videos";
+    public static final String FAV_PHOTOS = "♥ Favourite photos";
+    private static final String OLD_FAVOURITES = "♥ Favourites";
 
-    public static boolean isFavourite(Context c, String uri) {
-        for (MediaInfo m : Playlists.items(c, FAVOURITES)) if (m.uri.toString().equals(uri)) return true;
+    public static String favouritesFor(MediaInfo m) {
+        return m.image ? FAV_PHOTOS : m.video ? FAV_VIDEOS : FAV_SONGS;
+    }
+
+    public static boolean isFavouriteList(String name) {
+        return FAV_SONGS.equals(name) || FAV_VIDEOS.equals(name) || FAV_PHOTOS.equals(name);
+    }
+
+    public static boolean isFavourite(Context c, MediaInfo m) {
+        if (m == null) return false;
+        for (MediaInfo x : Playlists.items(c, favouritesFor(m))) if (x.key().equals(m.key())) return true;
         return false;
     }
+
+    /** Adds or removes; returns true if it is a favourite now. */
+    public static boolean toggleFavourite(Context c, MediaInfo m) {
+        String list = favouritesFor(m);
+        if (isFavourite(c, m)) { Playlists.removeUri(c, list, m.key()); return false; }
+        if (!Playlists.exists(c, list)) Playlists.create(c, list);
+        Playlists.add(c, list, m);
+        return true;
+    }
+
+    /** Version 2 had one "♥ Favourites" list; split it by type once. */
+    public static void migrateFavourites(Context c) {
+        if (sp(c).getBoolean("fav_split", false)) return;
+        if (Playlists.exists(c, OLD_FAVOURITES)) {
+            for (MediaInfo m : Playlists.items(c, OLD_FAVOURITES)) {
+                String list = favouritesFor(m);
+                if (!Playlists.exists(c, list)) Playlists.create(c, list);
+                Playlists.add(c, list, m);
+            }
+            Playlists.delete(c, OLD_FAVOURITES);
+        }
+        sp(c).edit().putBoolean("fav_split", true).apply();
+    }
+
+    // ── Views & sorting ──
+    public static boolean videosGrid(Context c) { return sp(c).getBoolean("videos_grid", false); }
+    public static void setVideosGrid(Context c, boolean v) { sp(c).edit().putBoolean("videos_grid", v).apply(); }
+
+    /** Sort choice per tab ("songs", "videos", "gallery", "folders"). */
+    public static String sort(Context c, String tab, String def) { return sp(c).getString("sort_" + tab, def); }
+    public static void setSort(Context c, String tab, String v) { sp(c).edit().putString("sort_" + tab, v).apply(); }
+
+    // ── .thumbnails folders (separate from "show hidden") ──
+    public static boolean showThumbnails(Context c) { return sp(c).getBoolean("show_thumbs", false); }
+    public static void setShowThumbnails(Context c, boolean v) { sp(c).edit().putBoolean("show_thumbs", v).apply(); }
+
+    // ── Video rotation: 0 auto, 1 portrait, 2 landscape ──
+    public static int videoOrientation(Context c) { return sp(c).getInt("video_orient", 0); }
+    public static void setVideoOrientation(Context c, int v) { sp(c).edit().putInt("video_orient", v).apply(); }
 
     // ── helpers ──
     public static List<String> keys(JSONObject o) {

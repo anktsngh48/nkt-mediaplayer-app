@@ -77,4 +77,13 @@ final class TagIO {
         }
         af.commit();
     }
+
+    /** Lyrics stored in the file's tag, or null. */
+    static String lyrics(File f) throws Exception {
+        init();
+        Tag tag = AudioFileIO.read(f).getTag();
+        if (tag == null) return null;
+        String l = tag.getFirst(FieldKey.LYRICS);
+        return l == null || l.trim().isEmpty() ? null : l;
+    }
 }

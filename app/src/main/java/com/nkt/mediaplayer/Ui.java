@@ -111,4 +111,52 @@ public final class Ui {
             return insets;
         });
     }
+
+    // ── Messages without the app icon (Android 12+ adds the icon to normal toasts) ──
+
+    private static final Object TOAST_TAG = "nkt_toast";
+
+    public static void toast(Context c, int res) { toast(c, c.getString(res)); }
+
+    public static void toast(Context c, CharSequence text) {
+        if (!(c instanceof Activity) || ((Activity) c).isFinishing()) {
+            android.widget.Toast.makeText(c.getApplicationContext(), text, android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Activity a = (Activity) c;
+        android.widget.FrameLayout root = a.findViewById(android.R.id.content);
+        if (root == null) return;
+        TextView t = root.findViewWithTag(TOAST_TAG);
+        float d = a.getResources().getDisplayMetrics().density;
+        if (t == null) {
+            t = new TextView(a);
+            t.setTag(TOAST_TAG);
+            t.setBackgroundResource(R.drawable.bg_indicator);
+            t.setTextColor(a.getColor(R.color.text));
+            t.setTextSize(14);
+            t.setGravity(android.view.Gravity.CENTER);
+            t.setMaxWidth((int) (320 * d));
+            t.setPadding((int) (18 * d), (int) (11 * d), (int) (18 * d), (int) (11 * d));
+            t.setElevation(12 * d);
+            android.widget.FrameLayout.LayoutParams lp = new android.widget.FrameLayout.LayoutParams(
+                    android.view.ViewGroup.LayoutParams.WRAP_CONTENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+                    android.view.Gravity.BOTTOM | android.view.Gravity.CENTER_HORIZONTAL);
+            lp.bottomMargin = (int) (110 * d);
+            root.addView(t, lp);
+        }
+        final TextView tv = t;
+        tv.setText(text);
+        tv.bringToFront();
+        tv.animate().cancel();
+        tv.setAlpha(0f);
+        tv.setVisibility(View.VISIBLE);
+        tv.animate().alpha(1f).setDuration(150).start();
+        Runnable hide = (Runnable) tv.getTag(R.id.toast_hide);
+        if (hide != null) tv.removeCallbacks(hide);
+        hide = () -> tv.animate().alpha(0f).setDuration(250).withEndAction(() -> tv.setVisibility(View.GONE)).start();
+        tv.setTag(R.id.toast_hide, hide);
+        tv.postDelayed(hide, 2200);
+    }
+
+    public static int dp(Context c, float v) { return Math.round(v * c.getResources().getDisplayMetrics().density); }
 }
