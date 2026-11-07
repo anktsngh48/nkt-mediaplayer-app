@@ -1,0 +1,237 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NKT Media Player</string>
+    <string name="header">NKT MEDIA PLAYER</string>
+
+    <string name="tab_songs">SONGS</string>
+    <string name="tab_videos">VIDEOS</string>
+    <string name="tab_folders">FOLDERS</string>
+    <string name="tab_playlists">PLAYLISTS</string>
+    <string name="search_hint">Search songs, videos, folders…</string>
+
+    <string name="perm_text">Allow access to your music and videos so they show up here.</string>
+    <string name="perm_button">ALLOW ACCESS</string>
+    <string name="loading">Loading your media…</string>
+    <string name="no_songs">No songs found on this phone</string>
+    <string name="no_videos">No videos found on this phone</string>
+    <string name="no_folders">No folders with media</string>
+    <string name="empty_playlist">This playlist is empty. Long-press any song or video → Add to playlist.</string>
+    <string name="no_matches">Nothing matches your search</string>
+    <string name="nothing_here">Nothing here yet</string>
+    <string name="all_folders">‹ All folders</string>
+    <string name="all_playlists">‹ All playlists</string>
+
+    <string name="new_playlist">New playlist</string>
+    <string name="new_playlist_dots">＋ New playlist…</string>
+    <string name="playlist_name">Playlist name</string>
+    <string name="create">Create</string>
+    <string name="playlist_exists">A playlist with that name already exists</string>
+    <string name="add_to_playlist">Add to playlist</string>
+    <string name="remove_from_playlist">Remove from playlist</string>
+    <string name="added_to">Added to %1$s</string>
+    <string name="play_all">Play all</string>
+    <string name="play">Play</string>
+    <string name="delete_playlist">Delete playlist</string>
+    <string name="delete_confirm">Delete the playlist “%1$s”? The songs themselves stay on your phone.</string>
+    <string name="delete">Delete</string>
+    <string name="cancel">Cancel</string>
+    <string name="unknown">Unknown</string>
+
+    <string name="open_link">Play a link</string>
+    <string name="link_help">Paste a link to a song, video or stream (MP3, MP4, M3U8…).</string>
+    <string name="link_hint">https://…</string>
+    <string name="play_as_audio">AUDIO</string>
+    <string name="play_as_video">VIDEO</string>
+    <string name="link_invalid">That doesn\'t look like a link (it should start with https://)</string>
+
+    <string name="now_playing">NOW PLAYING</string>
+    <string name="nothing_playing">Nothing playing</string>
+    <string name="add_to_playlist_caps">＋ ADD TO PLAYLIST</string>
+
+    <string name="cant_play">Can\'t play this video</string>
+    <string name="fwd_10">» 10 s</string>
+    <string name="back_10">« 10 s</string>
+    <string name="brightness_pct">Brightness %1$d%%</string>
+    <string name="volume_pct">Volume %1$d%%</string>
+    <string name="zoom_fill">Zoom: fill screen</string>
+    <string name="zoom_fit">Zoom: fit</string>
+    <string name="rotation_locked">Rotation locked</string>
+    <string name="rotation_auto">Rotation unlocked</string>
+
+    <string name="cd_back">Back</string>
+    <string name="cd_link">Play a link</string>
+    <string name="cd_play">Play or pause</string>
+    <string name="cd_next">Next</string>
+    <string name="cd_prev">Previous</string>
+    <string name="cd_shuffle">Shuffle</string>
+    <string name="cd_repeat">Repeat</string>
+    <string name="cd_more">More options</string>
+    <string name="cd_zoom">Zoom</string>
+    <string name="cd_rotate">Rotation lock</string>
+
+    <!-- v2: library -->
+    <string name="tab_gallery">GALLERY</string>
+    <string name="nkt_share">NKT Share</string>
+    <string name="nkt_share_caps">NKT SHARE</string>
+    <string name="view_list">LIST</string>
+    <string name="view_squares">SQUARES</string>
+    <string name="squares_hint">Similar songs, grouped automatically</string>
+    <string name="all_squares">‹ All squares</string>
+    <string name="shuffle_all">Shuffle</string>
+    <string name="save_as_playlist">Save as playlist</string>
+    <string name="seg_all">ALL</string>
+    <string name="seg_photos">PHOTOS</string>
+    <string name="seg_videos">VIDEOS</string>
+    <string name="search_gallery_hint">Search photos and videos…</string>
+    <string name="no_gallery">No photos or videos found</string>
+    <string name="per_row">%1$d per row</string>
+    <string name="per_row_month">%1$d per row · by month</string>
+    <string name="viewer_hint">Pinch or double-tap to zoom</string>
+    <string name="n_of_total">%1$s · %2$d of %3$d</string>
+    <string name="show_hidden">Show hidden files &amp; folders</string>
+    <string name="show_hidden_sub">Folders starting with a dot, or with a .nomedia file</string>
+    <string name="hidden_prefix">Hidden · </string>
+    <string name="hidden_title">Allow access to all files</string>
+    <string name="hidden_explain">Android hides these folders from normal apps. To show them, turn on “Allow access to manage all files” for NKT Media Player on the next screen, then come back.</string>
+    <string name="hidden_scanning">Looking for hidden files…</string>
+    <string name="allow">Allow</string>
+    <string name="yes">Yes</string>
+
+    <!-- v2: menus -->
+    <string name="share">Share</string>
+    <string name="cant_share">Can\'t share this item</string>
+    <string name="details">Details</string>
+    <string name="edit_info">Edit info</string>
+    <string name="d_title">Title</string>
+    <string name="d_artist">Artist</string>
+    <string name="d_album">Album</string>
+    <string name="d_file">File name</string>
+    <string name="d_location">Location</string>
+    <string name="d_size">Size</string>
+    <string name="d_date">Date</string>
+    <string name="d_length">Length</string>
+    <string name="d_type">Type</string>
+    <string name="d_hidden">Hidden</string>
+
+    <!-- v2: now playing -->
+    <string name="opt_eq">EQ</string>
+    <string name="opt_timer">Timer</string>
+    <string name="opt_speed">1×</string>
+    <string name="opt_queue">Queue</string>
+    <string name="opt_fav">Love</string>
+    <string name="up_next">UP NEXT</string>
+    <string name="end_of_queue">End of queue</string>
+    <string name="fav_added">Added to ♥ Favourites</string>
+    <string name="fav_removed">Removed from ♥ Favourites</string>
+    <string name="queue_title">QUEUE</string>
+    <string name="queue_hint">Drag ≡ to reorder · swipe or ✕ to remove · tap to play</string>
+    <string name="queue_cleared">Queue cleared (kept the song that\'s playing)</string>
+    <string name="playing_now">Playing now</string>
+    <string name="save">Save</string>
+    <string name="clear">Clear</string>
+    <string name="sleep_timer_caps">SLEEP TIMER</string>
+    <string name="speed_caps">SPEED</string>
+    <string name="off">Off</string>
+    <string name="min_15">15 min</string>
+    <string name="min_30">30 min</string>
+    <string name="min_45">45 min</string>
+    <string name="min_60">1 hour</string>
+    <string name="end_of_song">End of song</string>
+    <string name="stops_in">Stops in %1$s</string>
+    <string name="stops_end_of_song">Stops after this song</string>
+    <string name="skip_silence">Skip silence</string>
+    <string name="cd_drag">Drag to reorder</string>
+    <string name="cd_remove">Remove</string>
+    <string name="cd_speed">Playback speed</string>
+    <string name="hold_2x">2× »</string>
+
+    <!-- v2: equalizer -->
+    <string name="equalizer_caps">EQUALIZER</string>
+    <string name="eq_missing">This phone doesn\'t offer an equalizer to apps. Karaoke still works.</string>
+    <string name="presets_caps">PRESETS</string>
+    <string name="bands_caps">BANDS</string>
+    <string name="effects_caps">EFFECTS</string>
+    <string name="reset_caps">RESET</string>
+    <string name="custom">Custom</string>
+    <string name="bass_boost">Bass</string>
+    <string name="surround">Surround</string>
+    <string name="loudness">Loudness</string>
+    <string name="karaoke">Karaoke</string>
+    <string name="karaoke_sub">Removes the main vocals (works best on studio songs)</string>
+
+    <!-- v2: metadata editor -->
+    <string name="edit_info_caps">EDIT INFO</string>
+    <string name="save_caps">SAVE</string>
+    <string name="working">…</string>
+    <string name="album_art">Album art</string>
+    <string name="album_art_caps">ALBUM ART</string>
+    <string name="change_art">Change</string>
+    <string name="remove_art">Remove</string>
+    <string name="f_title">TITLE</string>
+    <string name="f_artist">ARTIST</string>
+    <string name="f_album">ALBUM</string>
+    <string name="f_album_artist">ALBUM ARTIST</string>
+    <string name="f_genre">GENRE</string>
+    <string name="f_year">YEAR</string>
+    <string name="f_track">TRACK NUMBER</string>
+    <string name="meta_note">Changes are written into the song file itself, so other apps see them too. Android will ask once for permission to change the file.</string>
+    <string name="meta_needs_8">Editing song info needs Android 8 or newer</string>
+    <string name="meta_only_local">Only songs saved on this phone can be edited</string>
+    <string name="meta_cant_read">Can\'t edit this file type</string>
+    <string name="meta_cant_write">Couldn\'t save the changes</string>
+    <string name="meta_no_permission">Not saved — permission to change the file was not given</string>
+    <string name="meta_saved">Saved</string>
+    <string name="bad_image">Can\'t use that picture</string>
+    <string name="no_picker">No app to pick a picture</string>
+
+    <!-- v2: NKT Share -->
+    <string name="share_on">Sharing is ON</string>
+    <string name="share_on_sub">Waiting for a device to connect</string>
+    <string name="share_off">Sharing is OFF</string>
+    <string name="share_off_sub">Tap START, then type the address on your computer</string>
+    <string name="share_no_wifi">Connect to Wi-Fi (or turn on hotspot) first</string>
+    <string name="share_failed">Couldn\'t start sharing. Try again.</string>
+    <string name="share_notif_title">NKT Share is on</string>
+    <string name="share_login">User: %1$s · Password: %2$s</string>
+    <string name="share_restarted">Restarted with the new setting</string>
+    <string name="share_help">On a Windows PC: open File Explorer, type the address in the bar at the top and press Enter.\nOn a Mac: Finder → Go → Connect to Server.\nOn another phone: use a file manager that supports FTP.\nThe computer can open, copy, add, rename and delete files. Sharing stays on until you press STOP.</string>
+    <string name="share_access_title">Allow file access</string>
+    <string name="share_access_text">So the computer can read and write your files, turn on “Allow access to manage all files” for NKT Media Player on the next screen, then come back. Sharing starts by itself.</string>
+    <string name="start_caps">START</string>
+    <string name="stop_caps">STOP</string>
+    <string name="copy">Copy</string>
+    <string name="copied">Address copied</string>
+    <string name="settings_caps">SETTINGS</string>
+    <string name="shared_folder">Shared folder</string>
+    <string name="whole_storage">Whole phone storage</string>
+    <string name="phone_short">Phone</string>
+    <string name="f_music">Music</string>
+    <string name="f_download">Download</string>
+    <string name="f_camera">Camera (DCIM)</string>
+    <string name="f_pictures">Pictures</string>
+    <string name="f_movies">Movies</string>
+    <string name="f_documents">Documents</string>
+    <string name="use_password">Use a password</string>
+    <string name="no_password_sub">Off — anyone on your Wi-Fi can connect</string>
+    <string name="new_password">New password</string>
+    <string name="access">Access</string>
+    <string name="access_rw">Read &amp; write · no time limit</string>
+    <string name="access_need">Tap to allow file access</string>
+
+    <plurals name="devices">
+        <item quantity="one">%d device connected</item>
+        <item quantity="other">%d devices connected</item>
+    </plurals>
+    <plurals name="items">
+        <item quantity="one">%d item</item>
+        <item quantity="other">%d items</item>
+    </plurals>
+    <plurals name="songs">
+        <item quantity="one">%d song</item>
+        <item quantity="other">%d songs</item>
+    </plurals>
+    <plurals name="videos">
+        <item quantity="one">%d video</item>
+        <item quantity="other">%d videos</item>
+    </plurals>
+</resources>
