@@ -640,6 +640,10 @@
     <string name="online_prompt">What do you want to play?</string>
     <string name="online_no_speech">Didn\'t catch that — tap the mic and try again</string>
     <string name="online_no_voice">Voice typing isn\'t available on this phone — type the song name</string>
+    <string name="online_mic_needed">Allow the microphone to search by voice — or type the song name</string>
+    <string name="online_mic_blocked">The microphone is off for NKT Media Player — turn it on in the app\'s settings, or type the song name</string>
+    <string name="online_voice_offline">Voice search needs the internet — check it and try again</string>
+    <string name="online_voice_busy">The mic was busy — tap it again</string>
     <string name="online_search_failed">Couldn\'t search right now — check the internet and try again</string>
     <string name="play_all_caps">PLAY ALL</string>
     <string name="save_to_caps">SAVE TO · %s</string>

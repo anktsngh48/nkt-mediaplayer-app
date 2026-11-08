@@ -51,6 +51,7 @@
   #waveform.active { opacity: 1; }
   #waveform .bar { width: 4px; height: 4px; border-radius: 2px; background: var(--danger); }
   #waveform.active .bar { animation: wave 0.8s ease-in-out infinite alternate; }
+  #waveform.live .bar { animation: none; transition: height 0.08s linear; }
   #waveform .bar:nth-child(2) { animation-delay: 0.1s; } #waveform .bar:nth-child(3) { animation-delay: 0.2s; }
   #waveform .bar:nth-child(4) { animation-delay: 0.05s; } #waveform .bar:nth-child(5) { animation-delay: 0.15s; }
   #waveform .bar:nth-child(6) { animation-delay: 0.25s; } #waveform .bar:nth-child(8) { animation-delay: 0.12s; }
@@ -149,7 +150,8 @@
 <script>
   // ── Talking to the app ─────────────────────────────────────────────────────
   // NKT.search(q, seq) → NKTresults(seq, json) / NKTsearchFailed(seq, msg)   (the app searches YouTube itself)
-  // NKT.listen()        → NKTvoice(text) / NKTvoiceError(msg)                  (Android's own voice typing)
+  // NKT.listen()        → NKTlistening() · NKTlevel(0..1) · NKTpartial(text) → NKTvoice(text) / NKTvoiceError(msg)
+  // NKT.stopListening() — done speaking: the app turns what it heard into NKTvoice(text)
   // NKT.playing(bool)   — the app pauses its own music player while a song plays here
   // NKTpause()          — called by the app when you leave this page or play your own music
   const app = window.NKT || null;
@@ -189,17 +191,43 @@
       ? '<rect x="7" y="7" width="10" height="10" rx="2" fill="#ff4f6a"/>'
       : '<path d="M12,14c1.66,0 2.99,-1.34 2.99,-3L15,5c0,-1.66 -1.34,-3 -3,-3S9,3.34 9,5v6c0,1.66 1.34,3 3,3zM17.3,11c0,3 -2.54,5.1 -5.3,5.1S6.7,14 6.7,11L5,11c0,3.41 2.72,6.23 6,6.72L11,21h2v-3.28c3.28,-0.48 6,-3.3 6,-6.72h-1.7z"/>';
   }
+  // Listening happens right here on the page (no pop-up). A song that's playing pauses while you speak.
+  let resumeAfterVoice = false;
+  function songIsPlaying() {
+    try { const st = player && player.getPlayerState ? player.getPlayerState() : -1;
+      return st === YT.PlayerState.PLAYING || st === YT.PlayerState.BUFFERING; } catch(_) { return false; }
+  }
   function toggleListen() {
     if (!app) { setStatus('Type the song name', 'error'); return; }
-    setListening(true); setStatus('Listening…', 'listening');
+    if (listening) { app.stopListening(); setStatus('Got it…', 'searching'); return; }   // done speaking
+    resumeAfterVoice = songIsPlaying();
+    if (resumeAfterVoice) window.NKTpause();
+    setListening(true); setStatus('Getting the mic ready…', 'listening');
     app.listen();
   }
+  function voiceOver(resume) {
+    setListening(false); levels(0);
+    if (resume && resumeAfterVoice) { try { player.playVideo(); } catch(_) {} }
+    resumeAfterVoice = false;
+  }
+  const BAR_SHAPE = [0.45, 0.8, 1, 0.65, 0.9, 0.55, 0.75, 0.4];
+  function levels(v) {
+    const wf = document.getElementById('waveform');
+    wf.classList.toggle('live', v > 0);
+    wf.querySelectorAll('.bar').forEach((b, i) => {
+      b.style.height = v > 0 ? (4 + Math.round(24 * v * BAR_SHAPE[i] * (0.75 + Math.random() * 0.5))) + 'px' : '';
+    });
+  }
+  window.NKTlistening = () => { if (listening) setStatus('Listening… say a song', 'listening'); };
+  window.NKTlevel = (v) => { if (listening) levels(Math.max(0, Math.min(1, v))); };
+  window.NKTpartial = (text) => { if (listening && text) document.getElementById('query-input').value = text; };
   window.NKTvoice = (text) => {
-    setListening(false);
+    voiceOver(false);
     document.getElementById('query-input').value = text;
     lastQuery = ''; doSearch();
   };
-  window.NKTvoiceError = (msg) => { setListening(false); setStatus(msg, 'error'); };
+  window.NKTvoiceError = (msg) => { voiceOver(true); setStatus(msg, 'error'); };
+  window.NKTvoiceStopped = () => { voiceOver(true); setStatus('Tap the mic, or type a song name'); };
 
   // ── Search ─────────────────────────────────────────────────────────────────
   function doSearch() {
