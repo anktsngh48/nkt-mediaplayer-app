@@ -19,7 +19,8 @@ public final class Prefs {
         return c.getApplicationContext().getSharedPreferences("settings", Context.MODE_PRIVATE);
     }
 
-    public static boolean showHidden(Context c) { return sp(c).getBoolean("show_hidden", false); }
+    /** Library (Audio, Videos, Gallery) includes media in hidden folders unless Settings → ALL FILES hides both kinds. */
+    public static boolean showHidden(Context c) { return !(hideDot(c) && hideNomedia(c)); }
     public static void setShowHidden(Context c, boolean v) { sp(c).edit().putBoolean("show_hidden", v).apply(); }
 
     public static boolean squares(Context c) { return sp(c).getBoolean("squares", false); }
@@ -115,7 +116,8 @@ public final class Prefs {
     public static void setSort(Context c, String tab, String v) { sp(c).edit().putString("sort_" + tab, v).apply(); }
 
     // ── .thumbnails folders (separate from "show hidden") ──
-    public static boolean showThumbnails(Context c) { return sp(c).getBoolean("show_thumbs", false); }
+    /** Library includes .thumbnails pictures only when Settings → ALL FILES doesn't hide them. */
+    public static boolean showThumbnails(Context c) { return !hideThumbDirs(c); }
     public static void setShowThumbnails(Context c, boolean v) { sp(c).edit().putBoolean("show_thumbs", v).apply(); }
 
     // ── Video rotation: 0 auto, 1 portrait, 2 landscape ──
@@ -144,9 +146,10 @@ public final class Prefs {
     public static void setCols(Context c, String page, int v) { sp(c).edit().putInt(page + "_cols", v).apply(); }
 
     // ── Folders page: hide only what is switched on here ──
-    public static boolean hideDot(Context c) { return sp(c).getBoolean("hide_dot", false); }
-    public static boolean hideNomedia(Context c) { return sp(c).getBoolean("hide_nomedia", false); }
-    public static boolean hideThumbDirs(Context c) { return sp(c).getBoolean("hide_thumbdirs", false); }
+    public static boolean hideDot(Context c) { return sp(c).getBoolean("hide_dot", true); }
+    public static boolean hideNomedia(Context c) { return sp(c).getBoolean("hide_nomedia", true); }
+    // .thumbnails (the phone's little preview copies) are hidden unless switched on: thousands of them would flood the Gallery
+    public static boolean hideThumbDirs(Context c) { return sp(c).getBoolean("hide_thumbdirs", true); }
     public static void setBool(Context c, String k, boolean v) { sp(c).edit().putBoolean(k, v).apply(); }
     public static boolean foldersFirst(Context c, String page) { return sp(c).getBoolean("folders_first_" + page, true); }
     public static void setFoldersFirst(Context c, String page, boolean v) { sp(c).edit().putBoolean("folders_first_" + page, v).apply(); }

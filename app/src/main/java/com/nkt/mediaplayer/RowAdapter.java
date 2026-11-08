@@ -146,7 +146,7 @@ public class RowAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             Thumbs.showPlaceholder(h.thumb, r.icon);
             h.badge(0);
         }
-        boolean more = !picking && (r.type == MEDIA || r.type == PLAYLIST || (r.type == FOLDER && r.key != null && r.key.startsWith("/")));
+        boolean more = !picking && (r.type == MEDIA || r.type == PLAYLIST || (r.type == FOLDER && r.pick != null));
         h.more.setVisibility(more ? View.VISIBLE : View.GONE);
 
         h.itemView.setOnClickListener(v -> {

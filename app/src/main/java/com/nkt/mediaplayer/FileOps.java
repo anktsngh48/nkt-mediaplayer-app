@@ -233,7 +233,14 @@ public final class FileOps {
 
     public static void rename(Activity a, MediaInfo m, Runnable done) {
         String name = m.fileName.isEmpty() ? m.title : m.fileName;
-        String ext = MediaInfo.ext(name);
+        File asFile = FileJobs.localFile(m);
+        boolean folder = asFile != null && asFile.isDirectory();
+        if (folder && Build.VERSION.SDK_INT >= 30 && !HiddenScanner.hasAllFilesAccess(a)) {
+            Ui.toast(a, R.string.rename_needs_access);       // folders can only be renamed with All files access
+            try { a.startActivity(HiddenScanner.allFilesAccessIntent(a)); } catch (Exception ignored) { }
+            return;
+        }
+        String ext = folder ? "" : MediaInfo.ext(name);    // a folder's name has no extension to keep
         String base = ext.isEmpty() ? name : name.substring(0, name.length() - ext.length() - 1);
         EditText input = new EditText(a);
         input.setText(base);
@@ -269,10 +276,19 @@ public final class FileOps {
         if (path != null && !path.isEmpty() && ("file".equals(m.uri.getScheme()) || HiddenScanner.hasAllFilesAccess(a))) {
             File f = new File(path), to = new File(f.getParentFile(), newName);
             if (to.exists()) return false;
+            // a folder: every file inside moves too, so Android's library must re-read each old and new path
+            List<String> inside = new ArrayList<>();
+            if (f.isDirectory()) listInside(f, "", inside);
             if (f.renameTo(to)) {
+                List<String> scan = new ArrayList<>();
+                scan.add(f.getAbsolutePath());
+                scan.add(to.getAbsolutePath());
+                for (String rel : inside) {
+                    scan.add(new File(f, rel).getAbsolutePath());
+                    scan.add(new File(to, rel).getAbsolutePath());
+                }
                 try {
-                    MediaScannerConnection.scanFile(a.getApplicationContext(),
-                            new String[]{f.getAbsolutePath(), to.getAbsolutePath()}, null, null);
+                    MediaScannerConnection.scanFile(a.getApplicationContext(), scan.toArray(new String[0]), null, null);
                 } catch (Exception ignored) { }
                 return true;
             }
@@ -285,6 +301,15 @@ public final class FileOps {
             } catch (Exception ignored) { }
         }
         return false;
+    }
+
+    private static void listInside(File dir, String rel, List<String> out) {
+        File[] kids = dir.listFiles();
+        if (kids == null || out.size() > 20000) return;
+        for (File k : kids) {
+            String r = rel.isEmpty() ? k.getName() : rel + "/" + k.getName();
+            if (k.isDirectory()) listInside(k, r, out); else out.add(r);
+        }
     }
 
     // ── Properties ───────────────────────────────────────────────────────────

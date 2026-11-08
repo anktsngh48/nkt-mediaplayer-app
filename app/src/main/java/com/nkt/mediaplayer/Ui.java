@@ -39,7 +39,7 @@ public final class Ui {
         return black;
     }
 
-    /** Cyan → purple lettering, like the NKT JustSay header. */
+    /** Cyan → purple lettering for headings. */
     public static void gradient(TextView tv) {
         tv.post(() -> {
             float w = tv.getPaint().measureText(tv.getText().toString());

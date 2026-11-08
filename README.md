@@ -69,12 +69,16 @@ A red ✗ means something went wrong: click the run, then the red step, copy the
 ## How to use the app
 
 **☰ menu** (top left, or swipe in from the left edge)
-- Pages: **Audio · Videos · Gallery · All Files · PDFs · Playlists · History**, each with how many items it has.
+- Pages: **Audio · Videos · Gallery · All Files · PDFs · Playlists · History · Online Music**, each with how many items it has.
 - **⌂** next to a page selects the default page (the filled ⌂ shows the current one).
 - Then **EQ & karaoke · Save WhatsApp status · Recycle bin · Other devices · NKT Share · Settings**. At the bottom: NKT Media Player · Version 1.0.
 - Back closes the menu first, then goes up a level, then to your start page.
 
 **Fast start**: the app shows your library from last time at once and checks the phone in the background ("⟳ Updating" for a moment). Android's library shows within a second; hidden folders are added when their scan finishes, without emptying the screen. New photos, songs and videos appear by themselves.
+
+**Mini player**: while your music plays, it shows on every page (Online Music too). When it's paused — or closed with ✕ on another page, or paused because a song started in Online Music — it shows only on the Audio page, ready to carry on. ✕ on the Audio page stops it completely.
+
+**Online Music** (☰ menu; ⌂ can make it the default page): "What do you want to play?" — tap the mic (Android's voice typing) or type a song name. The app searches YouTube itself (no account or key), plays the first result with sound straight away in YouTube's own player, and lines up the other results: tap any to play it, ‹‹ ›› to move, and it plays the next one when a song ends. Videos whose owners don't allow playing outside YouTube are skipped. RECENT shows your last searches. Your own music pauses while an online song plays; YouTube songs pause when you leave the page or lock the phone (YouTube's rules).
 
 **Carries on where you left off**: the music player remembers the queue, the song and the moment, even after the phone restarts. Tap play to continue.
 
@@ -112,7 +116,7 @@ A red ✗ means something went wrong: click the run, then the red step, copy the
 
 **Gallery**: photos and videos together, in the same order as the grid — the viewer no longer skips videos. Videos start smoothly as you swipe onto them (no thumbnail jump) and have their own time and seek bar; ⛶ opens the full video player. **‹ ›** step to the previous or next photo or video; the film strip marks videos with ▶. Top bar: ♥ · share · ⓘ · delete · ⋮ (rename, copy, cut, **set as wallpaper**: home, lock or both).
 
-**All Files**: every folder on the phone from the top, hidden ones too (hide them in Settings). Switch between phone storage, SD card and USB; the path shows where you are. **UP · NEW · PASTE** are buttons above the list, so they never look like files. Search looks through this folder **and every folder inside it**. Opens audio, videos, photos, text files and PDFs; anything else asks which app. Long-press folders or files to pick them; ⋮ on a folder: open, select, copy, cut, rename, delete, properties.
+**All Files**: every folder on the phone from the top, hidden ones too (hide them in Settings). Switch between phone storage, SD card and USB; the path shows where you are. **UP · NEW · PASTE** are buttons above the list, so they never look like files. Search looks through this folder **and every folder inside it**. Opens audio, videos, photos, text files and PDFs; anything else asks which app. Long-press folders or files to pick them; ⋮ on a folder: open, select, copy, cut, rename, delete, properties. In Videos' folder view, ⋮ on a folder also renames it (needs All files access).
 
 **Text editor**: line numbers, undo/redo, find & replace, wrap, A− / A+, line/column, keeps the file's encoding, asks before leaving with unsaved changes and keeps a draft.
 
@@ -122,9 +126,10 @@ A red ✗ means something went wrong: click the run, then the red step, copy the
 - **Found on this Wi-Fi**: phones running **NKT Share** show up by themselves (marked NKT MEDIA PLAYER). **＋** adds any FTP server (a computer running FileZilla, a NAS…): address, port, guest or user & password, save.
 - Browse folders, sort, list/grid. Songs and videos **play straight from the other device**; photos, text and PDFs open here.
 - **Copy to this phone** (⋮, or long-press several): progress in the notification. **Copies save to · CHANGE**: pick any folder (phone or SD card, quick Download / Music / Movies / Pictures / DCIM, new folder) or **Ask every time** — remembered per device.
+- **UP · NEW · PASTE · PLAY ALL · SAVE TO** are buttons above the list, styled apart from the files. NEW makes a folder on the other device.
 - **Disconnect** at the top. Saved passwords are locked with the phone's keystore.
 
-**Settings**: show hidden media · show .thumbnails · All Files: hide dot-folders, .nomedia folders, .thumbnails (All Files page only) · Video rotation · When a video ends · History · Version 1.0. (Equalizer, karaoke and karaoke strength are in ☰ → EQ & karaoke.) The start page is chosen with ⌂ in the ☰ menu; sharing is in the ☰ menu.
+**Settings**: Video rotation · When a video ends · History · Version 1.0 · and last, **ALL FILES**: hide folders starting with a dot, folders with a .nomedia file, and .thumbnails folders — all three on by default, and what's hidden there is hidden everywhere (All Files, Audio, Videos, Gallery). Switch one off to see those files (needs All files access). (Equalizer, karaoke and karaoke strength are in ☰ → EQ & karaoke.) The start page is chosen with ⌂ in the ☰ menu; sharing is in the ☰ menu.
 
 **Links** (🔗 at the top): paste a link → AUDIO, VIDEO or DOWNLOAD. YouTube links open in YouTube's own player.
 

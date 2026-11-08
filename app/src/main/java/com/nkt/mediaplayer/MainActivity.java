@@ -62,15 +62,15 @@ import java.util.TreeMap;
  */
 public class MainActivity extends Activity implements RowAdapter.Listener, Selection.Changed {
 
-    static final int SONGS = 0, VIDEOS = 1, GALLERY = 2, FOLDERS = 3, PDFS = 4, PLAYLISTS = 5, HISTORY = 6, SETTINGS = 7;
-    static final String[] PAGE_KEYS = {"songs", "videos", "gallery", "folders", "pdfs", "playlists", "history", "settings"};
+    static final int SONGS = 0, VIDEOS = 1, GALLERY = 2, FOLDERS = 3, PDFS = 4, PLAYLISTS = 5, HISTORY = 6, ONLINE = 7, SETTINGS = 8;
+    static final String[] PAGE_KEYS = {"songs", "videos", "gallery", "folders", "pdfs", "playlists", "history", "online", "settings"};
     private static final int[] PAGE_TITLES = {R.string.page_songs, R.string.page_videos, R.string.page_gallery, R.string.page_folders,
-            R.string.page_pdfs, R.string.page_playlists, R.string.page_history, R.string.page_settings};
+            R.string.page_pdfs, R.string.page_playlists, R.string.page_history, R.string.page_online, R.string.page_settings};
     private static final int[] MENU_LABELS = {R.string.menu_songs, R.string.menu_videos, R.string.menu_gallery, R.string.menu_folders,
-            R.string.menu_pdfs, R.string.menu_playlists, R.string.menu_history, R.string.menu_settings};
+            R.string.menu_pdfs, R.string.menu_playlists, R.string.menu_history, R.string.menu_online, R.string.menu_settings};
     private static final int[] PAGE_ICONS = {R.drawable.ic_music, R.drawable.ic_movie, R.drawable.ic_image, R.drawable.ic_folder,
-            R.drawable.ic_pdf, R.drawable.ic_playlist, R.drawable.ic_history, R.drawable.ic_settings};
-    private static final String[] SORT_DEF = {"name", "new", "new", "name", "new", "name", "", ""};
+            R.drawable.ic_pdf, R.drawable.ic_playlist, R.drawable.ic_history, R.drawable.ic_globe, R.drawable.ic_settings};
+    private static final String[] SORT_DEF = {"name", "new", "new", "name", "new", "name", "", "", ""};
     private static final int REQ_PERMS = 11, REQ_LEGACY_WRITE = 12;
     private static final int[] GALLERY_STEPS = {2, 3, 4, 5, 7};
     private static final String ALL_ALBUMS = "All";
@@ -121,6 +121,8 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
     private MediaController controller;
     private Runnable pending;
     private ContentObserver observer;
+    private OnlineMusic online;
+    private View onlineBox;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -219,6 +221,12 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         findViewById(R.id.btn_link).setOnClickListener(v -> openLinkDialog());
         findViewById(R.id.btn_share_pc).setOnClickListener(v -> startActivity(new Intent(this, NktShareActivity.class)));
 
+        onlineBox = findViewById(R.id.online_box);
+        online = new OnlineMusic(this, findViewById(R.id.online_box), playing -> {
+            // a song from Online Music is playing: the app's own player pauses (its mini player then shows on Audio only)
+            if (playing && controller != null && controller.isPlaying()) controller.pause();
+            updateMini();
+        });
         scrim = findViewById(R.id.scrim);
         drawer = findViewById(R.id.drawer);
         drawerItems = findViewById(R.id.drawer_items);
@@ -237,9 +245,16 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         findViewById(R.id.mini_next).setOnClickListener(v -> { if (controller != null) controller.seekToNextMediaItem(); });
         findViewById(R.id.mini_close).setOnClickListener(v -> {
             if (controller == null) return;
-            controller.stop();
-            controller.clearMediaItems();
-            mini.setVisibility(View.GONE);
+            if (page == SONGS) {
+                // ✕ on the Audio page: really stop and clear
+                controller.stop();
+                controller.clearMediaItems();
+                mini.setVisibility(View.GONE);
+            } else {
+                // ✕ anywhere else: pause and hide here; it stays on the Audio page to carry on later
+                controller.pause();
+                updateMini();
+            }
         });
         mini.setOnClickListener(v -> startActivity(new Intent(this, NowPlayingActivity.class)));
 
@@ -289,7 +304,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         drawerItems.addView(hint);
 
         String startKey = Prefs.startPage(this);
-        for (int p = SONGS; p <= HISTORY; p++) {
+        for (int p = SONGS; p <= ONLINE; p++) {
             final int pg = p;
             String count = countFor(p);
             boolean home = PAGE_KEYS[p].equals(startKey);
@@ -458,6 +473,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
             if (list.getPaddingTop() != h) {
                 list.setPadding(list.getPaddingLeft(), h, list.getPaddingRight(), list.getPaddingBottom());
             }
+            if (onlineBox.getPaddingTop() != h) onlineBox.setPadding(0, h, 0, 0);
             scroller.setTopInset(h + collapse.getTranslationY());
         });
         list.addOnScrollListener(new RecyclerView.OnScrollListener() {
@@ -567,6 +583,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         final boolean withHidden = Prefs.showHidden(this) && access;
         final boolean withThumbs = Prefs.showThumbnails(this) && access;
         final String settings = librarySettings();
+        final boolean hideDotNow = Prefs.hideDot(this), hideNomediaNow = Prefs.hideNomedia(this);
         new Thread(() -> {
             long gen = LibraryCache.generation(this);
             // 1) Android's own library: quick. Shown straight away.
@@ -584,6 +601,13 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
                 addMissing(a2, h.audio);
                 addMissing(v2, h.video);
                 addMissing(im2, h.images);
+                // Settings → ALL FILES: one kind of hidden folder can stay hidden while the other shows
+                if (hideDotNow || hideNomediaNow) {
+                    java.util.Map<String, Boolean> nomedia = new java.util.HashMap<>();
+                    dropHidden(a2, hideDotNow, hideNomediaNow, nomedia);
+                    dropHidden(v2, hideDotNow, hideNomediaNow, nomedia);
+                    dropHidden(im2, hideDotNow, hideNomediaNow, nomedia);
+                }
                 publish(a2, v2, im2, pd, true);
                 LibraryCache.save(this, a2, v2, im2, gen, settings);
             } else LibraryCache.save(this, a, v, im, gen, settings);
@@ -638,12 +662,40 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
     private final Runnable libraryChanged = () -> { if (hasPermission()) load(true); };
 
     @Override
+    protected void onPause() {
+        super.onPause();
+        online.onActivityPause();                    // YouTube songs can't play in the background
+    }
+
+    @Override
     protected void onDestroy() {
+        online.destroy();
         if (observer != null) try { getContentResolver().unregisterContentObserver(observer); } catch (Exception ignored) { }
         super.onDestroy();
     }
 
-    private static void dropThumbs(List<MediaInfo> l) {
+    /** Drops media in dot-folders and/or folders with a .nomedia file (only ones found by the hidden scan). */
+    private static void dropHidden(List<MediaInfo> l, boolean dot, boolean nomedia, java.util.Map<String, Boolean> cache) {
+        for (int i = l.size() - 1; i >= 0; i--) {
+            MediaInfo m = l.get(i);
+            if (!m.hidden || m.path.isEmpty()) continue;
+            if (dot && m.path.contains("/.")) { l.remove(i); continue; }
+            if (nomedia) {
+                File dir = new File(m.path).getParentFile();
+                boolean hit = false;
+                while (dir != null && !hit) {
+                    String k = dir.getAbsolutePath();
+                    Boolean has = cache.get(k);
+                    if (has == null) { has = new File(dir, ".nomedia").exists(); cache.put(k, has); }
+                    hit = has;
+                    dir = dir.getParentFile();
+                }
+                if (hit) l.remove(i);
+            }
+        }
+    }
+
+        private static void dropThumbs(List<MediaInfo> l) {
         for (int i = l.size() - 1; i >= 0; i--) if (HiddenScanner.isThumbnailPath(l.get(i).path)) l.remove(i);
     }
 
@@ -658,6 +710,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
     @Override
     protected void onResume() {
         super.onResume();
+        online.onActivityResume(page == ONLINE);
         if (pendingAccess != null && HiddenScanner.hasAllFilesAccess(this)) { accessGranted(); return; }
         pendingAccess = null;
         if (!resumedOnce) { resumedOnce = true; return; }
@@ -710,7 +763,10 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
                 break;
             case "hide_dot": case "hide_nomedia": case "hide_thumbdirs":
                 Prefs.setBool(this, r.key, on);
-                browseRows.clear();          // Folders lists again with the new rule
+                browseRows.clear();          // All Files lists again with the new rule
+                if (browseDir != null) browse(browseDir);
+                if (!on && !HiddenScanner.hasAllFilesAccess(this)) needAccessFor("hidden");   // showing hidden media needs access
+                else { load(true); refresh(); }
                 break;
             case "history":
                 History.setEnabled(this, on);
@@ -733,6 +789,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         searching = false;
         if (filter.length() > 0) { search.setText(""); filter = ""; }
         pageLabel.setText(PAGE_TITLES[p]);
+        updateMini();
         search.setHint(p == GALLERY ? R.string.search_gallery_hint : p == SETTINGS ? R.string.search_settings_hint : R.string.search_hint);
         if (p == FOLDERS && browseDir == null) {
             List<File> roots = FolderPicker.roots(this);
@@ -835,7 +892,8 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         tabHint.setOnClickListener(null);
         boolean inside = openPlaylist != null || openSquare != null || openVideoFolder != null;
         boolean sortable = !SORT_DEF[page].isEmpty() && !(page == SONGS && "squares".equals(view()) && openSquare == null);
-        tabBar.setVisibility(page == SETTINGS ? View.GONE : View.VISIBLE);
+        tabBar.setVisibility(page == SETTINGS || page == ONLINE ? View.GONE : View.VISIBLE);
+        search.setVisibility(page == ONLINE ? View.GONE : View.VISIBLE);
         sortBtn.setVisibility(sortable ? View.VISIBLE : View.GONE);
         if (sortable) sortBtn.setText(SortSheet.chip(this, currentSort()));
         galleryBar.setVisibility(page == GALLERY ? View.VISIBLE : View.GONE);
@@ -863,6 +921,16 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
     private void refresh() {
         if (isFinishing()) return;
         updateBars();
+        if (page == ONLINE) {
+            list.setVisibility(View.GONE);
+            empty.setVisibility(View.GONE);
+            scroller.setVisibility(View.GONE);
+            online.show();
+            return;
+        }
+        if (onlineBox.getVisibility() == View.VISIBLE) online.hide();
+        list.setVisibility(View.VISIBLE);
+        scroller.setVisibility(View.VISIBLE);
         if (page == GALLERY) { refreshGallery(); return; }
         String view = view();
         if (page == SONGS && "squares".equals(view) && openSquare == null) { refreshSquares(); return; }
@@ -1347,18 +1415,6 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
     private void buildSettings(List<RowAdapter.Row> out) {
         List<RowAdapter.Row> all = new ArrayList<>();
         boolean access = HiddenScanner.hasAllFilesAccess(this);
-        all.add(RowAdapter.Row.header(getString(R.string.set_library)));
-        all.add(RowAdapter.Row.toggle(getString(R.string.show_hidden_media), getString(R.string.show_hidden_sub), "hidden",
-                R.drawable.ic_eye_off, Prefs.showHidden(this) && access));
-        all.add(RowAdapter.Row.toggle(getString(R.string.show_thumbs), getString(R.string.show_thumbs_sub), "thumbs",
-                R.drawable.ic_image, Prefs.showThumbnails(this) && access));
-        all.add(RowAdapter.Row.header(getString(R.string.set_folders)));
-        all.add(RowAdapter.Row.toggle(getString(R.string.hide_dot), getString(R.string.hide_dot_sub), "hide_dot",
-                R.drawable.ic_folder, Prefs.hideDot(this)));
-        all.add(RowAdapter.Row.toggle(getString(R.string.hide_nomedia), getString(R.string.folders_page_only), "hide_nomedia",
-                R.drawable.ic_folder, Prefs.hideNomedia(this)));
-        all.add(RowAdapter.Row.toggle(getString(R.string.hide_thumbdirs), getString(R.string.folders_page_only), "hide_thumbdirs",
-                R.drawable.ic_folder, Prefs.hideThumbDirs(this)));
         all.add(RowAdapter.Row.header(getString(R.string.set_playback)));
         all.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.video_rotation),
                 getResources().getStringArray(R.array.orientations)[Prefs.videoOrientation(this)], null, "orient", R.drawable.ic_screen_rotation));
@@ -1371,6 +1427,16 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
                 getResources().getQuantityString(R.plurals.items, History.count(this), History.count(this)), null, "clear_history", R.drawable.ic_delete));
         all.add(RowAdapter.Row.header(getString(R.string.set_about)));
         all.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.app_name), getString(R.string.version_line), null, "about", R.drawable.ic_info));
+        // ALL FILES last: what's hidden here is hidden everywhere (All Files, Audio, Videos, Gallery)
+        all.add(RowAdapter.Row.header(getString(R.string.set_folders)));
+        all.add(RowAdapter.Row.toggle(getString(R.string.hide_dot), getString(R.string.hide_everywhere_sub), "hide_dot",
+                R.drawable.ic_folder, Prefs.hideDot(this)));
+        all.add(RowAdapter.Row.toggle(getString(R.string.hide_nomedia), getString(R.string.hide_everywhere_sub), "hide_nomedia",
+                R.drawable.ic_folder, Prefs.hideNomedia(this)));
+        all.add(RowAdapter.Row.toggle(getString(R.string.hide_thumbdirs), getString(R.string.hide_everywhere_sub), "hide_thumbdirs",
+                R.drawable.ic_folder, Prefs.hideThumbDirs(this)));
+        if (!access && Build.VERSION.SDK_INT >= 30)
+            all.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.allow), getString(R.string.hidden_explain), null, "folders_access", R.drawable.ic_lock));
         for (RowAdapter.Row r : all) {
             if (r.type == RowAdapter.HEADER || matchesText(r.title) || (r.sub != null && matchesText(r.sub))) out.add(r);
         }
@@ -1771,6 +1837,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (online.onActivityResult(requestCode, resultCode, data)) return;
         deleter.onActivityResult(requestCode, resultCode);
     }
 
@@ -1925,7 +1992,30 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
     public void onMore(RowAdapter.Row r, int position) {
         if (r.type == RowAdapter.PLAYLIST) { playlistMenu(r); return; }
         if (r.type == RowAdapter.FOLDER && r.key.startsWith("/")) { folderMenu(folderInfo(new File(r.key))); return; }
+        if (r.type == RowAdapter.FOLDER && r.key.startsWith("vf:") && r.pick != null) { videoFolderMenu(r); return; }
         if (r.type == RowAdapter.MEDIA) itemMenu(r.media);
+    }
+
+    /** ⋮ on a folder in the Videos folder view: open, select, rename, delete, properties. */
+    private void videoFolderMenu(RowAdapter.Row r) {
+        final String name = r.key.substring(3);
+        File dir = null;
+        for (MediaInfo v : r.pick) if (!v.path.isEmpty()) { dir = new File(v.path).getParentFile(); break; }
+        final File folder = dir;
+        String[] opts = {getString(R.string.open), getString(R.string.select), getString(R.string.rename),
+                getString(R.string.delete_file), getString(R.string.properties)};
+        Dialogs.builder(this).setTitle(name).setItems(opts, (d, w) -> {
+            switch (w) {
+                case 0: openVideoFolder = name; refresh(); showHeader(); break;
+                case 1: sel.toggleAll(r.pick); break;
+                case 2:
+                    if (folder == null) { Ui.toast(this, R.string.rename_failed); break; }
+                    FileOps.rename(this, folderInfo(folder), () -> load(true));
+                    break;
+                case 3: deleteItems(new ArrayList<>(r.pick)); break;
+                default: if (folder != null) properties(folderInfo(folder)); else selectionDetails(r.pick);
+            }
+        }).show();
     }
 
     private void folderMenu(MediaInfo m) {
@@ -2092,7 +2182,11 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
     }
 
     private final Player.Listener playerListener = new Player.Listener() {
-        @Override public void onEvents(Player player, Player.Events events) { updateMini(); }
+        @Override public void onEvents(Player player, Player.Events events) {
+            // your own music started: the online song pauses (only one thing plays at a time)
+            if (player.isPlaying() && online != null && online.isPlaying()) online.pause();
+            updateMini();
+        }
     };
 
     @Override
@@ -2123,7 +2217,10 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
             rows.setPlaying(null);
             return;
         }
-        mini.setVisibility(View.VISIBLE);
+        // playing: on every page. Paused or closed: only on the Audio page, ready to carry on
+        boolean show = controller.isPlaying() || controller.getPlayWhenReady() || page == SONGS;
+        mini.setVisibility(show ? View.VISIBLE : View.GONE);
+        if (!show) { rows.setPlaying(controller.getCurrentMediaItem().mediaId); return; }
         MediaMetadata md = controller.getMediaMetadata();
         miniTitle.setText(md.title == null ? getString(R.string.unknown) : md.title);
         miniSub.setText(Media.isVideo(md) ? getString(R.string.video_in_background) : md.artist == null ? "" : md.artist);

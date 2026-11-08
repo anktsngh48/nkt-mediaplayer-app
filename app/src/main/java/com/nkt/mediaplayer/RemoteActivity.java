@@ -278,6 +278,7 @@ public class RemoteActivity extends Activity implements RowAdapter.Listener, Sel
             for (Remote.Device d : saved) out.add(deviceRow(d, false));
             empty.setVisibility(View.GONE);
             rows.setRows(out);
+            showPaste();
             return;
         }
 
@@ -297,13 +298,6 @@ public class RemoteActivity extends Activity implements RowAdapter.Listener, Sel
         viewList.setImageTintList(ColorStateList.valueOf(getColor(!grid ? R.color.accent : R.color.muted)));
         viewGrid.setImageTintList(ColorStateList.valueOf(getColor(grid ? R.color.accent : R.color.muted)));
 
-        if (!"/".equals(path)) out.add(new RowAdapter.Row(RowAdapter.BACK, getString(R.string.back_to, nameOf(Remote.parent(path))), null, null, "up", R.drawable.ic_arrow_up));
-        List<MediaInfo> media = shownFiles();
-        int songs = 0;
-        for (MediaInfo m : media) if (m.kind() == MediaInfo.AUDIO) songs++;
-        if (songs > 1) out.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.play_all_songs_here), null, null, "play_all", R.drawable.ic_play));
-        String saveTo = device.ask ? getString(R.string.ask_every_time) : prettySave(saveFolder(device));
-        out.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.copies_save_to) + " · " + getString(R.string.change_caps), saveTo, null, "save_to", R.drawable.ic_download));
 
         List<FTPFile> sorted = new ArrayList<>(files);
         String sort = Prefs.sort(this, "remote", "name");
@@ -343,30 +337,82 @@ public class RemoteActivity extends Activity implements RowAdapter.Listener, Sel
         empty.setVisibility(listing || sorted.isEmpty() ? View.VISIBLE : View.GONE);
     }
 
-    private TextView pasteChip;
 
-    /** PASTE n ITEMS on the bar while something is copied or cut (from this phone or any device). */
+    /** UP · NEW · PASTE · ✕ · PLAY ALL · SAVE TO — buttons above the list, never mistaken for files. */
     private void showPaste() {
-        if (pasteChip == null) {
-            int dp = Ui.dp(this, 1);
-            pasteChip = new TextView(this);
-            pasteChip.setTypeface(Ui.orbitron(this));
-            pasteChip.setTextSize(9.5f);
-            pasteChip.setTextColor(getColor(R.color.accent));
-            pasteChip.setGravity(Gravity.CENTER);
-            pasteChip.setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_paste, 0, 0, 0);
-            pasteChip.setCompoundDrawableTintList(ColorStateList.valueOf(getColor(R.color.accent)));
-            pasteChip.setCompoundDrawablePadding(6 * dp);
-            pasteChip.setBackgroundResource(R.drawable.bg_tile_btn);
-            pasteChip.setPadding(10 * dp, 0, 12 * dp, 0);
-            pasteChip.setOnClickListener(v -> pasteHere());
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, 30 * dp);
-            lp.setMarginEnd(8 * dp);
-            ((LinearLayout) bar).addView(pasteChip, 1, lp);
+        View box = findViewById(R.id.rm_actions_box);
+        LinearLayout row = findViewById(R.id.rm_actions);
+        row.removeAllViews();
+        box.setVisibility(device == null ? View.GONE : View.VISIBLE);
+        if (device == null) return;
+        if (!"/".equals(path)) action(row, R.drawable.ic_arrow_up, getString(R.string.up_caps), () -> list(Remote.parent(path)));
+        action(row, R.drawable.ic_add, getString(R.string.new_caps), this::newRemoteFolder);
+        if (FileJobs.hasClip()) {
+            action(row, R.drawable.ic_paste, FileJobs.pasteLabel(this), this::pasteHere);
+            action(row, R.drawable.ic_close, null, () -> { FileJobs.clear(); showPaste(); });
         }
-        boolean on = device != null && FileJobs.hasClip();
-        pasteChip.setVisibility(on ? View.VISIBLE : View.GONE);
-        if (on) pasteChip.setText(FileJobs.pasteLabel(this));
+        int songs = 0;
+        for (FTPFile f : files) if (!f.isDirectory() && f.getName() != null && MediaInfo.kindOf(f.getName()) == MediaInfo.AUDIO) songs++;
+        if (songs > 1) action(row, R.drawable.ic_play, getString(R.string.play_all_caps), () -> {
+            List<MediaInfo> l = new ArrayList<>();
+            for (MediaInfo m : shownFiles()) if (m.kind() == MediaInfo.AUDIO) l.add(m);
+            playSongs(l, 0);
+        });
+        String where = device.ask ? getString(R.string.ask_every_time) : saveFolder(device).getName();
+        action(row, R.drawable.ic_download, getString(R.string.save_to_caps, where.toUpperCase(java.util.Locale.ROOT)), () -> chooseSaveTo(device, null));
+    }
+
+    private void action(LinearLayout row, int icon, String label, Runnable r) {
+        int dp = Ui.dp(this, 1);
+        TextView b = new TextView(this);
+        if (label != null) b.setText(label);
+        b.setTypeface(Ui.orbitron(this));
+        b.setTextSize(9.5f);
+        b.setLetterSpacing(0.1f);
+        b.setTextColor(getColor(R.color.accent));
+        b.setGravity(Gravity.CENTER);
+        b.setMaxLines(1);
+        b.setCompoundDrawablesRelativeWithIntrinsicBounds(icon, 0, 0, 0);
+        b.setCompoundDrawableTintList(ColorStateList.valueOf(getColor(R.color.accent)));
+        b.setCompoundDrawablePadding(label == null ? 0 : 6 * dp);
+        b.setBackgroundResource(R.drawable.bg_tile_btn);
+        b.setPadding(10 * dp, 0, label == null ? 10 * dp : 14 * dp, 0);
+        if (label == null) b.setContentDescription(getString(R.string.clear_clip));
+        b.setOnClickListener(v -> r.run());
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, 34 * dp);
+        lp.setMarginEnd(8 * dp);
+        row.addView(b, lp);
+    }
+
+    private void newRemoteFolder() {
+        if (device == null) return;
+        EditText input = new EditText(this);
+        input.setHint(R.string.name_hint);
+        input.setSingleLine(true);
+        android.widget.FrameLayout box = new android.widget.FrameLayout(this);
+        int pad = Ui.dp(this, 20);
+        box.setPadding(pad, pad / 2, pad, 0);
+        box.addView(input);
+        final Remote.Device d = device;
+        final String dir = path;
+        Dialogs.builder(this).setTitle(R.string.new_folder).setView(box)
+                .setPositiveButton(R.string.create, (x, w) -> {
+                    String name = input.getText().toString().trim().replaceAll("[\\\\/:*?\"<>|]", "_");
+                    if (name.isEmpty()) return;
+                    net.execute(() -> {
+                        boolean ok;
+                        try {
+                            if (ftp == null || !ftp.isConnected()) ftp = Remote.connect(d);
+                            ok = ftp.makeDirectory(Remote.child(dir, name));
+                        } catch (Exception e) { ok = false; }
+                        final boolean done = ok;
+                        ui.post(() -> {
+                            if (!done) Ui.toast(this, R.string.new_folder_failed);
+                            if (device == d && dir.equals(path)) list(path);
+                        });
+                    });
+                })
+                .setNegativeButton(R.string.cancel, null).show();
     }
 
     private void pasteHere() {
@@ -684,6 +730,15 @@ public class RemoteActivity extends Activity implements RowAdapter.Listener, Sel
     @Override
     public void onMore(RowAdapter.Row r, int position) {
         if (r.type == RowAdapter.PLAYLIST) { deviceMenu(r); return; }
+        if (r.type == RowAdapter.FOLDER && r.pick != null) {
+            String[] o = {getString(R.string.open), getString(R.string.copy_files), getString(R.string.cut), getString(R.string.select)};
+            Dialogs.builder(this).setTitle(r.title).setItems(o, (d, w) -> {
+                if (w == 0) list(r.key.substring(4));
+                else if (w == 1 || w == 2) { FileJobs.put(this, r.pick, w == 2, device); show(); }
+                else sel.toggleAll(r.pick);
+            }).show();
+            return;
+        }
         if (r.type != RowAdapter.MEDIA) return;
         MediaInfo m = r.media;
         String[] opts = {getString(m.kind() <= MediaInfo.VIDEO ? R.string.play : R.string.open), getString(R.string.copy_to_phone),
