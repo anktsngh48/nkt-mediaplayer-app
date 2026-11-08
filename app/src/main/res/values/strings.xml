@@ -406,10 +406,6 @@
     <string name="sd_card_caps">SD CARD</string>
     <string name="usb_caps">USB %1$d</string>
     <string name="folders_all_shown">Showing every folder, hidden ones too. Hide them in Settings</string>
-    <plurals name="folders_hidden_n">
-        <item quantity="one">%d hidden folder not shown. Show it in Settings</item>
-        <item quantity="other">%d hidden folders not shown. Show them in Settings</item>
-    </plurals>
     <string name="folders_need_access">Allow access to all files so All Files can show every folder on your phone.</string>
     <string name="folder_locked">Android doesn\'t let apps open this folder</string>
     <string name="folder_empty">Empty</string>
