@@ -1172,13 +1172,11 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
             storageRow.addView(chip, lp);
         }
         folderPath.setText(browseDir == null ? "" : FolderPicker.pretty(this, roots, browseDir));
-        // The note only appears once hidden items are being shown (any hide option off). With everything
-        // hidden (the default), hidden folders aren't mentioned at all.
+        // The note only appears when hidden items are actually on screen (a hide option is off and nothing in
+        // this folder is held back). Hidden folders are never counted or mentioned otherwise.
         boolean showingHidden = !(Prefs.hideDot(this) && Prefs.hideNomedia(this) && Prefs.hideThumbDirs(this));
-        folderNote.setVisibility(showingHidden ? View.VISIBLE : View.GONE);
-        if (showingHidden) folderNote.setText(browseHidden > 0
-                ? getResources().getQuantityString(R.plurals.folders_hidden_n, browseHidden, browseHidden)
-                : getString(R.string.folders_all_shown));
+        folderNote.setVisibility(showingHidden && browseHidden == 0 ? View.VISIBLE : View.GONE);
+        folderNote.setText(R.string.folders_all_shown);
 
         // UP · NEW · PASTE: buttons, not rows, so they never look like the files below
         folderActions.removeAllViews();
