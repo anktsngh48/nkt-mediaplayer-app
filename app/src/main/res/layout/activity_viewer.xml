@@ -116,6 +116,25 @@
             android:contentDescription="@string/properties"
             android:src="@drawable/ic_info"
             android:tint="@color/text" />
+
+        <ImageButton
+            android:id="@+id/vw_delete"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="@android:color/transparent"
+            android:contentDescription="@string/delete"
+            android:src="@drawable/ic_delete"
+            android:tint="@color/text" />
+
+        <!-- ⋮ : rename · copy · cut · set as wallpaper -->
+        <ImageButton
+            android:id="@+id/vw_more"
+            android:layout_width="40dp"
+            android:layout_height="48dp"
+            android:background="@android:color/transparent"
+            android:contentDescription="@string/cd_more"
+            android:src="@drawable/ic_more"
+            android:tint="@color/text" />
     </LinearLayout>
 
     <LinearLayout
@@ -127,6 +146,48 @@
         android:orientation="vertical"
         android:paddingTop="40dp"
         android:paddingBottom="22dp">
+
+        <!-- Videos: time · seek bar · length -->
+        <LinearLayout
+            android:id="@+id/vw_seek_row"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="10dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/vw_pos"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minWidth="40dp"
+                android:text="0:00"
+                android:textColor="@color/text"
+                android:textSize="12sp" />
+
+            <SeekBar
+                android:id="@+id/vw_seek"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:max="1000"
+                android:progressBackgroundTint="#66FFFFFF"
+                android:progressTint="@color/accent"
+                android:thumbTint="@color/accent" />
+
+            <TextView
+                android:id="@+id/vw_dur"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="end"
+                android:minWidth="40dp"
+                android:text="0:00"
+                android:textColor="@color/text"
+                android:textSize="12sp" />
+        </LinearLayout>
 
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/vw_film"

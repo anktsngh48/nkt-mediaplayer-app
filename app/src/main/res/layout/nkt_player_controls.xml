@@ -129,4 +129,27 @@
             <ImageButton android:id="@+id/btn_more" style="@style/NKTCtrl" android:contentDescription="@string/cd_more" android:src="@drawable/ic_more" />
         </LinearLayout>
     </LinearLayout>
+
+    <!-- ‹ › previous / next video, on the sides while the controls show -->
+    <ImageButton
+        android:id="@+id/vid_prev"
+        android:layout_width="48dp"
+        android:layout_height="72dp"
+        android:layout_gravity="start|center_vertical"
+        android:layout_marginStart="10dp"
+        android:background="@drawable/bg_side_btn"
+        android:contentDescription="@string/cd_prev_video"
+        android:src="@drawable/ic_chevron_left"
+        android:tint="@color/text" />
+
+    <ImageButton
+        android:id="@+id/vid_next"
+        android:layout_width="48dp"
+        android:layout_height="72dp"
+        android:layout_gravity="end|center_vertical"
+        android:layout_marginEnd="10dp"
+        android:background="@drawable/bg_side_btn"
+        android:contentDescription="@string/cd_next_video"
+        android:src="@drawable/ic_chevron_right"
+        android:tint="@color/text" />
 </FrameLayout>

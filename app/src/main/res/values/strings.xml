@@ -3,16 +3,16 @@
     <string name="app_name">NKT Media Player</string>
     <string name="header">NKT MEDIA PLAYER</string>
 
-    <string name="tab_songs">SONGS</string>
+    <string name="tab_songs">AUDIO</string>
     <string name="tab_videos">VIDEOS</string>
     <string name="tab_folders">FOLDERS</string>
     <string name="tab_playlists">PLAYLISTS</string>
-    <string name="search_hint">Search songs, videos, folders…</string>
+    <string name="search_hint">Search audio, videos, files…</string>
 
     <string name="perm_text">Allow access to your music and videos so they show up here.</string>
     <string name="perm_button">ALLOW ACCESS</string>
     <string name="loading">Loading your media…</string>
-    <string name="no_songs">No songs found on this phone</string>
+    <string name="no_songs">No audio found on this phone</string>
     <string name="no_videos">No videos found on this phone</string>
     <string name="no_folders">No folders with media</string>
     <string name="empty_playlist">This playlist is empty. Long-press any song or video → Add to playlist.</string>
@@ -290,7 +290,7 @@
     <string name="autonext">Play next video automatically</string>
     <string name="autonext_sub">When off, a video stops at the end</string>
     <string name="keep_history">Keep history</string>
-    <string name="keep_history_sub">Songs, videos and photos you open, newest first (Playlists → History)</string>
+    <string name="keep_history_sub">Audio, videos and photos you open, newest first (☰ → History)</string>
     <string name="nkt_share_sub">Share files with a computer or other devices on Wi-Fi</string>
     <string name="version_line">Version 1.0</string>
 
@@ -367,11 +367,11 @@
     
     <!-- ☰ menu, start page -->
     <string name="cd_menu">Open the menu</string>
-    <string name="menu_hint">Tap ⌂ to choose the page the app opens on</string>
-    <string name="menu_songs">Songs</string>
+    <string name="menu_hint">Tap ⌂ to select the default page</string>
+    <string name="menu_songs">Audio</string>
     <string name="menu_videos">Videos</string>
     <string name="menu_gallery">Gallery</string>
-    <string name="menu_folders">Folders</string>
+    <string name="menu_folders">All Files</string>
     <string name="menu_playlists">Playlists</string>
     <string name="menu_history">History</string>
     <string name="menu_settings">Settings</string>
@@ -379,10 +379,10 @@
     <string name="menu_footer">NKT Media Player · Version 1.0</string>
     <string name="start_page_set">%1$s opens first from now on</string>
     <string name="cd_start_page">Open %1$s first</string>
-    <string name="page_songs">SONGS</string>
+    <string name="page_songs">AUDIO</string>
     <string name="page_videos">VIDEOS</string>
     <string name="page_gallery">GALLERY</string>
-    <string name="page_folders">FOLDERS</string>
+    <string name="page_folders">ALL FILES</string>
     <string name="page_playlists">PLAYLISTS</string>
     <string name="page_history">HISTORY</string>
     <string name="page_settings">SETTINGS</string>
@@ -410,7 +410,7 @@
         <item quantity="one">%d hidden folder not shown. Show it in Settings</item>
         <item quantity="other">%d hidden folders not shown. Show them in Settings</item>
     </plurals>
-    <string name="folders_need_access">Allow access to all files so Folders can show every folder on your phone.</string>
+    <string name="folders_need_access">Allow access to all files so All Files can show every folder on your phone.</string>
     <string name="folder_locked">Android doesn\'t let apps open this folder</string>
     <string name="folder_empty">Empty</string>
     <string name="play_all_here">▶ Play all songs here</string>
@@ -438,13 +438,13 @@
     <string name="rename_failed">Couldn\'t rename. Allow access to all files and try again.</string>
 
     <!-- Settings -->
-    <string name="set_folders">FOLDERS</string>
+    <string name="set_folders">ALL FILES</string>
     <string name="hide_dot">Hide folders starting with a dot</string>
-    <string name="hide_dot_sub">Folders shows every folder unless you hide some here</string>
+    <string name="hide_dot_sub">All Files shows every folder unless you hide some here</string>
     <string name="hide_nomedia">Hide folders with a .nomedia file</string>
     <string name="hide_thumbdirs">Hide .thumbnails folders</string>
-    <string name="folders_page_only">Folders page only</string>
-    <string name="show_hidden_media">Show hidden files in Songs, Videos, Gallery</string>
+    <string name="folders_page_only">All Files page only</string>
+    <string name="show_hidden_media">Show hidden files in Audio, Videos, Gallery</string>
     <string name="video_end">When a video ends</string>
     <string name="karaoke_strength">Karaoke strength</string>
 
@@ -583,6 +583,135 @@
     <string name="pdf_locked">This PDF is locked or damaged — open it with another app</string>
     <string name="cd_night">Night mode</string>
 
+    <!-- Quick settings tile -->
+    <string name="tile_on">Sharing</string>
+    <string name="tile_off">Off</string>
+    <string name="tile_on_desc">NKT Share is on. Tap to stop sharing.</string>
+    <string name="tile_off_desc">NKT Share is off. Tap to start sharing.</string>
+
+    <!-- Copy · Cut · Paste -->
+    <string name="cut">Cut</string>
+    <string name="copy_files">Copy</string>
+    <string name="paste">Paste</string>
+    <string name="paste_here_caps">PASTE HERE</string>
+    <string name="clear_clip">Clear</string>
+    <string name="paste_needs_access">Allow access to all files to copy and move files here.</string>
+    <string name="pasted_to">Done · %s</string>
+    <string name="pasted_some">%1$d of %2$d done · %3$s</string>
+    <string name="cd_cut">Cut</string>
+    <string name="cd_copy">Copy</string>
+    <plurals name="clip_copied">
+        <item quantity="one">Copied · open a folder (here or on another device) and tap PASTE</item>
+        <item quantity="other">%d items copied · open a folder (here or on another device) and tap PASTE</item>
+    </plurals>
+    <plurals name="clip_cut">
+        <item quantity="one">Cut · open a folder (here or on another device) and tap PASTE</item>
+        <item quantity="other">%d items cut · open a folder (here or on another device) and tap PASTE</item>
+    </plurals>
+    <plurals name="paste_n">
+        <item quantity="one">PASTE %d ITEM</item>
+        <item quantity="other">PASTE %d ITEMS</item>
+    </plurals>
+    <plurals name="paste_move_n">
+        <item quantity="one">MOVE %d ITEM HERE</item>
+        <item quantity="other">MOVE %d ITEMS HERE</item>
+    </plurals>
+
+    <!-- Recycle bin -->
+    <string name="menu_bin">Recycle bin</string>
+    <string name="bin_caps">RECYCLE BIN</string>
+    <string name="bin_hint">Deleted files wait here for 30 days, then go for good. Other apps can\'t see them.</string>
+    <string name="bin_empty">The recycle bin is empty</string>
+    <string name="restore">Restore</string>
+    <string name="restore_caps">RESTORE</string>
+    <string name="delete_forever">Delete forever</string>
+    <string name="empty_bin">Empty the recycle bin</string>
+    <string name="empty_bin_confirm">Delete everything in the recycle bin for good? This can\'t be undone.</string>
+    <string name="delete_forever_confirm">Delete for good? This can\'t be undone.</string>
+    <string name="bin_line">%1$s · deleted %2$s · %3$d days left</string>
+    <string name="bin_system_line">In Android\'s trash · %1$s · %2$d days left</string>
+    <string name="restored_to">Restored to %s</string>
+    <string name="restore_failed">Couldn\'t put it back</string>
+    <string name="undo_caps">UNDO</string>
+    <string name="bin_cant_title">Can\'t go to the Recycle bin</string>
+    <string name="delete_permanently">Delete permanently</string>
+    <string name="keep_caps">Keep</string>
+    <plurals name="bin_cant_msg">
+        <item quantity="one">“%2$s” can\'t be moved to the Recycle bin, so it won\'t be saved there. Delete it permanently?</item>
+        <item quantity="other">%1$d items (like “%2$s”) can\'t be moved to the Recycle bin, so they won\'t be saved there. Delete them permanently?</item>
+    </plurals>
+    <plurals name="deleted_for_good">
+        <item quantity="one">Deleted permanently</item>
+        <item quantity="other">%d items deleted permanently</item>
+    </plurals>
+    <string name="bin_total">%1$s · %2$s</string>
+    <plurals name="moved_to_bin">
+        <item quantity="one">Moved to the recycle bin</item>
+        <item quantity="other">%d items moved to the recycle bin</item>
+    </plurals>
+    <plurals name="restored_n">
+        <item quantity="one">Restored</item>
+        <item quantity="other">%d items restored</item>
+    </plurals>
+
+    <!-- PDFs -->
+    <string name="menu_pdfs">PDFs</string>
+    <string name="page_pdfs">PDFS</string>
+    <string name="no_pdfs">No PDFs found on this phone</string>
+    <plurals name="pdfs">
+        <item quantity="one">%d PDF</item>
+        <item quantity="other">%d PDFs</item>
+    </plurals>
+
+    <!-- WhatsApp status -->
+    <string name="menu_status">Save WhatsApp status</string>
+    <string name="status_caps">SAVE WHATSAPP STATUS</string>
+    <string name="status_hint">Statuses you\'ve watched in WhatsApp. They disappear after 24 hours, so save the ones you want.</string>
+    <string name="status_none">No statuses yet. Watch some in WhatsApp, then come back here.</string>
+    <string name="status_need_access">Allow access to all files so the app can find WhatsApp statuses.</string>
+    <string name="status_saved_tab">SAVED</string>
+    <string name="status_new_tab">STATUSES</string>
+    <string name="save_status">Save</string>
+    <string name="save_all_caps">SAVE ALL</string>
+    <string name="status_saved_none">Statuses you save show here</string>
+    <plurals name="statuses_saved">
+        <item quantity="one">Saved to %2$s</item>
+        <item quantity="other">%1$d saved to %2$s</item>
+    </plurals>
+
+    <!-- Wallpaper -->
+    <string name="set_wallpaper">Set as wallpaper</string>
+    <string name="wallpaper_home">Home screen</string>
+    <string name="wallpaper_lock">Lock screen</string>
+    <string name="wallpaper_both">Home and lock screens</string>
+    <string name="wallpaper_set">Wallpaper set</string>
+    <string name="wallpaper_failed">Couldn\'t set the wallpaper</string>
+
+    <!-- All Files page -->
+    <string name="up_caps">UP</string>
+    <string name="new_caps">NEW</string>
+    <string name="searching_inside">Searching inside the folders…</string>
+    <plurals name="found_inside">
+        <item quantity="one">%d found in this folder and the folders inside</item>
+        <item quantity="other">%d found in this folder and the folders inside</item>
+    </plurals>
+
+    <!-- Details of selected items -->
+    <string name="cd_sel_info">Details</string>
+    <string name="info_total">Total size</string>
+    <string name="info_contains">Contains</string>
+    <string name="info_kinds">%1$d audio · %2$d videos · %3$d photos · %4$d other</string>
+    <string name="info_folders">%1$d folders · %2$d files inside</string>
+    <string name="info_dates">Dates</string>
+    <string name="info_length">Total length</string>
+    <plurals name="info_title">
+        <item quantity="one">%d item selected</item>
+        <item quantity="other">%d items selected</item>
+    </plurals>
+
+    <string name="cd_prev_video">Previous video</string>
+    <string name="cd_next_video">Next video</string>
+
     <string-array name="orientations">
         <item>Auto rotate</item>
         <item>Lock portrait</item>
@@ -610,8 +739,8 @@
         <item quantity="other">%d items</item>
     </plurals>
     <plurals name="songs">
-        <item quantity="one">%d song</item>
-        <item quantity="other">%d songs</item>
+        <item quantity="one">%d audio file</item>
+        <item quantity="other">%d audio files</item>
     </plurals>
     <plurals name="videos">
         <item quantity="one">%d video</item>

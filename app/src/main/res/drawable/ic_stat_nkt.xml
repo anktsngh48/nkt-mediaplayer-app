@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Status bar / lock screen icon: the NKT letters (one colour, as Android requires) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M1,6h1.6v12H1z M5.4,6H7v12H5.4z M1,6h1.7L7,18H5.3z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M8.5,6h1.6v12H8.5z M10.1,11.4L13.3,6h1.8l-3.6,6.1L15.1,18h-1.8l-3.2,-5.3z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M16,6h7v1.6h-2.7V18h-1.6V7.6H16z" />
+</vector>
