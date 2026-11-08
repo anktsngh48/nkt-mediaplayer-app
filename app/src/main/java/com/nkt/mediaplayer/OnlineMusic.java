@@ -2,12 +2,15 @@ package com.nkt.mediaplayer;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
-import android.content.ActivityNotFoundException;
+import android.Manifest;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.os.Bundle;
+import android.speech.RecognitionListener;
+import android.speech.SpeechRecognizer;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
-import android.speech.RecognizerIntent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.JavascriptInterface;
@@ -44,11 +47,11 @@ import java.util.regex.Pattern;
  * Online Music page: say or type a song, it plays from YouTube (the official embedded player, as YouTube requires).
  * The page lives in assets/online and is served from https://appassets.androidplatform.net so YouTube accepts it.
  * The app does the searching itself (YouTube results + free Piped servers, first answer wins: no API key, no proxies)
- * and the voice (Android's own voice typing). Sound starts without an extra tap.
+ * and listens right on the page (the phone's speech recognizer, with no pop-up). Sound starts without an extra tap.
  */
 public final class OnlineMusic {
 
-    public static final int REQ_VOICE = 4501;
+    public static final int REQ_MIC = 4502;
     private static final String HOST = "appassets.androidplatform.net";
     private static final String PAGE = "https://" + HOST + "/online/index.html";
 
@@ -65,6 +68,9 @@ public final class OnlineMusic {
     private final Map<String, String> cache = new ConcurrentHashMap<>();
     private WebView web;
     private boolean playing = false;
+    private SpeechRecognizer rec;
+    private boolean listening = false;
+    private long lastLevel = 0;
 
     public OnlineMusic(Activity a, FrameLayout box, Host host) {
         this.a = a;
@@ -123,48 +129,121 @@ public final class OnlineMusic {
         if (web != null) web.evaluateJavascript("window.NKTpause && NKTpause()", null);
     }
 
-    public void onActivityPause() { pause(); if (web != null) web.onPause(); }
+    public void onActivityPause() { cancelListening(); pause(); if (web != null) web.onPause(); }
 
     public void onActivityResume(boolean visible) { if (web != null && visible) web.onResume(); }
 
     public void destroy() {
         pool.shutdownNow();
+        if (rec != null) { rec.destroy(); rec = null; }
         if (web != null) { web.destroy(); web = null; }
     }
 
     // ── Voice ────────────────────────────────────────────────────────────────
 
-    /** Returns true when the result was ours. */
-    public boolean onActivityResult(int requestCode, int resultCode, Intent data) {
-        if (requestCode != REQ_VOICE) return false;
-        String text = null;
-        if (resultCode == Activity.RESULT_OK && data != null) {
-            List<String> l = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
-            if (l != null && !l.isEmpty()) text = l.get(0);
-        }
-        if (web == null) return true;
-        if (text == null || text.trim().isEmpty()) js("NKTvoiceError(" + JSONObject.quote(a.getString(R.string.online_no_speech)) + ")");
-        else js("NKTvoice(" + JSONObject.quote(text.trim()) + ")");
+    /** The microphone permission answer comes back through the activity. Returns true when it was ours. */
+    public boolean onRequestPermissionsResult(int requestCode, int[] results) {
+        if (requestCode != REQ_MIC) return false;
+        if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) startListening();
+        else if (a.shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO)) voiceError(R.string.online_mic_needed);
+        else voiceError(R.string.online_mic_blocked);
         return true;
+    }
+
+    private void startListening() {
+        if (web == null) return;
+        if (!SpeechRecognizer.isRecognitionAvailable(a)) { voiceError(R.string.online_no_voice); return; }
+        if (a.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            a.requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_MIC);
+            return;
+        }
+        if (rec == null) {
+            rec = SpeechRecognizer.createSpeechRecognizer(a);
+            rec.setRecognitionListener(new Listener());
+        }
+        Intent i = new Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+                .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                .putExtra(android.speech.RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                .putExtra(android.speech.RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+                .putExtra(android.speech.RecognizerIntent.EXTRA_CALLING_PACKAGE, a.getPackageName());
+        listening = true;
+        try { rec.startListening(i); }
+        catch (Exception e) { listening = false; voiceError(R.string.online_no_voice); }
+    }
+
+    /** "Done speaking": the recognizer turns what it heard so far into a result. */
+    private void stopListening() {
+        if (rec != null && listening) rec.stopListening();
+    }
+
+    /** Leaving the page or the app: drop the mic quietly. */
+    private void cancelListening() {
+        if (rec != null && listening) {
+            listening = false;
+            rec.cancel();
+            js("window.NKTvoiceStopped && NKTvoiceStopped()");
+        }
+    }
+
+    private void voiceError(int msg) {
+        listening = false;
+        js("NKTvoiceError(" + JSONObject.quote(a.getString(msg)) + ")");
+    }
+
+    private final class Listener implements RecognitionListener {
+        @Override public void onReadyForSpeech(Bundle b) { js("NKTlistening()"); }
+        @Override public void onBeginningOfSpeech() { }
+        @Override public void onRmsChanged(float rms) {
+            long now = System.currentTimeMillis();
+            if (now - lastLevel < 70) return;                 // about 14 updates a second is plenty for the bars
+            lastLevel = now;
+            float v = Math.max(0f, Math.min(1f, (rms + 2f) / 12f));
+            js("NKTlevel(" + String.format(Locale.ROOT, "%.2f", v) + ")");
+        }
+        @Override public void onBufferReceived(byte[] buffer) { }
+        @Override public void onEndOfSpeech() { js("NKTlevel(0)"); }
+        @Override public void onError(int error) {
+            if (!listening) return;                           // we cancelled it ourselves
+            switch (error) {
+                case SpeechRecognizer.ERROR_NO_MATCH:
+                case SpeechRecognizer.ERROR_SPEECH_TIMEOUT: voiceError(R.string.online_no_speech); break;
+                case SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS: voiceError(R.string.online_mic_needed); break;
+                case SpeechRecognizer.ERROR_NETWORK:
+                case SpeechRecognizer.ERROR_NETWORK_TIMEOUT:
+                case SpeechRecognizer.ERROR_SERVER: voiceError(R.string.online_voice_offline); break;
+                case SpeechRecognizer.ERROR_RECOGNIZER_BUSY:
+                    if (rec != null) { rec.destroy(); rec = null; }   // a stuck recognizer: start fresh next time
+                    voiceError(R.string.online_voice_busy); break;
+                default: voiceError(R.string.online_no_speech);
+            }
+        }
+        @Override public void onResults(Bundle b) {
+            listening = false;
+            String text = first(b);
+            if (text == null) js("NKTvoiceError(" + JSONObject.quote(a.getString(R.string.online_no_speech)) + ")");
+            else js("NKTvoice(" + JSONObject.quote(text) + ")");
+        }
+        @Override public void onPartialResults(Bundle b) {
+            String text = first(b);
+            if (text != null) js("NKTpartial(" + JSONObject.quote(text) + ")");
+        }
+        @Override public void onEvent(int type, Bundle b) { }
+
+        private String first(Bundle b) {
+            List<String> l = b == null ? null : b.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+            if (l == null || l.isEmpty() || l.get(0) == null || l.get(0).trim().isEmpty()) return null;
+            return l.get(0).trim();
+        }
     }
 
     private void js(String code) { ui.post(() -> { if (web != null) web.evaluateJavascript(code, null); }); }
 
     final class Bridge {
         @JavascriptInterface
-        public void listen() {
-            ui.post(() -> {
-                Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-                        .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                        .putExtra(RecognizerIntent.EXTRA_PROMPT, a.getString(R.string.online_prompt))
-                        .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
-                try {
-                    a.startActivityForResult(i, REQ_VOICE);
-                } catch (ActivityNotFoundException e) {
-                    js("NKTvoiceError(" + JSONObject.quote(a.getString(R.string.online_no_voice)) + ")");
-                }
-            });
-        }
+        public void listen() { ui.post(OnlineMusic.this::startListening); }
+
+        @JavascriptInterface
+        public void stopListening() { ui.post(OnlineMusic.this::stopListening); }
 
         @JavascriptInterface
         public void search(String q, int seq) {

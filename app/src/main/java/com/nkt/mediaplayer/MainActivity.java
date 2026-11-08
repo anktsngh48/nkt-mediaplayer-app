@@ -531,6 +531,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(requestCode, permissions, results);
         if (deleter.onRequestPermissionsResult(requestCode, results)) return;
+        if (online != null && online.onRequestPermissionsResult(requestCode, results)) return;
         if (requestCode == REQ_PERMS && hasPermission()) startLoading();
         if (requestCode == REQ_LEGACY_WRITE && HiddenScanner.hasAllFilesAccess(this)) accessGranted();
     }
@@ -1837,7 +1838,6 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (online.onActivityResult(requestCode, resultCode, data)) return;
         deleter.onActivityResult(requestCode, resultCode);
     }
 

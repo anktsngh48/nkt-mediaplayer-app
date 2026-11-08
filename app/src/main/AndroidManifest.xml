@@ -18,6 +18,8 @@
         android:maxSdkVersion="29" />
     <!-- Online links -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Online Music: voice search listens on the page itself -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Keep music playing in the background -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
@@ -42,6 +44,9 @@
     <queries>
         <intent>
             <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
+        </intent>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
         </intent>
     </queries>
 
