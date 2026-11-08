@@ -4,9 +4,11 @@ import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.media.AudioManager;
+import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
 
+import androidx.annotation.Nullable;
 import androidx.media3.common.AudioAttributes;
 import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
@@ -25,178 +27,134 @@ import com.google.common.util.concurrent.ListenableFuture;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Plays music in the background. Media3 shows the notification and the lock-screen
- * controls (play/pause, next, previous, seek) automatically from this session.
- * Also runs the equalizer, karaoke, sleep timer, skip-silence and play counts.
- */
-@androidx.annotation.OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)
+/** Plays music in the background with notification and lock-screen controls. */
 public class PlaybackService extends MediaSessionService {
-
-    private static final long FADE_MS = 10_000;
-
-    /** The running service (same process), for the timer and effects screens. */
     public static PlaybackService instance;
-
     private MediaSession session;
     private ExoPlayer player;
     private final Handler h = new Handler(Looper.getMainLooper());
-
-    private long sleepAt = 0;              // clock time to stop, 0 = off
-    private boolean sleepEndOfSong = false;
+    private long timerEndAt;           // 0 = off
+    private boolean timerEndOfSong;
+    private float savedVolume = 1f;
 
     @Override
     public void onCreate() {
         super.onCreate();
-        // Karaoke runs inside the audio pipeline so it can be switched on while playing.
-        KaraokeProcessor.enabled = Prefs.sp(this).getBoolean("karaoke", false);
-        DefaultRenderersFactory renderers = new DefaultRenderersFactory(this) {
+        instance = this;
+        Context c = this;
+        DefaultRenderersFactory rf = new DefaultRenderersFactory(c) {
             @Override
-            protected AudioSink buildAudioSink(Context c, boolean enableFloatOutput, boolean enableAudioTrackPlaybackParams) {
-                return new DefaultAudioSink.Builder(c)
-                        .setAudioProcessors(new AudioProcessor[]{new KaraokeProcessor()})
-                        .setEnableFloatOutput(enableFloatOutput)
+            protected AudioSink buildAudioSink(Context context, boolean enableFloatOutput, boolean enableAudioTrackPlaybackParams) {
+                return new DefaultAudioSink.Builder(context)
+                        .setEnableFloatOutput(false)
                         .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                        .setAudioProcessors(new AudioProcessor[]{new KaraokeProcessor()})
                         .build();
             }
         };
-        player = new ExoPlayer.Builder(this, renderers)
-                .setAudioAttributes(new AudioAttributes.Builder()
-                        .setUsage(C.USAGE_MEDIA)
-                        .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                        .build(), /* handleAudioFocus= */ true)
-                .setHandleAudioBecomingNoisy(true)          // pause when headphones are unplugged
-                .setWakeMode(C.WAKE_MODE_NETWORK)           // keep playing with the screen off
+        player = new ExoPlayer.Builder(c, rf)
+                .setAudioAttributes(new AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
+                .setHandleAudioBecomingNoisy(true)
+                .setWakeMode(C.WAKE_MODE_NETWORK)
                 .build();
-
-        // A fixed audio session so the equalizer always has something to attach to.
-        try {
-            AudioManager am = getSystemService(AudioManager.class);
-            int sid = am.generateAudioSessionId();
-            if (sid > 0) {
-                player.setAudioSessionId(sid);
-                AudioFx.attach(this, sid);
-            }
-        } catch (Throwable ignored) { }
-
-        player.setSkipSilenceEnabled(Prefs.sp(this).getBoolean("skip_silence", false));
+        AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+        int sid = am.generateAudioSessionId();
+        player.setAudioSessionId(sid);
+        AudioFx.attach(c, sid);
+        player.setSkipSilenceEnabled(Store.bool(c, "skip_silence", false));
         player.addListener(new Player.Listener() {
-            @Override public void onMediaItemTransition(MediaItem item, int reason) {
-                if (item == null) return;
-                Prefs.countPlay(PlaybackService.this, item.mediaId);
-                History.record(PlaybackService.this, Media.info(item, 0));
+            @Override
+            public void onMediaItemTransition(@Nullable MediaItem item, int reason) {
+                MediaInfo m = Media.info(item);
+                if (m != null) {
+                    Store.countPlay(c, m.uri);
+                    Store.addHistory(c, m);
+                }
             }
-            @Override public void onPlayWhenReadyChanged(boolean playWhenReady, int reason) {
-                if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM && sleepEndOfSong) {
-                    sleepEndOfSong = false;
+
+            @Override
+            public void onPlayWhenReadyChanged(boolean playWhenReady, int reason) {
+                if (timerEndOfSong && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM) {
+                    timerEndOfSong = false;
                     player.setPauseAtEndOfMediaItems(false);
                 }
             }
         });
 
-        Intent open = new Intent(this, NowPlayingActivity.class);
-        PendingIntent tap = PendingIntent.getActivity(this, 0, open,
-                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-
-        session = new MediaSession.Builder(this, player)
-                .setSessionActivity(tap)
+        Intent open = new Intent(c, NowPlayingActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        PendingIntent pi = PendingIntent.getActivity(c, 0, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        session = new MediaSession.Builder(c, player)
+                .setSessionActivity(pi)
                 .setCallback(new MediaSession.Callback() {
                     @Override
-                    public ListenableFuture<List<MediaItem>> onAddMediaItems(
-                            MediaSession mediaSession, MediaSession.ControllerInfo controller, List<MediaItem> mediaItems) {
-                        // Items sent from the screens carry their address in requestMetadata.mediaUri
+                    public ListenableFuture<List<MediaItem>> onAddMediaItems(MediaSession s, MediaSession.ControllerInfo ci, List<MediaItem> items) {
                         List<MediaItem> out = new ArrayList<>();
-                        for (MediaItem it : mediaItems) {
-                            if (it.localConfiguration == null && it.requestMetadata.mediaUri != null) {
-                                out.add(it.buildUpon().setUri(it.requestMetadata.mediaUri).build());
-                            } else {
-                                out.add(it);
-                            }
+                        for (MediaItem it : items) {
+                            Uri u = it.requestMetadata.mediaUri;
+                            out.add(it.buildUpon().setUri(u != null ? u : Uri.parse(it.mediaId)).build());
                         }
                         return Futures.immediateFuture(out);
                     }
                 })
                 .build();
-        instance = this;
     }
+
+    @Nullable
+    @Override
+    public MediaSession onGetSession(MediaSession.ControllerInfo controllerInfo) { return session; }
 
     @Override
-    public MediaSession onGetSession(MediaSession.ControllerInfo controllerInfo) {
-        return session;
-    }
-
-    // ── Sleep timer ──────────────────────────────────────────────────────────
-
-    public void setSleepMinutes(int minutes) {
-        cancelSleep();
-        if (minutes <= 0) return;
-        sleepAt = System.currentTimeMillis() + minutes * 60_000L;
-        h.post(sleepTick);
-    }
-
-    public void setSleepEndOfSong() {
-        cancelSleep();
-        sleepEndOfSong = true;
-        player.setPauseAtEndOfMediaItems(true);
-    }
-
-    public void cancelSleep() {
-        h.removeCallbacks(sleepTick);
-        sleepAt = 0;
-        if (sleepEndOfSong) player.setPauseAtEndOfMediaItems(false);
-        sleepEndOfSong = false;
-        player.setVolume(1f);
-    }
-
-    public boolean sleepIsEndOfSong() { return sleepEndOfSong; }
-
-    /** Milliseconds left, or 0 if no timer. */
-    public long sleepLeftMs() { return sleepAt == 0 ? 0 : Math.max(0, sleepAt - System.currentTimeMillis()); }
-
-    private final Runnable sleepTick = new Runnable() {
-        @Override public void run() {
-            if (sleepAt == 0) return;
-            long left = sleepAt - System.currentTimeMillis();
-            if (left <= 0) {
-                player.pause();
-                player.setVolume(1f);
-                sleepAt = 0;
-                return;
-            }
-            // gentle fade-out over the last 10 seconds
-            player.setVolume(left < FADE_MS ? Math.max(0.05f, left / (float) FADE_MS) : 1f);
-            h.postDelayed(this, left < FADE_MS ? 200 : 1000);
+    public void onTaskRemoved(@Nullable Intent rootIntent) {
+        if (player == null || !player.getPlayWhenReady() || player.getMediaItemCount() == 0) {
+            stopSelf();
         }
-    };
-
-    // ── Skip silence ─────────────────────────────────────────────────────────
-
-    public boolean skipSilence() { return player.getSkipSilenceEnabled(); }
-
-    public void setSkipSilence(boolean on) {
-        player.setSkipSilenceEnabled(on);
-        Prefs.sp(this).edit().putBoolean("skip_silence", on).apply();
-    }
-
-    // ── Lifecycle ────────────────────────────────────────────────────────────
-
-    @Override
-    public void onTaskRemoved(Intent rootIntent) {
-        // Swiped away from recent apps: keep playing if music is on, otherwise stop.
-        Player p = session == null ? null : session.getPlayer();
-        if (p == null || !p.getPlayWhenReady() || p.getMediaItemCount() == 0) stopSelf();
     }
 
     @Override
     public void onDestroy() {
-        instance = null;
         h.removeCallbacksAndMessages(null);
         AudioFx.release();
-        if (session != null) {
-            session.getPlayer().release();
-            session.release();
-            session = null;
-        }
+        if (session != null) { session.release(); session = null; }
+        if (player != null) { player.release(); player = null; }
+        instance = null;
         super.onDestroy();
     }
+
+    public void setSkipSilence(boolean on) { if (player != null) player.setSkipSilenceEnabled(on); }
+
+    // ---------------- sleep timer ----------------
+    /** minutes > 0: stop after that long; -1: stop after this song; 0: off. */
+    public void setTimer(int minutes) {
+        h.removeCallbacks(tick);
+        if (player == null) return;
+        player.setVolume(savedVolume);
+        timerEndOfSong = false;
+        player.setPauseAtEndOfMediaItems(false);
+        timerEndAt = 0;
+        if (minutes == -1) {
+            timerEndOfSong = true;
+            player.setPauseAtEndOfMediaItems(true);
+        } else if (minutes > 0) {
+            timerEndAt = System.currentTimeMillis() + minutes * 60_000L;
+            h.post(tick);
+        }
+    }
+
+    public long timerLeftMs() { return timerEndAt == 0 ? 0 : Math.max(0, timerEndAt - System.currentTimeMillis()); }
+    public boolean timerEndOfSong() { return timerEndOfSong; }
+
+    private final Runnable tick = new Runnable() {
+        @Override public void run() {
+            if (player == null || timerEndAt == 0) return;
+            long left = timerEndAt - System.currentTimeMillis();
+            if (left <= 0) {
+                player.pause();
+                player.setVolume(savedVolume);
+                timerEndAt = 0;
+                return;
+            }
+            if (left < 10_000) player.setVolume(Math.max(0.05f, savedVolume * left / 10_000f));
+            h.postDelayed(this, 250);
+        }
+    };
 }

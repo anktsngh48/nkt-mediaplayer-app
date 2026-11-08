@@ -1,115 +1,110 @@
 package com.nkt.mediaplayer;
 
-import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.Matrix;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
-import android.util.AttributeSet;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
 import android.widget.ImageView;
 
-/** Photo view with pinch-to-zoom, double-tap zoom and panning (Google Photos style). */
+import androidx.annotation.NonNull;
+
+/** Image view with pinch zoom (up to 5×), double-tap 2.5×, and panning while zoomed. */
 public class ZoomImageView extends ImageView {
+    private final Matrix base = new Matrix(), m = new Matrix();
+    private float scale = 1f;
+    private final ScaleGestureDetector sgd;
+    private final GestureDetector gd;
+    private float lastX, lastY;
+    public Runnable onTap;
 
-    private static final float MAX = 5f, DOUBLE_TAP = 2.5f;
-
-    private final Matrix base = new Matrix(), user = new Matrix(), draw = new Matrix();
-    private final float[] vals = new float[9];
-    private final ScaleGestureDetector scaler;
-    private final GestureDetector gestures;
-    private Runnable onTap;
-
-    public ZoomImageView(Context c) { this(c, null); }
-
-    public ZoomImageView(Context c, AttributeSet a) {
-        super(c, a);
+    public ZoomImageView(Context c) {
+        super(c);
         setScaleType(ScaleType.MATRIX);
-        scaler = new ScaleGestureDetector(c, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
-            @Override public boolean onScale(ScaleGestureDetector d) {
-                float s = scale(), f = d.getScaleFactor();
-                if (s * f > MAX) f = MAX / s;
-                if (s * f < 1f) f = 1f / s;
-                user.postScale(f, f, d.getFocusX(), d.getFocusY());
+        sgd = new ScaleGestureDetector(c, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            @Override public boolean onScale(@NonNull ScaleGestureDetector d) {
+                float f = d.getScaleFactor(), ns = Math.max(1f, Math.min(5f, scale * f));
+                f = ns / scale;
+                scale = ns;
+                m.postScale(f, f, d.getFocusX(), d.getFocusY());
                 fix();
                 return true;
             }
         });
-        gestures = new GestureDetector(c, new GestureDetector.SimpleOnGestureListener() {
-            @Override public boolean onDown(MotionEvent e) { return true; }
-            @Override public boolean onSingleTapConfirmed(MotionEvent e) { if (onTap != null) onTap.run(); return true; }
-            @Override public boolean onDoubleTap(MotionEvent e) {
-                if (scale() > 1.05f) user.reset();
-                else user.postScale(DOUBLE_TAP, DOUBLE_TAP, e.getX(), e.getY());
-                fix();
+        gd = new GestureDetector(c, new GestureDetector.SimpleOnGestureListener() {
+            @Override public boolean onDoubleTap(@NonNull MotionEvent e) {
+                if (scale > 1.01f) reset(); else { scale = 2.5f; m.postScale(2.5f, 2.5f, e.getX(), e.getY()); fix(); }
                 return true;
             }
-            @Override public boolean onScroll(MotionEvent e1, MotionEvent e2, float dx, float dy) {
-                if (scale() <= 1.01f) return false;
-                user.postTranslate(-dx, -dy);
-                fix();
-                return true;
-            }
+            @Override public boolean onSingleTapConfirmed(@NonNull MotionEvent e) { if (onTap != null) onTap.run(); return true; }
         });
     }
 
-    public void setOnTap(Runnable r) { onTap = r; }
+    public boolean zoomed() { return scale > 1.01f; }
 
-    public boolean isZoomed() { return scale() > 1.01f; }
+    @Override public void setImageDrawable(Drawable d) { super.setImageDrawable(d); post(this::fitBase); }
 
-    public void resetZoom() { user.reset(); fix(); }
-
-    private float scale() { user.getValues(vals); return vals[Matrix.MSCALE_X]; }
-
-    @Override
-    public void setImageDrawable(Drawable d) {
-        super.setImageDrawable(d);
-        if (user == null) return;          // called by the base class before this one is set up
-        user.reset();
-        fitBase();
-    }
-
-    @Override
-    protected void onSizeChanged(int w, int h, int ow, int oh) {
-        super.onSizeChanged(w, h, ow, oh);
-        fitBase();
-    }
+    @Override protected void onSizeChanged(int w, int h, int ow, int oh) { super.onSizeChanged(w, h, ow, oh); fitBase(); }
 
     private void fitBase() {
         Drawable d = getDrawable();
-        if (d == null || getWidth() == 0 || getHeight() == 0) return;
-        base.setRectToRect(new RectF(0, 0, d.getIntrinsicWidth(), d.getIntrinsicHeight()),
-                new RectF(0, 0, getWidth(), getHeight()), Matrix.ScaleToFit.CENTER);
-        fix();
+        if (d == null || getWidth() == 0) return;
+        float dw = d.getIntrinsicWidth(), dh = d.getIntrinsicHeight();
+        if (dw <= 0 || dh <= 0) { setScaleType(ScaleType.CENTER_INSIDE); return; }
+        setScaleType(ScaleType.MATRIX);
+        float s = Math.min(getWidth() / dw, getHeight() / dh);
+        base.reset();
+        base.postScale(s, s);
+        base.postTranslate((getWidth() - dw * s) / 2f, (getHeight() - dh * s) / 2f);
+        reset();
     }
 
-    /** Keep the zoomed photo inside the screen edges. */
+    public void reset() { scale = 1f; m.reset(); apply(); }
+
+    private void apply() {
+        Matrix t = new Matrix(base);
+        t.postConcat(m);
+        setImageMatrix(t);
+    }
+
     private void fix() {
         Drawable d = getDrawable();
         if (d == null) return;
-        draw.set(base);
-        draw.postConcat(user);
+        Matrix t = new Matrix(base);
+        t.postConcat(m);
         RectF r = new RectF(0, 0, d.getIntrinsicWidth(), d.getIntrinsicHeight());
-        draw.mapRect(r);
-        float dx = 0, dy = 0, w = getWidth(), h = getHeight();
-        if (r.width() <= w) dx = (w - r.width()) / 2 - r.left; else if (r.left > 0) dx = -r.left; else if (r.right < w) dx = w - r.right;
-        if (r.height() <= h) dy = (h - r.height()) / 2 - r.top; else if (r.top > 0) dy = -r.top; else if (r.bottom < h) dy = h - r.bottom;
-        user.postTranslate(dx, dy);
-        draw.set(base);
-        draw.postConcat(user);
-        setImageMatrix(draw);
+        t.mapRect(r);
+        float dx = 0, dy = 0;
+        if (r.width() <= getWidth()) dx = (getWidth() - r.width()) / 2f - r.left;
+        else if (r.left > 0) dx = -r.left;
+        else if (r.right < getWidth()) dx = getWidth() - r.right;
+        if (r.height() <= getHeight()) dy = (getHeight() - r.height()) / 2f - r.top;
+        else if (r.top > 0) dy = -r.top;
+        else if (r.bottom < getHeight()) dy = getHeight() - r.bottom;
+        m.postTranslate(dx, dy);
+        apply();
     }
 
-    @SuppressLint("ClickableViewAccessibility")
     @Override
-    public boolean onTouchEvent(MotionEvent ev) {
-        scaler.onTouchEvent(ev);
-        gestures.onTouchEvent(ev);
-        // while zoomed (or pinching), keep the swipe-to-next-photo list from taking the touch
-        if (getParent() != null)
-            getParent().requestDisallowInterceptTouchEvent(isZoomed() || ev.getPointerCount() > 1);
+    public boolean onTouchEvent(MotionEvent e) {
+        sgd.onTouchEvent(e);
+        gd.onTouchEvent(e);
+        if (e.getPointerCount() > 1 || zoomed()) getParent().requestDisallowInterceptTouchEvent(true);
+        switch (e.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN: lastX = e.getX(); lastY = e.getY(); break;
+            case MotionEvent.ACTION_MOVE:
+                if (zoomed() && !sgd.isInProgress() && e.getPointerCount() == 1) {
+                    m.postTranslate(e.getX() - lastX, e.getY() - lastY);
+                    fix();
+                }
+                lastX = e.getX(); lastY = e.getY();
+                break;
+            case MotionEvent.ACTION_UP: case MotionEvent.ACTION_CANCEL:
+                if (!zoomed()) getParent().requestDisallowInterceptTouchEvent(false);
+                break;
+        }
         return true;
     }
 }

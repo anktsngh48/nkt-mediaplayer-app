@@ -1,1229 +1,1335 @@
 package com.nkt.mediaplayer;
 
-import android.Manifest;
 import android.app.Activity;
-import android.app.PendingIntent;
+import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.Intent;
-import android.content.pm.PackageManager;
-import android.content.res.ColorStateList;
-import android.content.res.Configuration;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
-import android.net.Uri;
-import android.os.Build;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
-import android.provider.MediaStore;
+import android.os.Environment;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.TextWatcher;
-import android.text.format.DateUtils;
+import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
-import androidx.media3.common.MediaMetadata;
+import androidx.annotation.NonNull;
+import androidx.media3.common.MediaItem;
 import androidx.media3.common.Player;
 import androidx.media3.session.MediaController;
 import androidx.recyclerview.widget.GridLayoutManager;
-import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
-
-import com.google.common.util.concurrent.ListenableFuture;
 
 import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.Date;
-import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
-import java.util.TreeMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
-/** Library: Songs (list or squares) · Videos (list or grid) · Gallery · Folders · Playlists · Settings. */
-public class MainActivity extends Activity implements RowAdapter.Listener, Selection.Changed {
+public class MainActivity extends Activity {
+    static final String[] PAGES = {"Songs", "Videos", "Gallery", "Folders", "Playlists", "History"};
+    static final int SONGS = 0, VIDEOS = 1, GALLERY = 2, FOLDERS = 3, PLAYLISTS = 4, HISTORY = 5;
 
-    private static final int TAB_SONGS = 0, TAB_VIDEOS = 1, TAB_GALLERY = 2, TAB_FOLDERS = 3, TAB_PLAYLISTS = 4, TAB_SETTINGS = 5;
-    private static final int REQ_PERMS = 11, REQ_LEGACY_WRITE = 12, REQ_DELETE = 13, REQ_DELETE_PERM = 14;
-    private static final int[] GRID_STEPS = {2, 3, 4, 5, 7};
-    private static final String ALL_ALBUMS = "All";
-    private static final String[] TAB_SORT_KEY = {"songs", "videos", "gallery", "folders", "", ""};
-    private static final String[] TAB_SORT_DEF = {"name", "new", "new", "name", "", ""};
-
-    private final Handler ui = new Handler(Looper.getMainLooper());
-    private final List<MediaInfo> audio = new ArrayList<>();
-    private final List<MediaInfo> video = new ArrayList<>();
-    private final List<MediaInfo> images = new ArrayList<>();
-
+    private int page;
+    private FrameLayout root, listArea, drawer;
+    private LinearLayout block, mini, galleryBar;
     private RecyclerView list;
-    private RowAdapter rows;
-    private GalleryAdapter gallery;
-    private VideoGridAdapter videoGrid;
-    private SquareAdapter squares;
-    private AlbumAdapter albums;
-    private Selection sel;
-    private FastScroller scroller;
-    private TextView[] tabs;
-    private TextView empty, zoomPop, gridSize, tabHint, sortBtn, viewList, viewGrid, segAll, segPhotos, segVideos, selCount;
-    private View permBox, mini, tabBar, viewSwitch, galleryBar, collapse, selectBar;
+    private GridLayoutManager glm;
+    private Adapter adapter;
+    private TextView pageLabel, count, sortChip, miniTitle, miniSub;
     private ImageView miniArt;
-    private TextView miniTitle, miniSub;
     private ImageButton miniPlay;
     private EditText search;
-
-    private int tab = TAB_SONGS;
-    private String openFolder, openPlaylist;
-    private boolean openHistory = false;
-    private Groups.Group openSquare;
-    private String filter = "";
-    private String album = ALL_ALBUMS;
-    private int galleryKind = 0;              // 0 all, 1 photos, 2 videos
-    private boolean loaded = false, loading = false;
-    private String pendingAccess = null;      // "hidden" / "thumbs" waiting for All files access
-    private float pinchAcc = 1f;
-    private List<MediaInfo> pendingDelete;
-
-    private ListenableFuture<MediaController> future;
-    private MediaController controller;
-    private Runnable pending;
+    private LinearLayout viewSeg;
+    private String query = "";
+    private int galleryFilter; // 0 all, 1 photos, 2 videos
+    private String galleryAlbum;
+    private Group openGroup;
+    private String openPlaylist;
+    private boolean openHistory;
+    private File dir; // folders page, null = storage list
+    private final ExecutorService bg = Executors.newSingleThreadExecutor();
+    private final List<Row> rows = new ArrayList<>();
+    private String nowUri = "";
+    private int spanCount = 1;
+    private final Runnable onLibrary = this::rebuild;
 
     @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
-        Ui.padForSystemBars(findViewById(R.id.root));
-        Prefs.migrateFavourites(this);
-
-        TextView title = findViewById(R.id.header_title);
-        title.setTypeface(Ui.orbitronBlack(this));
-        Ui.gradient(title);
-
-        tabs = new TextView[]{findViewById(R.id.tab_songs), findViewById(R.id.tab_videos), findViewById(R.id.tab_gallery),
-                findViewById(R.id.tab_folders), findViewById(R.id.tab_playlists), findViewById(R.id.tab_settings)};
-        for (int i = 0; i < tabs.length; i++) {
-            final int t = i;
-            tabs[i].setTypeface(Ui.orbitron(this));
-            tabs[i].setOnClickListener(v -> setTab(t));
-        }
-
-        sel = new Selection(this);
-        list = findViewById(R.id.list);
-        rows = new RowAdapter(this, sel);
-        GalleryAdapter.Listener gridListener = new GalleryAdapter.Listener() {
-            @Override public void onOpen(MediaInfo m, List<MediaInfo> all) { openGridItem(m, all); }
-            @Override public void onLong(MediaInfo m) { if (sel.active()) sel.toggle(m); else sel.start(m); }
-        };
-        gallery = new GalleryAdapter(gridListener, sel);
-        videoGrid = new VideoGridAdapter(gridListener, sel);
-        squares = new SquareAdapter(g -> { openSquare = g; showHeader(); refresh(); });
-        albums = new AlbumAdapter(a -> { album = a.name; refresh(); });
-        RecyclerView albumStrip = findViewById(R.id.albums);
-        albumStrip.setLayoutManager(new LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false));
-        albumStrip.setAdapter(albums);
-        setupPinch();
-
-        empty = findViewById(R.id.empty);
-        zoomPop = findViewById(R.id.zoom_pop);
-        zoomPop.setTypeface(Ui.orbitron(this));
-        gridSize = findViewById(R.id.grid_size);
-        collapse = findViewById(R.id.collapse);
-        tabBar = findViewById(R.id.tab_bar);
-        tabHint = findViewById(R.id.tab_hint);
-        sortBtn = findViewById(R.id.btn_sort);
-        sortBtn.setTypeface(Ui.orbitron(this));
-        sortBtn.setOnClickListener(v -> chooseSort());
-        viewSwitch = findViewById(R.id.view_switch);
-        galleryBar = findViewById(R.id.gallery_bar);
-        viewList = findViewById(R.id.view_list);
-        viewGrid = findViewById(R.id.view_grid);
-        segAll = findViewById(R.id.seg_all);
-        segPhotos = findViewById(R.id.seg_photos);
-        segVideos = findViewById(R.id.seg_videos);
-        for (TextView t : new TextView[]{viewList, viewGrid, segAll, segPhotos, segVideos}) t.setTypeface(Ui.orbitron(this));
-        viewList.setOnClickListener(v -> setGridView(false));
-        viewGrid.setOnClickListener(v -> setGridView(true));
-        segAll.setOnClickListener(v -> { galleryKind = 0; refresh(); });
-        segPhotos.setOnClickListener(v -> { galleryKind = 1; refresh(); });
-        segVideos.setOnClickListener(v -> { galleryKind = 2; refresh(); });
-
-        // multi-select bar
-        selectBar = findViewById(R.id.select_bar);
-        selCount = findViewById(R.id.sel_count);
-        findViewById(R.id.sel_close).setOnClickListener(v -> sel.clear());
-        findViewById(R.id.sel_all).setOnClickListener(v -> sel.addAll(visibleMedia()));
-        findViewById(R.id.sel_share).setOnClickListener(v -> Share.sendMany(this, sel.items()));
-        findViewById(R.id.sel_playlist).setOnClickListener(v -> Dialogs.addToPlaylist(this, sel.items(), sel::clear));
-        findViewById(R.id.sel_delete).setOnClickListener(v -> deleteItems(sel.items()));
-
-        // side scroll bar
-        scroller = findViewById(R.id.fast_scroller);
-        scroller.attach(list, findViewById(R.id.fs_bubble), this::labelFor);
-
-        setupCollapsingHeader();
-
-        permBox = findViewById(R.id.perm_box);
-        ((TextView) findViewById(R.id.perm_btn)).setTypeface(Ui.orbitron(this));
-        findViewById(R.id.perm_btn).setOnClickListener(v -> askPermission());
-
-        search = findViewById(R.id.search);
-        search.addTextChangedListener(new TextWatcher() {
-            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) { }
-            @Override public void onTextChanged(CharSequence s, int a, int b, int c) { }
-            @Override public void afterTextChanged(Editable s) {
-                filter = s.toString().trim().toLowerCase(Locale.ROOT);
-                refresh();
-            }
-        });
-
-        findViewById(R.id.btn_link).setOnClickListener(v -> openLinkDialog());
-        findViewById(R.id.btn_share_pc).setOnClickListener(v -> startActivity(new Intent(this, NktShareActivity.class)));
-
-        mini = findViewById(R.id.mini);
-        miniArt = findViewById(R.id.mini_art);
-        miniArt.setClipToOutline(true);
-        miniTitle = findViewById(R.id.mini_title);
-        miniSub = findViewById(R.id.mini_sub);
-        miniPlay = findViewById(R.id.mini_play);
-        miniPlay.setOnClickListener(v -> {
-            if (controller == null) return;
-            if (controller.isPlaying()) controller.pause(); else controller.play();
-        });
-        findViewById(R.id.mini_next).setOnClickListener(v -> { if (controller != null) controller.seekToNextMediaItem(); });
-        findViewById(R.id.mini_close).setOnClickListener(v -> {
-            if (controller == null) return;
-            controller.stop();
-            controller.clearMediaItems();
-            mini.setVisibility(View.GONE);
-        });
-        mini.setOnClickListener(v -> startActivity(new Intent(this, NowPlayingActivity.class)));
-
-        setTab(TAB_SONGS);
-        if (hasPermission()) load(); else showPermissionBox();
-    }
-
-    // ── Search bar & folder strip slide away while scrolling ─────────────────
-
-    private void setupCollapsingHeader() {
-        collapse.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
-            int h = collapse.getHeight();
-            if (list.getPaddingTop() != h) {
-                list.setPadding(list.getPaddingLeft(), h, list.getPaddingRight(), list.getPaddingBottom());
-            }
-            scroller.setTopInset(h + collapse.getTranslationY());
-        });
-        list.addOnScrollListener(new RecyclerView.OnScrollListener() {
-            @Override public void onScrolled(RecyclerView rv, int dx, int dy) {
-                float h = collapse.getHeight();
-                float t = collapse.getTranslationY() - dy;
-                if (!rv.canScrollVertically(-1)) t = 0;              // at the very top: always show
-                t = Math.max(-h, Math.min(0, t));
-                collapse.setTranslationY(t);
-                scroller.setTopInset(h + t);
-            }
-        });
-    }
-
-    private void showHeader() {
-        collapse.animate().cancel();
-        collapse.setTranslationY(0);
-        scroller.setTopInset(collapse.getHeight());
-        list.scrollToPosition(0);
-    }
-
-    // ── Permission & loading ─────────────────────────────────────────────────
-
-    private String[] neededPermissions() {
-        if (Build.VERSION.SDK_INT >= 33)
-            return new String[]{Manifest.permission.READ_MEDIA_AUDIO, Manifest.permission.READ_MEDIA_VIDEO,
-                    Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.POST_NOTIFICATIONS};
-        return new String[]{Manifest.permission.READ_EXTERNAL_STORAGE};
-    }
-
-    private boolean hasPermission() {
-        for (String p : neededPermissions())
-            if (!p.equals(Manifest.permission.POST_NOTIFICATIONS) && checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED) return true;
-        return false;
-    }
-
-    private void askPermission() { requestPermissions(neededPermissions(), REQ_PERMS); }
-
-    private void showPermissionBox() {
-        permBox.setVisibility(View.VISIBLE);
-        empty.setVisibility(View.GONE);
+    protected void onCreate(Bundle b) {
+        super.onCreate(b);
+        page = Store.num(this, "start_page", SONGS);
+        if (page < 0 || page >= PAGES.length) page = SONGS;
+        buildUi();
+        setContentView(root);
+        Ui.edgeToEdge(this, root);
+        Library.listen(onLibrary);
+        if (!Perms.media(this)) Perms.askMedia(this);
+        Library.start(this);
+        rebuild();
     }
 
     @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
-        super.onRequestPermissionsResult(requestCode, permissions, results);
-        if (requestCode == REQ_PERMS && hasPermission()) load();
-        if (requestCode == REQ_LEGACY_WRITE && HiddenScanner.hasAllFilesAccess(this)) accessGranted();
-        if (requestCode == REQ_DELETE_PERM && pendingDelete != null) {
-            if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) confirmAndDelete(pendingDelete);
-            else Ui.toast(this, R.string.delete_failed);
-        }
+    protected void onStart() {
+        super.onStart();
+        if (Library.loaded && Perms.media(this)) Library.refresh(this);
+        Media.get(this, c -> { c.addListener(playerListener); updateMini(); });
     }
 
-    private void load() {
-        if (loading) return;
-        loading = true;
-        permBox.setVisibility(View.GONE);
-        if (!loaded) { empty.setText(R.string.loading); empty.setVisibility(View.VISIBLE); }
-        final boolean access = HiddenScanner.hasAllFilesAccess(this);
-        final boolean withHidden = Prefs.showHidden(this) && access;
-        final boolean withThumbs = Prefs.showThumbnails(this) && access;
-        new Thread(() -> {
-            List<MediaInfo> a = MediaLibrary.audio(this);
-            List<MediaInfo> v = MediaLibrary.video(this);
-            List<MediaInfo> im = MediaLibrary.images(this);
-            // .thumbnails folders have their own switch, even if the phone's library lists them
-            if (!withThumbs) {
-                dropThumbs(a); dropThumbs(v); dropThumbs(im);
-            }
-            if (withHidden || withThumbs) {
-                HiddenScanner.Result h = HiddenScanner.scan(withHidden, withThumbs);
-                addMissing(a, h.audio);
-                addMissing(v, h.video);
-                addMissing(im, h.images);
-            }
-            ui.post(() -> {
-                audio.clear(); audio.addAll(a);
-                video.clear(); video.addAll(v);
-                images.clear(); images.addAll(im);
-                loaded = true;
-                loading = false;
-                refresh();
-            });
-        }).start();
-    }
-
-    private static void dropThumbs(List<MediaInfo> l) {
-        for (int i = l.size() - 1; i >= 0; i--) if (HiddenScanner.isThumbnailPath(l.get(i).path)) l.remove(i);
-    }
-
-    private static void addMissing(List<MediaInfo> into, List<MediaInfo> extra) {
-        Set<String> paths = new HashSet<>();
-        for (MediaInfo m : into) if (!m.path.isEmpty()) paths.add(m.path);
-        for (MediaInfo m : extra) if (!paths.contains(m.path)) into.add(m);
+    @Override
+    protected void onStop() {
+        super.onStop();
+        MediaController c = Media.now();
+        if (c != null) c.removeListener(playerListener);
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        if (pendingAccess != null && HiddenScanner.hasAllFilesAccess(this)) { accessGranted(); return; }
-        pendingAccess = null;
-        if (!loaded && hasPermission()) load();
-        else if (tab == TAB_PLAYLISTS || tab == TAB_SETTINGS || (tab == TAB_SONGS && Prefs.squares(this))) refresh();
-    }
-
-    // ── Settings switches that need "All files access" ───────────────────────
-
-    private void needAccessFor(String what) {
-        Dialogs.builder(this)
-                .setTitle(R.string.hidden_title)
-                .setMessage(R.string.hidden_explain)
-                .setPositiveButton(R.string.allow, (d, w) -> {
-                    pendingAccess = what;
-                    if (Build.VERSION.SDK_INT >= 30) {
-                        try { startActivity(HiddenScanner.allFilesAccessIntent(this)); } catch (Exception ignored) { }
-                    } else {
-                        requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQ_LEGACY_WRITE);
-                    }
-                })
-                .setNegativeButton(R.string.cancel, (d, w) -> refresh())
-                .setOnCancelListener(d -> refresh())
-                .show();
-    }
-
-    private void accessGranted() {
-        if ("hidden".equals(pendingAccess)) Prefs.setShowHidden(this, true);
-        if ("thumbs".equals(pendingAccess)) Prefs.setShowThumbnails(this, true);
-        pendingAccess = null;
-        Ui.toast(this, R.string.hidden_scanning);
-        load();
-        refresh();
+        rebuild();
     }
 
     @Override
-    public void onToggle(RowAdapter.Row r, boolean on) {
-        switch (r.key) {
-            case "hidden":
-                if (!on) { Prefs.setShowHidden(this, false); load(); }
-                else if (HiddenScanner.hasAllFilesAccess(this)) { Prefs.setShowHidden(this, true); Ui.toast(this, R.string.hidden_scanning); load(); }
-                else needAccessFor("hidden");
-                break;
-            case "thumbs":
-                if (!on) { Prefs.setShowThumbnails(this, false); load(); }
-                else if (HiddenScanner.hasAllFilesAccess(this)) { Prefs.setShowThumbnails(this, true); Ui.toast(this, R.string.hidden_scanning); load(); }
-                else needAccessFor("thumbs");
-                break;
-            case "history":
-                History.setEnabled(this, on);
-                refresh();
-                break;
-            case "autonext":
-                Prefs.sp(this).edit().putBoolean("video_autonext", on).apply();
-                break;
-        }
+    protected void onDestroy() {
+        Library.unlisten(onLibrary);
+        super.onDestroy();
     }
 
-    // ── Tabs & views ─────────────────────────────────────────────────────────
-
-    private void setTab(int t) {
-        if (sel.active()) sel.clear();
-        tab = t;
-        openFolder = null;
-        openPlaylist = null;
-        openSquare = null;
-        openHistory = false;
-        for (int i = 0; i < tabs.length; i++) {
-            tabs[i].setSelected(i == t);
-            tabs[i].setTextColor(getColor(i == t ? R.color.accent : R.color.muted));
-        }
-        search.setHint(t == TAB_GALLERY ? R.string.search_gallery_hint : t == TAB_SETTINGS ? R.string.search_settings_hint : R.string.search_hint);
-        refresh();
-        showHeader();
+    @Override
+    public void onRequestPermissionsResult(int req, @NonNull String[] p, @NonNull int[] r) {
+        super.onRequestPermissionsResult(req, p, r);
+        Library.refresh(this);
+        rebuild();
     }
 
-    private void setGridView(boolean grid) {
-        if (tab == TAB_SONGS) { Prefs.setSquares(this, grid); openSquare = null; }
-        else if (tab == TAB_VIDEOS) Prefs.setVideosGrid(this, grid);
-        refresh();
-        showHeader();
+    @Override
+    protected void onActivityResult(int req, int res, Intent data) {
+        super.onActivityResult(req, res, data);
+        Actions.onResult(this, req, res);
+        rebuild();
     }
 
-    private boolean matches(MediaInfo m) {
-        if (filter.isEmpty()) return true;
-        return m.title.toLowerCase(Locale.ROOT).contains(filter)
-                || m.artist.toLowerCase(Locale.ROOT).contains(filter)
-                || m.album.toLowerCase(Locale.ROOT).contains(filter)
-                || m.folder.toLowerCase(Locale.ROOT).contains(filter)
-                || m.fileName.toLowerCase(Locale.ROOT).contains(filter);
-    }
+    private final Player.Listener playerListener = new Player.Listener() {
+        @Override public void onEvents(@NonNull Player player, @NonNull Player.Events events) { updateMini(); }
+    };
 
-    private boolean matchesText(String s) { return filter.isEmpty() || s.toLowerCase(Locale.ROOT).contains(filter); }
+    // ------------------------------------------------------------------ UI
+    private void buildUi() {
+        root = new FrameLayout(this);
+        root.setBackgroundColor(Ui.BG);
+        LinearLayout column = Ui.col(this);
+        root.addView(column, new FrameLayout.LayoutParams(Ui.MATCH, Ui.MATCH));
 
-    private void useList() {
-        if (list.getAdapter() != rows) {
-            list.setLayoutManager(new LinearLayoutManager(this));
-            list.setAdapter(rows);
-        }
-    }
+        listArea = new FrameLayout(this);
+        column.addView(listArea, Ui.lpw(Ui.MATCH, 0, 1));
 
-    private int gridCols(int portrait) {
-        boolean land = getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE;
-        return land ? portrait + 1 : portrait;
-    }
-
-    private void setSeg(TextView t, boolean on) {
-        t.setSelected(on);
-        t.setTextColor(getColor(on ? R.color.accent : R.color.muted));
-        t.setCompoundDrawableTintList(ColorStateList.valueOf(getColor(on ? R.color.accent : R.color.muted)));
-    }
-
-    private void updateBars() {
-        boolean inside = openFolder != null || openPlaylist != null || openSquare != null || openHistory;
-        boolean sortable = !TAB_SORT_KEY[tab].isEmpty() && !(tab == TAB_SONGS && Prefs.squares(this) && openSquare == null);
-        tabBar.setVisibility(tab == TAB_SETTINGS || tab == TAB_PLAYLISTS ? View.GONE : View.VISIBLE);
-        viewSwitch.setVisibility((tab == TAB_SONGS || tab == TAB_VIDEOS) && !inside ? View.VISIBLE : View.GONE);
-        sortBtn.setVisibility(sortable ? View.VISIBLE : View.GONE);
-        if (sortable) sortBtn.setText(sortShortLabel(currentSort()));
-        galleryBar.setVisibility(tab == TAB_GALLERY ? View.VISIBLE : View.GONE);
-        boolean grid = tab == TAB_SONGS ? Prefs.squares(this) : Prefs.videosGrid(this);
-        viewGrid.setText(tab == TAB_SONGS ? R.string.view_squares : R.string.view_grid);
-        setSeg(viewList, !grid);
-        setSeg(viewGrid, grid);
-    }
-
-    private void refresh() {
-        updateBars();
-        if (tab == TAB_GALLERY) { refreshGallery(); return; }
-        if (tab == TAB_SONGS && Prefs.squares(this) && openSquare == null) { refreshSquares(); return; }
-        if (tab == TAB_VIDEOS && Prefs.videosGrid(this)) { refreshVideoGrid(); return; }
-
-        useList();
-        List<RowAdapter.Row> out = new ArrayList<>();
-        int emptyText = R.string.nothing_here;
-
-        if (tab == TAB_SONGS) {
-            if (openSquare != null) {
-                out.add(new RowAdapter.Row(RowAdapter.BACK, openSquare.name,
-                        getResources().getQuantityString(R.plurals.songs, openSquare.songs.size(), openSquare.songs.size())
-                                + " · " + Ui.time(openSquare.totalMs()) + " · " + getString(R.string.all_squares), null, null, R.drawable.ic_back));
-                out.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.play_all), null, null, "sq_play", R.drawable.ic_play));
-                out.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.shuffle_all), null, null, "sq_shuffle", R.drawable.ic_shuffle));
-                out.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.save_as_playlist), null, null, "sq_save", R.drawable.ic_playlist_add));
-                for (MediaInfo m : openSquare.songs) if (matches(m)) out.add(RowAdapter.Row.media(m));
-            } else {
-                for (MediaInfo m : sorted(audio, currentSort())) if (matches(m)) out.add(RowAdapter.Row.media(m));
-                tabHint.setText(getResources().getQuantityString(R.plurals.songs, audio.size(), audio.size()));
+        list = new RecyclerView(this);
+        list.setClipToPadding(false);
+        glm = new GridLayoutManager(this, 1);
+        glm.setSpanSizeLookup(new GridLayoutManager.SpanSizeLookup() {
+            @Override public int getSpanSize(int pos) {
+                if (pos < 0 || pos >= rows.size()) return spanCount;
+                Row r = rows.get(pos);
+                return r.type == Row.SQUARE || r.type == Row.WIDE || r.type == Row.GROUP ? 1 : spanCount;
             }
-            emptyText = R.string.no_songs;
-        } else if (tab == TAB_VIDEOS) {
-            for (MediaInfo m : sorted(video, currentSort())) if (matches(m)) out.add(RowAdapter.Row.media(m));
-            tabHint.setText(getResources().getQuantityString(R.plurals.videos, video.size(), video.size()));
-            emptyText = R.string.no_videos;
-        } else if (tab == TAB_FOLDERS) {
-            buildFolders(out);
-            emptyText = R.string.no_folders;
-        } else if (tab == TAB_PLAYLISTS) {
-            emptyText = buildPlaylists(out);
-        } else {
-            buildSettings(out);
-        }
+        });
+        list.setLayoutManager(glm);
+        adapter = new Adapter();
+        list.setAdapter(adapter);
+        list.setPadding(Ui.dp(this, 12), 0, Ui.dp(this, 12), Ui.dp(this, 16));
+        listArea.addView(list, new FrameLayout.LayoutParams(Ui.MATCH, Ui.MATCH));
 
-        rows.setRows(out);
-        if (permBox.getVisibility() == View.VISIBLE) return;
-        boolean noMedia = true;
-        for (RowAdapter.Row r : out)
-            if (r.type == RowAdapter.MEDIA || r.type == RowAdapter.FOLDER || r.type == RowAdapter.PLAYLIST) { noMedia = false; break; }
-        boolean show = loaded && noMedia && tab != TAB_SETTINGS && !(tab == TAB_PLAYLISTS && openPlaylist == null && !openHistory);
-        empty.setText(filter.isEmpty() ? emptyText : R.string.no_matches);
-        empty.setVisibility(show ? View.VISIBLE : View.GONE);
-    }
-
-    private void buildFolders(List<RowAdapter.Row> out) {
-        if (openFolder == null) {
-            Map<String, int[]> folders = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
-            Map<String, Boolean> hiddenFolder = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
-            for (MediaInfo m : audio) { count(folders, m.folder, 0); if (m.hidden) hiddenFolder.put(m.folder, true); }
-            for (MediaInfo m : video) { count(folders, m.folder, 1); if (m.hidden) hiddenFolder.put(m.folder, true); }
-            List<Map.Entry<String, int[]>> entries = new ArrayList<>(folders.entrySet());
-            String s = currentSort();
-            if ("name_desc".equals(s)) Collections.reverse(entries);
-            else if ("most".equals(s)) Collections.sort(entries, (a, b) -> Integer.compare(b.getValue()[0] + b.getValue()[1], a.getValue()[0] + a.getValue()[1]));
-            for (Map.Entry<String, int[]> e : entries) {
-                if (!matchesText(e.getKey())) continue;
-                boolean hid = hiddenFolder.containsKey(e.getKey());
-                out.add(new RowAdapter.Row(RowAdapter.FOLDER, e.getKey(),
-                        (hid ? getString(R.string.hidden_prefix) : "") + folderCount(e.getValue()), null, e.getKey(),
-                        hid ? R.drawable.ic_eye_off : R.drawable.ic_folder));
+        // Everything on top collapses while scrolling so only files remain.
+        block = Ui.col(this);
+        block.setBackgroundColor(Ui.BG);
+        block.setPadding(Ui.dp(this, 12), 0, Ui.dp(this, 12), Ui.dp(this, 6));
+        listArea.addView(block, new FrameLayout.LayoutParams(Ui.MATCH, Ui.WRAP, Gravity.TOP));
+        block.addOnLayoutChangeListener((v, l, t, r, bt, ol, ot, or, ob) -> {
+            int h = bt - t;
+            if (list.getPaddingTop() != h) list.setPadding(list.getPaddingLeft(), h, list.getPaddingRight(), list.getPaddingBottom());
+        });
+        list.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override public void onScrolled(@NonNull RecyclerView rv, int dx, int dy) {
+                float ty = block.getTranslationY() - dy;
+                ty = Math.max(-block.getHeight(), Math.min(0, ty));
+                if (!rv.canScrollVertically(-1)) ty = 0;
+                block.setTranslationY(ty);
             }
-            tabHint.setText(getResources().getQuantityString(R.plurals.folders, entries.size(), entries.size()));
-        } else {
-            out.add(new RowAdapter.Row(RowAdapter.BACK, openFolder, getString(R.string.all_folders), null, null, R.drawable.ic_back));
-            List<MediaInfo> inside = new ArrayList<>();
-            for (MediaInfo m : audio) if (m.folder.equals(openFolder) && matches(m)) inside.add(m);
-            for (MediaInfo m : video) if (m.folder.equals(openFolder) && matches(m)) inside.add(m);
-            for (MediaInfo m : sorted(inside, Prefs.sort(this, "songs", "name"))) out.add(RowAdapter.Row.media(m));
-            tabHint.setText(openFolder);
-        }
-    }
+        });
 
-    private int buildPlaylists(List<RowAdapter.Row> out) {
-        if (openHistory) {
-            out.add(new RowAdapter.Row(RowAdapter.BACK, getString(R.string.history), getString(R.string.all_playlists), null, null, R.drawable.ic_back));
-            List<History.Entry> h = History.all(this);
-            if (!h.isEmpty())
-                out.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.clear_history), null, null, "clear_history", R.drawable.ic_delete));
-            for (History.Entry e : h)
-                if (matches(e.media)) out.add(RowAdapter.Row.media(e.media, when(e.when) + " · " + kind(e.media) + subOf(e.media)));
-            return History.enabled(this) ? R.string.history_empty : R.string.history_off;
-        }
-        if (openPlaylist == null) {
-            out.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.history),
-                    History.enabled(this) ? getResources().getQuantityString(R.plurals.items, History.count(this), History.count(this))
-                            : getString(R.string.history_off_short), null, "history", R.drawable.ic_history));
-            out.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.new_playlist), null, null, "new", R.drawable.ic_add));
-            List<String> names = Playlists.names(this);
-            List<String> ordered = new ArrayList<>();
-            for (String f : new String[]{Prefs.FAV_SONGS, Prefs.FAV_VIDEOS, Prefs.FAV_PHOTOS}) if (names.contains(f)) ordered.add(f);
-            for (String n : names) if (!ordered.contains(n)) ordered.add(n);
-            for (String name : ordered) {
-                if (!matchesText(name)) continue;
-                int n = Playlists.count(this, name);
-                out.add(new RowAdapter.Row(RowAdapter.PLAYLIST, name,
-                        getResources().getQuantityString(R.plurals.items, n, n), null, name,
-                        Prefs.isFavouriteList(name) ? R.drawable.ic_heart_filled : R.drawable.ic_playlist));
-            }
-            return R.string.nothing_here;
-        }
-        List<MediaInfo> items = Playlists.items(this, openPlaylist);
-        out.add(new RowAdapter.Row(RowAdapter.BACK, openPlaylist, getString(R.string.all_playlists), null, null, R.drawable.ic_back));
-        if (!items.isEmpty())
-            out.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.play_all), null, null, "playall", R.drawable.ic_play));
-        for (MediaInfo m : items) if (matches(m)) out.add(RowAdapter.Row.media(m));
-        return R.string.empty_playlist;
-    }
+        LinearLayout header = Ui.row(this);
+        ImageButton menu = Ui.roundBtn(this, "menu", 44, Ui.TEXT, true);
+        menu.setOnClickListener(v -> openDrawer());
+        header.addView(menu);
+        LinearLayout titles = Ui.col(this);
+        titles.setPadding(Ui.dp(this, 10), 0, 0, 0);
+        TextView app = Ui.label(this, "NKT MP", 19, Ui.ACCENT, 0.06f);
+        app.setTypeface(Ui.orbBlack(this));
+        Ui.gradientText(app);
+        titles.addView(app);
+        pageLabel = Ui.label(this, "", 10, Ui.ACCENT, 0.18f);
+        titles.addView(pageLabel);
+        header.addView(titles, Ui.lpw(0, Ui.WRAP, 1));
+        ImageButton share = Ui.roundBtn(this, "pc", 44, Ui.ACCENT, true);
+        share.setOnClickListener(v -> startActivity(new Intent(this, NktShareActivity.class)));
+        ImageButton link = Ui.roundBtn(this, "link", 44, Ui.ACCENT, true);
+        link.setOnClickListener(v -> LinkDialog.show(this));
+        header.addView(share);
+        header.addView(Ui.space(this, 8, 1));
+        header.addView(link);
+        block.addView(header);
 
-    private void buildSettings(List<RowAdapter.Row> out) {
-        List<RowAdapter.Row> all = new ArrayList<>();
-        boolean access = HiddenScanner.hasAllFilesAccess(this);
-        all.add(RowAdapter.Row.header(getString(R.string.set_library)));
-        all.add(RowAdapter.Row.toggle(getString(R.string.show_hidden), getString(R.string.show_hidden_sub), "hidden",
-                R.drawable.ic_eye_off, Prefs.showHidden(this) && access));
-        all.add(RowAdapter.Row.toggle(getString(R.string.show_thumbs), getString(R.string.show_thumbs_sub), "thumbs",
-                R.drawable.ic_image, Prefs.showThumbnails(this) && access));
-        all.add(RowAdapter.Row.header(getString(R.string.set_playback)));
-        all.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.eq_and_karaoke), getString(R.string.eq_and_karaoke_sub), null, "eq", R.drawable.ic_eq));
-        all.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.video_rotation),
-                getResources().getStringArray(R.array.orientations)[Prefs.videoOrientation(this)], null, "orient", R.drawable.ic_screen_rotation));
-        all.add(RowAdapter.Row.toggle(getString(R.string.autonext), getString(R.string.autonext_sub), "autonext",
-                R.drawable.ic_next, Prefs.sp(this).getBoolean("video_autonext", true)));
-        all.add(RowAdapter.Row.header(getString(R.string.set_history)));
-        all.add(RowAdapter.Row.toggle(getString(R.string.keep_history), getString(R.string.keep_history_sub), "history",
-                R.drawable.ic_history, History.enabled(this)));
-        all.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.clear_history),
-                getResources().getQuantityString(R.plurals.items, History.count(this), History.count(this)), null, "clear_history", R.drawable.ic_delete));
-        all.add(RowAdapter.Row.header(getString(R.string.set_sharing)));
-        all.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.nkt_share), getString(R.string.nkt_share_sub), null, "share", R.drawable.ic_pc));
-        all.add(RowAdapter.Row.header(getString(R.string.set_about)));
-        all.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.app_name), getString(R.string.version_line), null, "about", R.drawable.ic_info));
-        for (RowAdapter.Row r : all) {
-            if (r.type == RowAdapter.HEADER || matchesText(r.title) || (r.sub != null && matchesText(r.sub))) out.add(r);
-        }
-    }
+        search = new EditText(this);
+        search.setSingleLine(true);
+        search.setTextColor(Ui.TEXT);
+        search.setHintTextColor(Ui.MUTED);
+        search.setTextSize(14);
+        search.setInputType(InputType.TYPE_CLASS_TEXT);
+        search.setBackground(Ui.rect(this, Ui.CARD, 12, Ui.BORDER, 1));
+        search.setPadding(Ui.dp(this, 14), 0, Ui.dp(this, 14), 0);
+        search.setCompoundDrawablesRelativeWithIntrinsicBounds(new Icon(this, "search", Ui.MUTED), null, null, null);
+        search.setCompoundDrawablePadding(Ui.dp(this, 10));
+        search.addTextChangedListener(new TextWatcher() {
+            public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+            public void onTextChanged(CharSequence s, int a, int b, int c) {}
+            public void afterTextChanged(Editable e) { query = e.toString().trim().toLowerCase(Locale.ROOT); rebuild(); }
+        });
+        block.addView(search, Ui.lpm(this, Ui.MATCH, Ui.dp(this, 44), 0, 14, 0, 0));
 
-    private String when(long t) {
-        if (DateUtils.isToday(t)) return getString(R.string.today_at, DateUtils.formatDateTime(this, t, DateUtils.FORMAT_SHOW_TIME));
-        if (DateUtils.isToday(t + DateUtils.DAY_IN_MILLIS)) return getString(R.string.yesterday_at, DateUtils.formatDateTime(this, t, DateUtils.FORMAT_SHOW_TIME));
-        return DateUtils.formatDateTime(this, t, DateUtils.FORMAT_SHOW_DATE | DateUtils.FORMAT_SHOW_TIME | DateUtils.FORMAT_ABBREV_MONTH);
-    }
+        galleryBar = Ui.row(this);
+        block.addView(galleryBar, Ui.lpm(this, Ui.MATCH, Ui.WRAP, 0, 10, 0, 0));
 
-    private String kind(MediaInfo m) { return getString(m.image ? R.string.kind_photo : m.video ? R.string.kind_video : R.string.kind_song); }
+        LinearLayout bar = Ui.row(this);
+        count = Ui.single(Ui.text(this, "", 12, Ui.MUTED));
+        bar.addView(count, Ui.lpw(0, Ui.WRAP, 1));
+        sortChip = Ui.label(this, "A–Z", 9.5f, Ui.ACCENT, 0.12f);
+        sortChip.setGravity(Gravity.CENTER);
+        sortChip.setCompoundDrawablesRelativeWithIntrinsicBounds(scaled("sort", Ui.ACCENT, 14), null, null, null);
+        sortChip.setCompoundDrawablePadding(Ui.dp(this, 6));
+        sortChip.setPadding(Ui.dp(this, 12), 0, Ui.dp(this, 12), 0);
+        sortChip.setBackground(Ui.rect(this, Ui.FILL, 16, Ui.BORDER, 1));
+        sortChip.setOnClickListener(v -> sortSheet());
+        bar.addView(sortChip, Ui.lp(Ui.WRAP, Ui.dp(this, 32)));
+        viewSeg = Ui.row(this);
+        viewSeg.setBackground(Ui.rect(this, 0, 17, Ui.BORDER, 1));
+        viewSeg.setPadding(Ui.dp(this, 2), Ui.dp(this, 2), Ui.dp(this, 2), Ui.dp(this, 2));
+        bar.addView(viewSeg, Ui.lpm(this, Ui.WRAP, Ui.dp(this, 32), 8, 0, 0, 0));
+        block.addView(bar, Ui.lpm(this, Ui.MATCH, Ui.WRAP, 0, 10, 0, 0));
 
-    private String subOf(MediaInfo m) { return m.artist.isEmpty() ? "" : " · " + m.artist; }
-
-    // ── Sorting ──────────────────────────────────────────────────────────────
-
-    private String currentSort() {
-        String key = TAB_SORT_KEY[tab];
-        return key.isEmpty() ? "" : Prefs.sort(this, key, TAB_SORT_DEF[tab]);
-    }
-
-    private String[] sortKeysFor(int t) {
-        switch (t) {
-            case TAB_SONGS: return new String[]{"name", "name_desc", "artist", "album", "new", "old", "long", "short", "large", "plays"};
-            case TAB_VIDEOS: return new String[]{"name", "name_desc", "new", "old", "long", "short", "large", "small"};
-            case TAB_GALLERY: return new String[]{"new", "old", "name", "large"};
-            case TAB_FOLDERS: return new String[]{"name", "name_desc", "most"};
-        }
-        return new String[0];
-    }
-
-    private String sortLabel(String k) {
-        switch (k) {
-            case "name": return getString(R.string.sort_name);
-            case "name_desc": return getString(R.string.sort_name_desc);
-            case "artist": return getString(R.string.sort_artist);
-            case "album": return getString(R.string.sort_album);
-            case "new": return getString(R.string.sort_new);
-            case "old": return getString(R.string.sort_old);
-            case "long": return getString(R.string.sort_long);
-            case "short": return getString(R.string.sort_short);
-            case "large": return getString(R.string.sort_large);
-            case "small": return getString(R.string.sort_small);
-            case "plays": return getString(R.string.sort_plays);
-            case "most": return getString(R.string.sort_most);
-        }
-        return k;
-    }
-
-    private String sortShortLabel(String k) {
-        switch (k) {
-            case "name": return "A–Z";
-            case "name_desc": return "Z–A";
-            case "artist": return getString(R.string.sort_s_artist);
-            case "album": return getString(R.string.sort_s_album);
-            case "new": return getString(R.string.sort_s_new);
-            case "old": return getString(R.string.sort_s_old);
-            case "long": case "short": return getString(R.string.sort_s_length);
-            case "large": case "small": return getString(R.string.sort_s_size);
-            case "plays": return getString(R.string.sort_s_plays);
-            case "most": return getString(R.string.sort_s_most);
-        }
-        return "";
-    }
-
-    private void chooseSort() {
-        final String[] keys = sortKeysFor(tab);
-        if (keys.length == 0) return;
-        String[] labels = new String[keys.length];
-        int checked = 0;
-        String cur = currentSort();
-        for (int i = 0; i < keys.length; i++) { labels[i] = sortLabel(keys[i]); if (keys[i].equals(cur)) checked = i; }
-        Dialogs.builder(this)
-                .setTitle(R.string.sort_by)
-                .setSingleChoiceItems(labels, checked, (d, w) -> {
-                    Prefs.setSort(this, TAB_SORT_KEY[tab], keys[w]);
-                    d.dismiss();
-                    refresh();
-                    showHeader();
-                })
-                .setNegativeButton(R.string.cancel, null)
-                .show();
-    }
-
-    private List<MediaInfo> sorted(List<MediaInfo> src, String key) {
-        List<MediaInfo> l = new ArrayList<>(src);
-        Comparator<MediaInfo> byName = (a, b) -> a.title.compareToIgnoreCase(b.title);
-        switch (key) {
-            case "name_desc": Collections.sort(l, (a, b) -> b.title.compareToIgnoreCase(a.title)); break;
-            case "artist": Collections.sort(l, (a, b) -> {
-                int c = sortText(a.artist).compareToIgnoreCase(sortText(b.artist));
-                return c != 0 ? c : byName.compare(a, b);
-            }); break;
-            case "album": Collections.sort(l, (a, b) -> {
-                int c = sortText(a.album).compareToIgnoreCase(sortText(b.album));
-                return c != 0 ? c : byName.compare(a, b);
-            }); break;
-            case "new": Collections.sort(l, (a, b) -> Long.compare(b.dateMs, a.dateMs)); break;
-            case "old": Collections.sort(l, (a, b) -> Long.compare(a.dateMs, b.dateMs)); break;
-            case "long": Collections.sort(l, (a, b) -> Long.compare(b.durationMs, a.durationMs)); break;
-            case "short": Collections.sort(l, (a, b) -> Long.compare(a.durationMs, b.durationMs)); break;
-            case "large": Collections.sort(l, (a, b) -> Long.compare(b.size, a.size)); break;
-            case "small": Collections.sort(l, (a, b) -> Long.compare(a.size, b.size)); break;
-            case "plays": {
-                Map<String, Integer> plays = Prefs.playCounts(this);
-                Collections.sort(l, (a, b) -> {
-                    Integer pa = plays.get(a.key()), pb = plays.get(b.key());
-                    int c = Integer.compare(pb == null ? 0 : pb, pa == null ? 0 : pa);
-                    return c != 0 ? c : byName.compare(a, b);
-                });
-                break;
-            }
-            default: Collections.sort(l, byName);
-        }
-        return l;
-    }
-
-    private static String sortText(String s) { return s == null || s.isEmpty() ? "￿" : s; }   // unknown goes last
-
-    // ── Music squares ────────────────────────────────────────────────────────
-
-    private void refreshSquares() {
-        List<MediaInfo> source = new ArrayList<>();
-        for (MediaInfo m : audio) if (matches(m)) source.add(m);
-        squares.set(Groups.build(this, source));
-        if (list.getAdapter() != squares) {
-            GridLayoutManager glm = new GridLayoutManager(this, 2);
-            glm.setSpanSizeLookup(squares.spans());
-            list.setLayoutManager(glm);
-            list.setAdapter(squares);
-        }
-        tabHint.setText(R.string.squares_hint);
-        empty.setText(R.string.no_songs);
-        empty.setVisibility(loaded && squares.isEmpty() ? View.VISIBLE : View.GONE);
-    }
-
-    // ── Videos grid ──────────────────────────────────────────────────────────
-
-    private void refreshVideoGrid() {
-        List<MediaInfo> shown = new ArrayList<>();
-        for (MediaInfo m : sorted(video, currentSort())) if (matches(m)) shown.add(m);
-        videoGrid.set(shown);
-        int cols = gridCols(2);
-        if (list.getAdapter() != videoGrid || ((GridLayoutManager) list.getLayoutManager()).getSpanCount() != cols) {
-            list.setLayoutManager(new GridLayoutManager(this, cols));
-            list.setAdapter(videoGrid);
-        }
-        tabHint.setText(getResources().getQuantityString(R.plurals.videos, video.size(), video.size()));
-        empty.setText(filter.isEmpty() ? R.string.no_videos : R.string.no_matches);
-        empty.setVisibility(loaded && shown.isEmpty() ? View.VISIBLE : View.GONE);
-    }
-
-    // ── Gallery ──────────────────────────────────────────────────────────────
-
-    private void refreshGallery() {
-        setSeg(segAll, galleryKind == 0);
-        setSeg(segPhotos, galleryKind == 1);
-        setSeg(segVideos, galleryKind == 2);
-
-        List<MediaInfo> all = new ArrayList<>();
-        if (galleryKind != 2) all.addAll(images);
-        if (galleryKind != 1) all.addAll(video);
-        String sort = currentSort();
-        all = sorted(all, sort);
-
-        // album strip (biggest first)
-        Map<String, List<MediaInfo>> byAlbum = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
-        for (MediaInfo m : all) {
-            List<MediaInfo> l = byAlbum.get(m.folder);
-            if (l == null) { l = new ArrayList<>(); byAlbum.put(m.folder, l); }
-            l.add(m);
-        }
-        List<AlbumAdapter.Album> strip = new ArrayList<>();
-        strip.add(new AlbumAdapter.Album(ALL_ALBUMS, all.size(), all.isEmpty() ? null : all.get(0), false));
-        List<Map.Entry<String, List<MediaInfo>>> entries = new ArrayList<>(byAlbum.entrySet());
-        Collections.sort(entries, (a, b) -> Integer.compare(b.getValue().size(), a.getValue().size()));
-        for (Map.Entry<String, List<MediaInfo>> e : entries)
-            strip.add(new AlbumAdapter.Album(e.getKey(), e.getValue().size(), e.getValue().get(0), e.getValue().get(0).hidden));
-        if (!album.equals(ALL_ALBUMS) && !byAlbum.containsKey(album)) album = ALL_ALBUMS;
-        albums.set(strip, album);
-
-        List<MediaInfo> shown = new ArrayList<>();
-        for (MediaInfo m : all) if ((album.equals(ALL_ALBUMS) || m.folder.equalsIgnoreCase(album)) && matches(m)) shown.add(m);
-
-        int cols = Prefs.galleryCols(this);
-        gallery.set(shown, cols, "new".equals(sort) || "old".equals(sort));
-        if (list.getAdapter() != gallery || ((GridLayoutManager) list.getLayoutManager()).getSpanCount() != cols) {
-            GridLayoutManager glm = new GridLayoutManager(this, cols);
-            glm.setSpanSizeLookup(gallery.spans());
-            list.setLayoutManager(glm);
-            list.setAdapter(gallery);
-        }
-        gridSize.setText(getString(R.string.per_row, cols));
-        tabHint.setText(getResources().getQuantityString(R.plurals.items, shown.size(), shown.size()));
-        empty.setText(filter.isEmpty() ? R.string.no_gallery : R.string.no_matches);
-        empty.setVisibility(loaded && shown.isEmpty() ? View.VISIBLE : View.GONE);
-    }
-
-    /** Google Photos style: pinch the grid to show more or fewer per row. */
-    private void setupPinch() {
-        ScaleGestureDetector pinch = new ScaleGestureDetector(this, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
-            @Override public boolean onScaleBegin(ScaleGestureDetector d) { pinchAcc = 1f; return tab == TAB_GALLERY; }
-            @Override public boolean onScale(ScaleGestureDetector d) {
-                pinchAcc *= d.getScaleFactor();
-                if (pinchAcc > 1.25f) { stepGrid(-1); pinchAcc = 1f; }       // fingers apart: bigger
-                else if (pinchAcc < 0.8f) { stepGrid(+1); pinchAcc = 1f; }   // fingers together: more per row
+        // pinch to resize grids (videos and gallery)
+        ScaleGestureDetector sg = new ScaleGestureDetector(this, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            float acc = 1f;
+            @Override public boolean onScaleBegin(@NonNull ScaleGestureDetector d) { acc = 1f; return true; }
+            @Override public boolean onScale(@NonNull ScaleGestureDetector d) {
+                acc *= d.getScaleFactor();
+                if (acc > 1.25f) { pinch(-1); acc = 1f; } else if (acc < 0.8f) { pinch(1); acc = 1f; }
                 return true;
             }
         });
         list.addOnItemTouchListener(new RecyclerView.SimpleOnItemTouchListener() {
-            @Override public boolean onInterceptTouchEvent(RecyclerView rv, MotionEvent e) {
-                if (tab != TAB_GALLERY) return false;
-                pinch.onTouchEvent(e);
-                return e.getPointerCount() > 1 || pinch.isInProgress();
+            @Override public boolean onInterceptTouchEvent(@NonNull RecyclerView rv, @NonNull MotionEvent e) {
+                sg.onTouchEvent(e);
+                return e.getPointerCount() > 1 && (page == GALLERY || page == VIDEOS) && view() == 1;
             }
-            @Override public void onTouchEvent(RecyclerView rv, MotionEvent e) { pinch.onTouchEvent(e); }
+            @Override public void onTouchEvent(@NonNull RecyclerView rv, @NonNull MotionEvent e) { sg.onTouchEvent(e); }
         });
+
+        mini = buildMini();
+        column.addView(mini, Ui.lpm(this, Ui.MATCH, Ui.dp(this, 68), 10, 6, 10, 10));
+        mini.setVisibility(View.GONE);
+
+        drawer = new FrameLayout(this);
+        drawer.setVisibility(View.GONE);
+        root.addView(drawer, new FrameLayout.LayoutParams(Ui.MATCH, Ui.MATCH));
     }
 
-    private void stepGrid(int dir) {
-        int cur = Prefs.galleryCols(this), idx = 1;
-        for (int i = 0; i < GRID_STEPS.length; i++) if (GRID_STEPS[i] == cur) idx = i;
-        int next = Math.max(0, Math.min(GRID_STEPS.length - 1, idx + dir));
-        if (GRID_STEPS[next] == cur) return;
-        GridLayoutManager glm = (GridLayoutManager) list.getLayoutManager();
-        int first = glm == null ? 0 : glm.findFirstVisibleItemPosition();
-        Prefs.setGalleryCols(this, GRID_STEPS[next]);
-        refreshGallery();
-        list.scrollToPosition(Math.max(0, first));
-        zoomPop.setText(getString(GRID_STEPS[next] >= 5 ? R.string.per_row_month : R.string.per_row, GRID_STEPS[next]));
-        zoomPop.setVisibility(View.VISIBLE);
-        ui.removeCallbacks(hideZoomPop);
-        ui.postDelayed(hideZoomPop, 900);
+    private Icon scaled(String n, int color, int dpSize) {
+        Icon i = new Icon(this, n, color);
+        i.setBounds(0, 0, Ui.dp(this, dpSize), Ui.dp(this, dpSize));
+        return i;
     }
 
-    private final Runnable hideZoomPop = () -> zoomPop.setVisibility(View.GONE);
-
-    private void openGridItem(MediaInfo m, List<MediaInfo> all) {
-        if (m.video) {
-            List<MediaInfo> vids = new ArrayList<>();
-            for (MediaInfo x : all) if (x.video) vids.add(x);
-            PlayerActivity.open(this, vids, Math.max(0, vids.indexOf(m)));
-        } else {
-            List<MediaInfo> photos = new ArrayList<>();
-            for (MediaInfo x : all) if (x.image) photos.add(x);
-            ViewerActivity.open(this, photos, Math.max(0, photos.indexOf(m)));
-        }
-    }
-
-    // ── Side scroll bar label ────────────────────────────────────────────────
-
-    private String labelFor(int pos) {
-        RecyclerView.Adapter<?> a = list.getAdapter();
-        String sort = currentSort();
-        boolean byDate = "new".equals(sort) || "old".equals(sort);
-        if (a == gallery) return gallery.label(pos, true);
-        MediaInfo m = null;
-        String text = null;
-        if (a == videoGrid) m = videoGrid.at(pos);
-        else if (a == rows && pos < rows.rows().size()) {
-            RowAdapter.Row r = rows.rows().get(pos);
-            if (r.type == RowAdapter.MEDIA) m = r.media;
-            else if (r.type == RowAdapter.FOLDER || r.type == RowAdapter.PLAYLIST) text = r.title;
-        }
-        if (m != null) {
-            if (byDate || openHistory) return m.dateMs > 0 ? new SimpleDateFormat("MMM yyyy", Locale.getDefault()).format(new Date(m.dateMs)) : "";
-            if ("long".equals(sort) || "short".equals(sort)) return Ui.time(m.durationMs);
-            if ("artist".equals(sort)) text = m.artist;
-            else if ("album".equals(sort)) text = m.album;
-            else text = m.title;
-        }
-        if (text == null || text.isEmpty()) return "";
-        return text.substring(0, 1).toUpperCase(Locale.getDefault());
-    }
-
-    // ── Multi-select ─────────────────────────────────────────────────────────
-
-    @Override
-    public void onSelectionChanged() {
-        selectBar.setVisibility(sel.active() ? View.VISIBLE : View.GONE);
-        selCount.setText(getString(R.string.n_selected, sel.count()));
-        RecyclerView.Adapter<?> a = list.getAdapter();
-        if (a != null) a.notifyDataSetChanged();
-    }
-
-    private List<MediaInfo> visibleMedia() {
-        RecyclerView.Adapter<?> a = list.getAdapter();
-        if (a == gallery) return new ArrayList<>(gallery.media());
-        if (a == videoGrid) return new ArrayList<>(videoGrid.items());
-        List<MediaInfo> out = new ArrayList<>();
-        for (RowAdapter.Row r : rows.rows()) if (r.type == RowAdapter.MEDIA) out.add(r.media);
-        return out;
-    }
-
-    /** Permanently deletes files. Android shows its own confirmation on Android 11+. */
-    private void deleteItems(List<MediaInfo> items) {
-        if (items.isEmpty()) return;
-        pendingDelete = new ArrayList<>(items);
-        List<Uri> content = new ArrayList<>();
-        for (MediaInfo m : items) if ("content".equals(m.uri.getScheme())) content.add(m.uri);
-        if (Build.VERSION.SDK_INT >= 30 && !content.isEmpty()) {
-            try {
-                PendingIntent pi = MediaStore.createDeleteRequest(getContentResolver(), content);
-                startIntentSenderForResult(pi.getIntentSender(), REQ_DELETE, null, 0, 0, 0);
-            } catch (Exception e) { Ui.toast(this, R.string.delete_failed); }
-            return;
-        }
-        if (Build.VERSION.SDK_INT <= 29 && !content.isEmpty()
-                && checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQ_DELETE_PERM);
-            return;
-        }
-        confirmAndDelete(pendingDelete);
-    }
-
-    private void confirmAndDelete(List<MediaInfo> items) {
-        Dialogs.builder(this)
-                .setTitle(getResources().getQuantityString(R.plurals.delete_title, items.size(), items.size()))
-                .setMessage(R.string.delete_warning)
-                .setPositiveButton(R.string.delete, (d, w) -> doDelete(items, true))
-                .setNegativeButton(R.string.cancel, null)
-                .show();
-    }
-
-    @SuppressWarnings("deprecation")
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == REQ_DELETE && pendingDelete != null) {
-            if (resultCode == RESULT_OK) doDelete(pendingDelete, false);   // Android already deleted the library items
-            else pendingDelete = null;
-        }
-    }
-
-    private void doDelete(List<MediaInfo> items, boolean deleteContent) {
-        new Thread(() -> {
-            int ok = 0;
-            Set<String> gone = new HashSet<>();
-            for (MediaInfo m : items) {
-                boolean done = false;
-                try {
-                    if ("file".equals(m.uri.getScheme())) done = new File(m.uri.getPath()).delete();
-                    else if (!deleteContent) done = true;
-                    else done = getContentResolver().delete(m.uri, null, null) > 0;
-                } catch (Exception ignored) { }
-                if (done) { ok++; gone.add(m.key()); Thumbs.forget(m); }
-            }
-            final int n = ok;
-            ui.post(() -> {
-                removeGone(audio, gone); removeGone(video, gone); removeGone(images, gone);
-                pendingDelete = null;
-                sel.clear();
-                refresh();
-                Ui.toast(this, n > 0 ? getResources().getQuantityString(R.plurals.deleted, n, n) : getString(R.string.delete_failed));
-            });
-        }).start();
-    }
-
-    private static void removeGone(List<MediaInfo> l, Set<String> gone) {
-        for (int i = l.size() - 1; i >= 0; i--) if (gone.contains(l.get(i).key())) l.remove(i);
-    }
-
-    // ── Clicks ───────────────────────────────────────────────────────────────
-
-    private static void count(Map<String, int[]> map, String folder, int kind) {
-        int[] c = map.get(folder);
-        if (c == null) { c = new int[2]; map.put(folder, c); }
-        c[kind]++;
-    }
-
-    private String folderCount(int[] c) {
-        String songs = c[0] > 0 ? getResources().getQuantityString(R.plurals.songs, c[0], c[0]) : "";
-        String vids = c[1] > 0 ? getResources().getQuantityString(R.plurals.videos, c[1], c[1]) : "";
-        if (songs.isEmpty()) return vids;
-        return vids.isEmpty() ? songs : songs + " · " + vids;
-    }
-
-    /** 0 songs, 1 videos, 2 photos — the visible rows of that kind. */
-    private List<MediaInfo> visible(int kind) {
-        List<MediaInfo> out = new ArrayList<>();
-        for (RowAdapter.Row r : rows.rows()) {
-            if (r.type != RowAdapter.MEDIA) continue;
-            int k = r.media.image ? 2 : r.media.video ? 1 : 0;
-            if (k == kind) out.add(r.media);
-        }
-        return out;
-    }
-
-    private void openMedia(MediaInfo m) {
-        int kind = m.image ? 2 : m.video ? 1 : 0;
-        List<MediaInfo> same = visible(kind);
-        int idx = Math.max(0, same.indexOf(m));
-        if (kind == 2) ViewerActivity.open(this, same, idx);
-        else if (kind == 1) PlayerActivity.open(this, same, idx);
-        else playAudio(same, idx, false);
-    }
-
-    @Override
-    public void onClick(RowAdapter.Row r, int position) {
-        switch (r.type) {
-            case RowAdapter.MEDIA:
-                if (sel.active()) { sel.toggle(r.media); return; }
-                openMedia(r.media);
-                break;
-            case RowAdapter.FOLDER: openFolder = r.key; refresh(); showHeader(); break;
-            case RowAdapter.PLAYLIST: openPlaylist = r.key; refresh(); showHeader(); break;
-            case RowAdapter.BACK: goBack(); break;
-            case RowAdapter.ACTION: onAction(r.key); break;
-        }
-    }
-
-    private void onAction(String key) {
-        switch (key) {
-            case "new": Dialogs.newPlaylist(this, name -> refresh()); break;
-            case "playall": playPlaylist(); break;
-            case "history": openHistory = true; refresh(); showHeader(); break;
-            case "clear_history":
-                Dialogs.builder(this).setMessage(R.string.clear_history_confirm)
-                        .setPositiveButton(R.string.clear, (d, w) -> { History.clear(this); refresh(); })
-                        .setNegativeButton(R.string.cancel, null).show();
-                break;
-            case "eq": startActivity(new Intent(this, EqualizerActivity.class)); break;
-            case "share": startActivity(new Intent(this, NktShareActivity.class)); break;
-            case "orient":
-                Dialogs.builder(this).setTitle(R.string.video_rotation)
-                        .setSingleChoiceItems(getResources().getStringArray(R.array.orientations), Prefs.videoOrientation(this), (d, w) -> {
-                            Prefs.setVideoOrientation(this, w);
-                            d.dismiss();
-                            refresh();
-                        }).setNegativeButton(R.string.cancel, null).show();
-                break;
-            case "sq_play": if (openSquare != null) playAudio(openSquare.songs, 0, false); break;
-            case "sq_shuffle": if (openSquare != null) playAudio(openSquare.songs, 0, true); break;
-            case "sq_save":
-                if (openSquare == null) break;
-                final List<MediaInfo> songs = openSquare.songs;
-                Dialogs.newPlaylist(this, name -> {
-                    for (MediaInfo m : songs) Playlists.add(this, name, m);
-                    Ui.toast(this, getString(R.string.added_to, name));
-                });
-                break;
-        }
-    }
-
-    private void goBack() {
-        openFolder = null; openPlaylist = null; openSquare = null; openHistory = false;
-        refresh();
-        showHeader();
-    }
-
-    private void playPlaylist() {
-        List<MediaInfo> songs = visible(0), vids = visible(1), photos = visible(2);
-        if (!songs.isEmpty()) playAudio(songs, 0, false);
-        else if (!vids.isEmpty()) PlayerActivity.open(this, vids, 0);
-        else if (!photos.isEmpty()) ViewerActivity.open(this, photos, 0);
-    }
-
-    @Override
-    public void onLongClick(RowAdapter.Row r, int position) {
-        if (r.type == RowAdapter.PLAYLIST) { playlistMenu(r); return; }
-        if (r.type != RowAdapter.MEDIA) return;
-        if (sel.active()) sel.toggle(r.media); else sel.start(r.media);
-    }
-
-    @Override
-    public void onMore(RowAdapter.Row r, int position) {
-        if (r.type == RowAdapter.PLAYLIST) { playlistMenu(r); return; }
-        if (r.type == RowAdapter.MEDIA) itemMenu(r.media);
-    }
-
-    private void playlistMenu(RowAdapter.Row r) {
-        Dialogs.builder(this)
-                .setTitle(r.title)
-                .setItems(new String[]{getString(R.string.delete_playlist)}, (d, w) ->
-                        Dialogs.builder(this)
-                                .setMessage(getString(R.string.delete_confirm, r.title))
-                                .setPositiveButton(R.string.delete, (d2, w2) -> { Playlists.delete(this, r.title); refresh(); })
-                                .setNegativeButton(R.string.cancel, null)
-                                .show())
-                .show();
-    }
-
-    private void itemMenu(MediaInfo m) {
-        final boolean inPlaylist = openPlaylist != null;
-        boolean fav = Prefs.isFavourite(this, m);
-        List<String> opts = new ArrayList<>();
-        List<String> ids = new ArrayList<>();
-        opts.add(getString(m.image ? R.string.open : R.string.play)); ids.add("play");
-        opts.add(getString(fav ? R.string.unfavourite : R.string.favourite)); ids.add("fav");
-        opts.add(getString(R.string.add_to_playlist)); ids.add("add");
-        if (!m.video && !m.image) {
-            opts.add(getString(R.string.edit_info)); ids.add("edit");
-            opts.add(getString(R.string.set_as_ringtone)); ids.add("ringtone");
-        }
-        opts.add(getString(R.string.share)); ids.add("share");
-        opts.add(getString(R.string.select)); ids.add("select");
-        opts.add(getString(R.string.details)); ids.add("details");
-        if (inPlaylist) { opts.add(getString(R.string.remove_from_playlist)); ids.add("remove"); }
-        opts.add(getString(R.string.delete_file)); ids.add("delete");
-        Dialogs.builder(this)
-                .setTitle(m.title)
-                .setItems(opts.toArray(new String[0]), (d, which) -> {
-                    switch (ids.get(which)) {
-                        case "play": openMedia(m); break;
-                        case "fav":
-                            Ui.toast(this, Prefs.toggleFavourite(this, m)
-                                    ? getString(R.string.fav_added_to, Prefs.favouritesFor(m)) : getString(R.string.fav_removed_from, Prefs.favouritesFor(m)));
-                            if (tab == TAB_PLAYLISTS) refresh();
-                            break;
-                        case "add": Dialogs.addToPlaylist(this, m); break;
-                        case "edit": MetaEditActivity.open(this, m); break;
-                        case "ringtone": Ringtones.set(this, m); break;
-                        case "share": Share.send(this, m); break;
-                        case "select": sel.start(m); break;
-                        case "details": Dialogs.details(this, m); break;
-                        case "remove": {
-                            List<MediaInfo> items = Playlists.items(this, openPlaylist);
-                            for (int i = 0; i < items.size(); i++)
-                                if (items.get(i).key().equals(m.key())) { Playlists.remove(this, openPlaylist, i); break; }
-                            refresh();
-                            break;
-                        }
-                        case "delete": {
-                            List<MediaInfo> one = new ArrayList<>();
-                            one.add(m);
-                            deleteItems(one);
-                            break;
-                        }
-                    }
-                })
-                .show();
-    }
-
-    // ── Online links ─────────────────────────────────────────────────────────
-
-    private void openLinkDialog() {
-        EditText input = new EditText(this);
-        input.setHint(R.string.link_hint);
-        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
-        input.setSingleLine(true);
-        FrameLayout box = new FrameLayout(this);
-        int pad = Ui.dp(this, 20);
-        box.setPadding(pad, pad / 2, pad, 0);
-        box.addView(input);
-        Dialogs.builder(this)
-                .setTitle(R.string.open_link)
-                .setMessage(R.string.link_help)
-                .setView(box)
-                .setPositiveButton(R.string.play_as_audio, (d, w) -> playLink(input.getText().toString(), false))
-                .setNeutralButton(R.string.play_as_video, (d, w) -> playLink(input.getText().toString(), true))
-                .setNegativeButton(R.string.download_caps, (d, w) -> {
-                    String s = input.getText().toString().trim();
-                    if (!s.startsWith("http://") && !s.startsWith("https://")) { Ui.toast(this, R.string.link_invalid); return; }
-                    if (YouTube.isYouTube(s)) { Ui.toast(this, R.string.youtube_no_download); return; }
-                    Downloads.start(this, Uri.parse(s), null);
-                })
-                .show();
-    }
-
-    private void playLink(String text, boolean asVideo) {
-        String s = text.trim();
-        if (!s.startsWith("http://") && !s.startsWith("https://")) {
-            Ui.toast(this, R.string.link_invalid);
-            return;
-        }
-        if (YouTube.isYouTube(s)) {                 // YouTube only plays in its own player
-            YouTubeActivity.open(this, s);
-            return;
-        }
-        Uri uri = Uri.parse(s);
-        MediaInfo m = MediaInfo.link(uri, Ui.displayName(this, uri), asVideo);
-        List<MediaInfo> one = new ArrayList<>();
-        one.add(m);
-        if (asVideo) PlayerActivity.open(this, one, 0);
-        else {
-            playAudio(one, 0, false);
-            startActivity(new Intent(this, NowPlayingActivity.class));
-        }
-    }
-
-    // ── Background player ────────────────────────────────────────────────────
-
-    private void playAudio(List<MediaInfo> list, int index, boolean shuffle) {
-        final List<MediaInfo> copy = new ArrayList<>(list);
-        Runnable go = () -> {
-            controller.setShuffleModeEnabled(shuffle);
-            controller.setMediaItems(Media.items(copy), shuffle ? (int) (Math.random() * copy.size()) : index, 0);
-            controller.prepare();
-            controller.play();
-        };
-        if (controller != null) go.run(); else pending = go;
-    }
-
-    private final Player.Listener playerListener = new Player.Listener() {
-        @Override public void onEvents(Player player, Player.Events events) { updateMini(); }
-    };
-
-    @Override
-    protected void onStart() {
-        super.onStart();
-        future = Media.connect(this);
-        future.addListener(() -> {
-            try {
-                controller = future.get();
-                controller.addListener(playerListener);
-                updateMini();
-                if (pending != null) { Runnable p = pending; pending = null; p.run(); }
-            } catch (Exception ignored) { }
-        }, ui::post);
-    }
-
-    @Override
-    protected void onStop() {
-        if (controller != null) controller.removeListener(playerListener);
-        controller = null;
-        MediaController.releaseFuture(future);
-        super.onStop();
+    private LinearLayout buildMini() {
+        LinearLayout m = Ui.row(this);
+        m.setBackground(Ui.rect(this, Ui.CARD, 16, 0x4000E5FF, 1));
+        m.setPadding(Ui.dp(this, 10), 0, Ui.dp(this, 4), 0);
+        miniArt = new ImageView(this);
+        miniArt.setBackground(Ui.rect(this, Ui.FILL, 8, 0, 0));
+        miniArt.setClipToOutline(true);
+        m.addView(miniArt, Ui.lp(Ui.dp(this, 48), Ui.dp(this, 48)));
+        LinearLayout t = Ui.col(this);
+        t.setPadding(Ui.dp(this, 10), 0, 0, 0);
+        miniTitle = Ui.single(Ui.text(this, "", 14, Ui.TEXT));
+        miniTitle.setTypeface(null, android.graphics.Typeface.BOLD);
+        miniSub = Ui.single(Ui.text(this, "", 12, Ui.MUTED));
+        t.addView(miniTitle);
+        t.addView(miniSub);
+        m.addView(t, Ui.lpw(0, Ui.WRAP, 1));
+        miniPlay = Ui.iconBtn(this, "pause", 44, Ui.ACCENT);
+        miniPlay.setOnClickListener(v -> { MediaController c = Media.now(); if (c != null) { if (c.isPlaying()) c.pause(); else c.play(); } });
+        ImageButton next = Ui.iconBtn(this, "next", 44, Ui.TEXT);
+        next.setOnClickListener(v -> { MediaController c = Media.now(); if (c != null) c.seekToNextMediaItem(); });
+        ImageButton close = Ui.iconBtn(this, "close", 44, Ui.MUTED);
+        close.setOnClickListener(v -> { MediaController c = Media.now(); if (c != null) { c.stop(); c.clearMediaItems(); } updateMini(); });
+        m.addView(miniPlay);
+        m.addView(next);
+        m.addView(close);
+        m.setOnClickListener(v -> startActivity(new Intent(this, NowPlayingActivity.class)));
+        return m;
     }
 
     private void updateMini() {
-        if (controller == null || controller.getMediaItemCount() == 0 || controller.getCurrentMediaItem() == null) {
-            mini.setVisibility(View.GONE);
-            rows.setPlaying(null);
-            return;
-        }
+        MediaController c = Media.now();
+        if (c == null || c.getMediaItemCount() == 0) { mini.setVisibility(View.GONE); setNow(""); return; }
         mini.setVisibility(View.VISIBLE);
-        MediaMetadata md = controller.getMediaMetadata();
-        miniTitle.setText(md.title == null ? getString(R.string.unknown) : md.title);
-        miniSub.setText(Media.isVideo(md) ? getString(R.string.video_in_background) : md.artist == null ? "" : md.artist);
-        miniPlay.setImageResource(controller.isPlaying() ? R.drawable.ic_pause : R.drawable.ic_play);
-        Bitmap art = null;
-        if (md.artworkData != null) {
-            try { art = BitmapFactory.decodeByteArray(md.artworkData, 0, md.artworkData.length); } catch (Exception ignored) { }
-        }
-        if (art != null) Thumbs.showBitmap(miniArt, art);
-        else Thumbs.showPlaceholder(miniArt, Media.isVideo(md) ? R.drawable.ic_movie : R.drawable.ic_music);
-        rows.setPlaying(controller.getCurrentMediaItem().mediaId);
+        MediaInfo m = Media.info(c.getCurrentMediaItem());
+        if (m == null) return;
+        miniTitle.setText(m.title);
+        miniSub.setText(m.isVideo() ? "Video · playing in background" : m.artistOrUnknown());
+        miniPlay.setImageDrawable(new Icon(this, c.isPlaying() ? "pause" : "play", Ui.ACCENT));
+        Thumbs.load(miniArt, m, Ui.dp(this, 96), m.isVideo() ? "video" : "music");
+        setNow(m.uri);
     }
 
-    @SuppressWarnings("deprecation")
+    private void setNow(String uri) {
+        if (uri.equals(nowUri)) return;
+        nowUri = uri;
+        adapter.notifyDataSetChanged();
+    }
+
+    // ------------------------------------------------------------------ drawer
+    private void openDrawer() {
+        drawer.removeAllViews();
+        View scrim = new View(this);
+        scrim.setBackgroundColor(0xB3000000);
+        scrim.setOnClickListener(v -> closeDrawer());
+        drawer.addView(scrim, new FrameLayout.LayoutParams(Ui.MATCH, Ui.MATCH));
+        LinearLayout panel = Ui.col(this);
+        GradientDrawable0 bgd = new GradientDrawable0();
+        panel.setBackground(bgd.make(this));
+        panel.setPadding(Ui.dp(this, 14), root.getPaddingTop() + Ui.dp(this, 12), Ui.dp(this, 14), Ui.dp(this, 20) + root.getPaddingBottom());
+        panel.setClickable(true);
+        TextView t = Ui.label(this, "NKT MP", 24, Ui.ACCENT, 0.06f);
+        t.setTypeface(Ui.orbBlack(this));
+        Ui.gradientText(t);
+        t.setPadding(Ui.dp(this, 8), 0, 0, 0);
+        panel.addView(t);
+        TextView hint = Ui.text(this, "Tap ⌂ to choose the page the app opens on", 12, Ui.MUTED);
+        hint.setPadding(Ui.dp(this, 8), Ui.dp(this, 4), 0, Ui.dp(this, 14));
+        panel.addView(hint);
+        int start = Store.num(this, "start_page", SONGS);
+        int[] counts = {Library.songs.size(), Library.videos.size(), Library.images.size() + Library.videos.size(), -1, Store.playlistNames(this).size(), -1};
+        String[] icons = {"music", "video", "image", "folder", "queue", "refresh"};
+        for (int i = 0; i < PAGES.length; i++) {
+            final int p = i;
+            LinearLayout r = Ui.row(this);
+            r.setBackground(p == page ? Ui.rect(this, 0x1F00E5FF, 14, 0x6600E5FF, 1) : Ui.rect(this, 0, 14, 0, 0));
+            r.setPadding(Ui.dp(this, 14), 0, Ui.dp(this, 2), 0);
+            ImageView ic = new ImageView(this);
+            ic.setImageDrawable(new Icon(this, icons[i], p == page ? Ui.ACCENT : Ui.TEXT));
+            r.addView(ic, Ui.lp(Ui.dp(this, 20), Ui.dp(this, 20)));
+            TextView name = Ui.text(this, PAGES[i], 15, p == page ? Ui.ACCENT : Ui.TEXT);
+            name.setPadding(Ui.dp(this, 14), 0, 0, 0);
+            r.addView(name, Ui.lpw(0, Ui.WRAP, 1));
+            if (counts[i] >= 0) r.addView(Ui.text(this, String.format(Locale.US, "%,d", counts[i]), 12, Ui.MUTED));
+            ImageButton home = Ui.iconBtn(this, "home", 44, p == start ? Ui.SUCCESS : Ui.MUTED);
+            home.setOnClickListener(v -> {
+                if (p == HISTORY) { Ui.msg(this, "Pick Songs, Videos, Gallery, Folders or Playlists"); return; }
+                Store.put(this, "start_page", p);
+                Ui.msg(this, "NKT MP will open on " + PAGES[p]);
+                openDrawer();
+            });
+            r.addView(home);
+            r.setOnClickListener(v -> { closeDrawer(); goPage(p); });
+            panel.addView(r, Ui.lpm(this, Ui.MATCH, Ui.dp(this, 52), 0, 2, 0, 2));
+        }
+        View div = new View(this);
+        div.setBackgroundColor(Ui.BORDER);
+        panel.addView(div, Ui.lpm(this, Ui.MATCH, 1, 8, 12, 8, 12));
+        addDrawerLink(panel, "eq", "Equalizer & karaoke", null, EqualizerActivity.class);
+        addDrawerLink(panel, "devices", "Other devices", "Open files on phones and computers on Wi-Fi", DevicesActivity.class);
+        addDrawerLink(panel, "wifi", "NKT Share", "Share files with a computer or other devices on Wi-Fi", NktShareActivity.class);
+        addDrawerLink(panel, "settings", "Settings", null, SettingsActivity.class);
+        View grow = new View(this);
+        panel.addView(grow, Ui.lpw(1, 0, 1));
+        TextView ver = Ui.text(this, "NKT MP · Version 1.0", 12, Ui.MUTED);
+        ver.setPadding(Ui.dp(this, 14), 0, 0, 0);
+        panel.addView(ver);
+        FrameLayout.LayoutParams pp = new FrameLayout.LayoutParams(Math.min(Ui.dp(this, 310), (int) (getResources().getDisplayMetrics().widthPixels * 0.85)), Ui.MATCH);
+        drawer.addView(panel, pp);
+        drawer.setVisibility(View.VISIBLE);
+        panel.setTranslationX(-pp.width);
+        panel.animate().translationX(0).setDuration(200).start();
+        scrim.setAlpha(0f);
+        scrim.animate().alpha(1f).setDuration(200).start();
+    }
+
+    /** Small helper for the drawer's rounded right edge. */
+    private static final class GradientDrawable0 {
+        android.graphics.drawable.GradientDrawable make(Activity a) {
+            android.graphics.drawable.GradientDrawable g = new android.graphics.drawable.GradientDrawable();
+            g.setColor(Ui.CARD);
+            float r = Ui.dp(a, 24);
+            g.setCornerRadii(new float[]{0, 0, r, r, r, r, 0, 0});
+            g.setStroke(Ui.dp(a, 1), 0x4D00E5FF);
+            return g;
+        }
+    }
+
+    private void addDrawerLink(LinearLayout panel, String icon, String title, String sub, Class<?> cls) {
+        LinearLayout r = Ui.row(this);
+        r.setPadding(Ui.dp(this, 14), Ui.dp(this, 8), Ui.dp(this, 8), Ui.dp(this, 8));
+        r.setMinimumHeight(Ui.dp(this, 50));
+        ImageView ic = new ImageView(this);
+        ic.setImageDrawable(new Icon(this, icon, Ui.ACCENT));
+        r.addView(ic, Ui.lp(Ui.dp(this, 20), Ui.dp(this, 20)));
+        LinearLayout t = Ui.col(this);
+        t.setPadding(Ui.dp(this, 14), 0, 0, 0);
+        t.addView(Ui.text(this, title, 15, Ui.TEXT));
+        if (sub != null) t.addView(Ui.text(this, sub, 12, Ui.MUTED));
+        r.addView(t, Ui.lpw(0, Ui.WRAP, 1));
+        r.setBackground(Ui.pressable(Ui.rect(this, 0, 14, 0, 0), Ui.rect(this, 0x1400E5FF, 14, 0, 0)));
+        r.setOnClickListener(v -> { closeDrawer(); startActivity(new Intent(this, cls)); });
+        panel.addView(r);
+    }
+
+    private void closeDrawer() {
+        if (drawer.getChildCount() < 2) { drawer.setVisibility(View.GONE); return; }
+        View panel = drawer.getChildAt(1);
+        drawer.getChildAt(0).animate().alpha(0f).setDuration(180).start();
+        panel.animate().translationX(-panel.getWidth()).setDuration(180).withEndAction(() -> drawer.setVisibility(View.GONE)).start();
+    }
+
+    private void goPage(int p) {
+        page = p;
+        openGroup = null;
+        openPlaylist = null;
+        openHistory = p == HISTORY;
+        search.setText("");
+        block.setTranslationY(0);
+        rebuild();
+        list.scrollToPosition(0);
+    }
+
     @Override
     public void onBackPressed() {
-        if (sel.active()) { sel.clear(); return; }
-        if (openFolder != null || openPlaylist != null || openSquare != null || openHistory) { goBack(); return; }
-        if (search.getText().length() > 0) { search.setText(""); return; }
+        if (drawer.getVisibility() == View.VISIBLE) { closeDrawer(); return; }
+        if (openGroup != null) { openGroup = null; rebuild(); return; }
+        if (openPlaylist != null) { openPlaylist = null; rebuild(); return; }
+        if (page == FOLDERS && dir != null) { dir = isRoot(dir) ? null : dir.getParentFile(); rebuild(); return; }
+        if (!query.isEmpty()) { search.setText(""); return; }
         super.onBackPressed();
     }
+
+    // ------------------------------------------------------------------ view switch, sort, pinch
+    private int view() { return Store.num(this, "view_" + page, page == GALLERY ? 1 : 0); }
+
+    private int[] viewChoices() {
+        if (page == SONGS) return new int[]{0, 1, 2};
+        if (page == HISTORY) return new int[]{0};
+        return new int[]{0, 1};
+    }
+
+    private void buildViewSeg() {
+        viewSeg.removeAllViews();
+        int[] ch = viewChoices();
+        boolean show = ch.length > 1 && openGroup == null && openPlaylist == null;
+        viewSeg.setVisibility(show ? View.VISIBLE : View.GONE);
+        String[] icons = {"list", "grid", "squares"};
+        String[] names = {"List view", "Grid view", "Squares view"};
+        for (int v : ch) {
+            ImageButton b = new ImageButton(this);
+            b.setImageDrawable(new Icon(this, icons[v], v == view() ? Ui.ACCENT : Ui.MUTED));
+            b.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+            b.setPadding(Ui.dp(this, 9), Ui.dp(this, 6), Ui.dp(this, 9), Ui.dp(this, 6));
+            b.setBackground(v == view() ? Ui.rect(this, 0x2400E5FF, 15, 0, 0) : Ui.rect(this, 0, 15, 0, 0));
+            b.setContentDescription(names[v]);
+            b.setOnClickListener(x -> { Store.put(this, "view_" + page, v); rebuild(); list.scrollToPosition(0); });
+            viewSeg.addView(b, Ui.lp(Ui.dp(this, 38), Ui.MATCH));
+        }
+    }
+
+    private void sortSheet() {
+        LinearLayout box = Ui.col(this);
+        LinearLayout head = Ui.row(this);
+        head.addView(Ui.label(this, "Sort & view", 13, Ui.TEXT, 0.2f), Ui.lpw(0, Ui.WRAP, 1));
+        head.addView(Ui.text(this, PAGES[page] + " · remembered", 12, Ui.MUTED));
+        box.addView(head);
+        Dialog[] d = new Dialog[1];
+        int[] ch = viewChoices();
+        if (ch.length > 1) {
+            box.addView(sheetLabel("VIEW"));
+            LinearLayout vr = Ui.row(this);
+            String[] names = {"List", "Grid", "Squares"};
+            for (int v : ch) {
+                TextView t = Ui.chip(this, names[v], v == view());
+                t.setOnClickListener(x -> { Store.put(this, "view_" + page, v); rebuild(); d[0].dismiss(); });
+                vr.addView(t, Ui.lpm(this, 0, Ui.dp(this, 44), 0, 0, 8, 0));
+                ((LinearLayout.LayoutParams) t.getLayoutParams()).weight = 1;
+            }
+            box.addView(vr);
+        }
+        box.addView(sheetLabel("SORT BY"));
+        String cur = Sorts.current(this, page);
+        String[] opts = Sorts.options(page);
+        LinearLayout r = null;
+        for (int i = 0; i < opts.length; i++) {
+            if (i % 2 == 0) { r = Ui.row(this); box.addView(r, Ui.lpm(this, Ui.MATCH, Ui.WRAP, 0, 0, 0, 6)); }
+            String o = opts[i];
+            TextView t = Ui.chip(this, (o.equals(cur) ? "●  " : "○  ") + o, o.equals(cur));
+            t.setGravity(Gravity.CENTER_VERTICAL);
+            t.setOnClickListener(x -> { Store.put(this, "sort_" + page, o); rebuild(); list.scrollToPosition(0); d[0].dismiss(); });
+            r.addView(t, Ui.lpm(this, 0, Ui.dp(this, 46), 0, 0, i % 2 == 0 ? 6 : 0, 0));
+            ((LinearLayout.LayoutParams) t.getLayoutParams()).weight = 1;
+        }
+        if (opts.length % 2 == 1 && r != null) r.addView(new View(this), Ui.lpw(0, 1, 1));
+        d[0] = Ui.sheet(this, box);
+        d[0].show();
+    }
+
+    private TextView sheetLabel(String s) {
+        TextView t = Ui.label(this, s, 10, Ui.MUTED, 0.18f);
+        t.setPadding(0, Ui.dp(this, 18), 0, Ui.dp(this, 10));
+        return t;
+    }
+
+    private void pinch(int dir) {
+        if (view() != 1) return;
+        if (page == GALLERY) {
+            int[] steps = {2, 3, 4, 5, 7};
+            int cur = Store.num(this, "gallery_cols", 3), i = 0;
+            for (int k = 0; k < steps.length; k++) if (steps[k] == cur) i = k;
+            i = Math.max(0, Math.min(steps.length - 1, i + dir));
+            if (steps[i] == cur) return;
+            Store.put(this, "gallery_cols", steps[i]);
+            pop(steps[i] + " per row" + (steps[i] >= 5 ? " · by month" : ""));
+        } else if (page == VIDEOS) {
+            int cur = Store.num(this, "video_cols", 2), n = Math.max(1, Math.min(4, cur + dir));
+            if (n == cur) return;
+            Store.put(this, "video_cols", n);
+            pop(n + " per row");
+        } else return;
+        int first = glm.findFirstVisibleItemPosition();
+        rebuild();
+        if (first > 0) list.scrollToPosition(first);
+    }
+
+    private TextView popView;
+
+    private void pop(String s) {
+        if (popView == null) {
+            popView = Ui.label(this, "", 13, Ui.ACCENT, 0.05f);
+            popView.setBackground(Ui.rect(this, 0xCC05080F, 24, 0x5900E5FF, 1));
+            popView.setPadding(Ui.dp(this, 18), Ui.dp(this, 11), Ui.dp(this, 18), Ui.dp(this, 11));
+            listArea.addView(popView, new FrameLayout.LayoutParams(Ui.WRAP, Ui.WRAP, Gravity.CENTER));
+        }
+        popView.setText(s);
+        popView.setVisibility(View.VISIBLE);
+        popView.removeCallbacks(hidePop);
+        popView.postDelayed(hidePop, 900);
+    }
+
+    private final Runnable hidePop = () -> { if (popView != null) popView.setVisibility(View.GONE); };
+
+    // ------------------------------------------------------------------ building the list
+    private void rebuild() {
+        if (adapter == null) return;
+        pageLabel.setText(openHistory ? "HISTORY" : PAGES[page].toUpperCase(Locale.ROOT));
+        search.setHint(page == SONGS ? "Search songs…" : page == VIDEOS ? "Search videos…" : page == GALLERY ? "Search photos and videos…"
+                : page == FOLDERS ? "Search this folder…" : "Search…");
+        sortChip.setText(Sorts.chipLabel(Sorts.current(this, page)));
+        buildViewSeg();
+        buildGalleryBar();
+        if (page == FOLDERS) { buildFolders(); return; }
+        List<Row> out = new ArrayList<>();
+        String status = Library.refreshing ? "  ·  Updating" : "";
+        if (!Perms.media(this) && page != PLAYLISTS && page != HISTORY) {
+            out.add(Row.perm("Allow access to your music, videos and photos so they show up here.", "ALLOW ACCESS", () -> Perms.askMedia(this)));
+            count.setText("");
+            show(out, 1);
+            return;
+        }
+        switch (page) {
+            case SONGS: buildSongs(out, status); break;
+            case VIDEOS: buildVideos(out, status); break;
+            case GALLERY: buildGallery(out, status); break;
+            case PLAYLISTS: buildPlaylists(out); break;
+            default: buildHistory(out);
+        }
+    }
+
+    private void show(List<Row> out, int span) {
+        spanCount = Math.max(1, span);
+        glm.setSpanCount(spanCount);
+        rows.clear();
+        rows.addAll(out);
+        adapter.notifyDataSetChanged();
+    }
+
+    private List<MediaInfo> filter(List<MediaInfo> src) {
+        List<MediaInfo> l = new ArrayList<>();
+        for (MediaInfo m : src) {
+            if (query.isEmpty() || (m.title + " " + m.artist + " " + m.album + " " + m.folder + " " + m.name).toLowerCase(Locale.ROOT).contains(query)) l.add(m);
+        }
+        return l;
+    }
+
+    private void buildSongs(List<Row> out, String status) {
+        List<MediaInfo> l = filter(Library.songs);
+        Sorts.media(this, l, Sorts.current(this, SONGS));
+        if (openGroup != null) {
+            List<MediaInfo> g = openGroup.items;
+            long total = 0;
+            for (MediaInfo m : g) total += m.duration;
+            out.add(Row.back("‹  " + openGroup.name, g.size() + " songs · " + Ui.time(total), () -> { openGroup = null; rebuild(); }));
+            out.add(Row.action("play", "Play all", () -> Media.playSongs(this, g, 0, true)));
+            out.add(Row.action("shuffle", "Shuffle", () -> { List<MediaInfo> s = new ArrayList<>(g); Collections.shuffle(s); Media.playSongs(this, s, 0, true); }));
+            out.add(Row.action("playlist_add", "Save as playlist", () -> Actions.newPlaylist(this, n -> { Store.addTo(this, n, g); Ui.msg(this, "Saved as " + n); })));
+            addMediaRows(out, g, false);
+            count.setText(g.size() + " songs");
+            show(out, 1);
+            return;
+        }
+        count.setText(String.format(Locale.US, "%,d songs%s", l.size(), status));
+        int v = view();
+        if (l.isEmpty()) { out.add(Row.empty(Library.loaded ? "No songs found" : "Loading…")); show(out, 1); return; }
+        if (v == 2 && query.isEmpty()) {
+            for (Map.Entry<String, List<Group>> e : Group.build(this, Library.songs).entrySet()) {
+                out.add(Row.header(e.getKey()));
+                for (Group g : e.getValue()) out.add(Row.group(g, () -> { openGroup = g; rebuild(); list.scrollToPosition(0); }));
+            }
+            show(out, 2);
+        } else if (v == 1) {
+            for (int i = 0; i < l.size(); i++) {
+                final int idx = i;
+                MediaInfo m = l.get(i);
+                Row r = Row.square(m, () -> Media.playSongs(this, l, idx, true), () -> Actions.menu(this, m, null, this::rebuild));
+                r.title = m.title;
+                out.add(r);
+            }
+            show(out, 3);
+        } else {
+            addMediaRows(out, l, true);
+            show(out, 1);
+        }
+    }
+
+    private void addMediaRows(List<Row> out, List<MediaInfo> l, boolean menu) {
+        for (int i = 0; i < l.size(); i++) {
+            final int idx = i;
+            MediaInfo m = l.get(i);
+            out.add(Row.media(m, () -> open(l, idx), () -> Actions.menu(this, m, openPlaylist, this::rebuild)));
+        }
+    }
+
+    private void open(List<MediaInfo> l, int idx) {
+        MediaInfo m = l.get(idx);
+        List<MediaInfo> same = new ArrayList<>();
+        int at = 0;
+        for (MediaInfo x : l) {
+            boolean ok = m.isAudio() ? x.isAudio() : m.isVideo() ? x.isVideo() : (x.isImage() || x.isVideo());
+            if (!ok) continue;
+            if (x == m) at = same.size();
+            same.add(x);
+        }
+        if (m.isAudio()) Media.playSongs(this, same, at, true);
+        else if (m.isVideo()) Media.playVideos(this, same, at);
+        else Media.view(this, same, at);
+    }
+
+    private void buildVideos(List<Row> out, String status) {
+        List<MediaInfo> l = filter(Library.videos);
+        Sorts.media(this, l, Sorts.current(this, VIDEOS));
+        count.setText(String.format(Locale.US, "%,d videos%s", l.size(), status));
+        if (l.isEmpty()) { out.add(Row.empty(Library.loaded ? "No videos found" : "Loading…")); show(out, 1); return; }
+        if (view() == 1) {
+            int cols = Store.num(this, "video_cols", 2);
+            if (getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) cols++;
+            for (int i = 0; i < l.size(); i++) {
+                final int idx = i;
+                MediaInfo m = l.get(i);
+                Row r = Row.wide(m, () -> Media.playVideos(this, l, idx), () -> Actions.menu(this, m, null, this::rebuild));
+                r.compact = cols >= 4;
+                out.add(r);
+            }
+            show(out, cols);
+        } else {
+            addMediaRows(out, l, true);
+            show(out, 1);
+        }
+    }
+
+    private void buildGalleryBar() {
+        galleryBar.removeAllViews();
+        galleryBar.setVisibility(page == GALLERY ? View.VISIBLE : View.GONE);
+        if (page != GALLERY) return;
+        String[] names = {"ALL", "PHOTOS", "VIDEOS"};
+        for (int i = 0; i < 3; i++) {
+            final int f = i;
+            TextView t = Ui.chip(this, names[i], galleryFilter == i);
+            t.setOnClickListener(v -> { galleryFilter = f; rebuild(); });
+            galleryBar.addView(t, Ui.lpm(this, Ui.WRAP, Ui.dp(this, 34), 0, 0, 6, 0));
+        }
+        TextView album = Ui.chip(this, galleryAlbum == null ? "All albums ▾" : galleryAlbum + " ▾", galleryAlbum != null);
+        album.setOnClickListener(v -> pickAlbum());
+        galleryBar.addView(album, Ui.lpw(0, Ui.dp(this, 34), 1));
+        Ui.single(album);
+    }
+
+    private void pickAlbum() {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        List<MediaInfo> all = new ArrayList<>(Library.images);
+        all.addAll(Library.videos);
+        for (MediaInfo m : all) counts.put(m.folder, counts.containsKey(m.folder) ? counts.get(m.folder) + 1 : 1);
+        List<Map.Entry<String, Integer>> es = new ArrayList<>(counts.entrySet());
+        Collections.sort(es, (a, b) -> b.getValue() - a.getValue());
+        String[] items = new String[es.size() + 1];
+        items[0] = "All albums";
+        for (int i = 0; i < es.size(); i++) items[i + 1] = es.get(i).getKey() + "  (" + es.get(i).getValue() + ")";
+        new AlertDialog.Builder(this).setTitle("Album").setItems(items, (d, w) -> {
+            galleryAlbum = w == 0 ? null : es.get(w - 1).getKey();
+            rebuild();
+        }).show();
+    }
+
+    private void buildGallery(List<Row> out, String status) {
+        List<MediaInfo> src = new ArrayList<>();
+        if (galleryFilter != 2) src.addAll(Library.images);
+        if (galleryFilter != 1) src.addAll(Library.videos);
+        List<MediaInfo> l = filter(src);
+        if (galleryAlbum != null) l.removeIf(m -> !galleryAlbum.equals(m.folder));
+        String sort = Sorts.current(this, GALLERY);
+        Sorts.media(this, l, sort);
+        count.setText(String.format(Locale.US, "%,d items%s", l.size(), status));
+        if (l.isEmpty()) { out.add(Row.empty(Library.loaded ? "Nothing here" : "Loading…")); show(out, 1); return; }
+        if (view() == 0) { addMediaRows(out, l, true); show(out, 1); return; }
+        int cols = Store.num(this, "gallery_cols", 3);
+        boolean dates = sort.equals(Sorts.NEW) || sort.equals(Sorts.OLD);
+        String last = null;
+        for (int i = 0; i < l.size(); i++) {
+            final int idx = i;
+            MediaInfo m = l.get(i);
+            if (dates) {
+                String h = cols >= 5 ? month(m.date) : day(m.date);
+                if (!h.equals(last)) { out.add(Row.header(h)); last = h; }
+            }
+            Row r = Row.square(m, () -> Media.view(this, l, idx), () -> Actions.menu(this, m, null, this::rebuild));
+            r.thumbPx = cols >= 5 ? 120 : 256;
+            r.gap = true;
+            out.add(r);
+        }
+        show(out, cols);
+    }
+
+    static String day(long t) {
+        Calendar now = Calendar.getInstance(), c = Calendar.getInstance();
+        c.setTimeInMillis(t);
+        if (now.get(Calendar.YEAR) == c.get(Calendar.YEAR) && now.get(Calendar.DAY_OF_YEAR) == c.get(Calendar.DAY_OF_YEAR)) return "TODAY";
+        now.add(Calendar.DAY_OF_YEAR, -1);
+        if (now.get(Calendar.YEAR) == c.get(Calendar.YEAR) && now.get(Calendar.DAY_OF_YEAR) == c.get(Calendar.DAY_OF_YEAR)) return "YESTERDAY";
+        boolean thisYear = Calendar.getInstance().get(Calendar.YEAR) == c.get(Calendar.YEAR);
+        return new SimpleDateFormat(thisYear ? "EEE, d MMM" : "d MMM yyyy", Locale.getDefault()).format(new Date(t)).toUpperCase(Locale.ROOT);
+    }
+
+    static String month(long t) { return new SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(new Date(t)).toUpperCase(Locale.ROOT); }
+
+    private void buildPlaylists(List<Row> out) {
+        if (openPlaylist != null) {
+            List<MediaInfo> items = Store.playlist(this, openPlaylist);
+            String s = Sorts.current(this, PLAYLISTS);
+            if (s.equals(Sorts.NEW)) Collections.reverse(items);
+            else if (s.equals(Sorts.AZ) || s.equals(Sorts.ZA)) Sorts.media(this, items, s);
+            items = filter(items);
+            final List<MediaInfo> fi = items;
+            out.add(Row.back("‹  " + openPlaylist, items.size() + " items", () -> { openPlaylist = null; rebuild(); }));
+            if (!items.isEmpty()) out.add(Row.action("play", "Play all", () -> {
+                List<MediaInfo> songs = new ArrayList<>(), vids = new ArrayList<>(), pics = new ArrayList<>();
+                for (MediaInfo m : fi) (m.isAudio() ? songs : m.isVideo() ? vids : pics).add(m);
+                if (!songs.isEmpty()) Media.playSongs(this, songs, 0, true);
+                else if (!vids.isEmpty()) Media.playVideos(this, vids, 0);
+                else Media.view(this, pics, 0);
+            }));
+            addMediaRows(out, items, true);
+            if (items.isEmpty()) out.add(Row.empty("This playlist is empty. Use “Add to playlist” on any song, video or photo."));
+            count.setText(items.size() + " items");
+            show(out, 1);
+            return;
+        }
+        List<String> names = new ArrayList<>(Store.playlistNames(this));
+        if (!query.isEmpty()) names.removeIf(n -> !n.toLowerCase(Locale.ROOT).contains(query));
+        String s = Sorts.current(this, PLAYLISTS);
+        switch (s) {
+            case Sorts.ZA: Collections.sort(names, (a, b) -> b.compareToIgnoreCase(a)); break;
+            case Sorts.NEW: Collections.sort(names, (a, b) -> Long.compare(Store.created(this, b), Store.created(this, a))); break;
+            case Sorts.OLD: Collections.sort(names, (a, b) -> Long.compare(Store.created(this, a), Store.created(this, b))); break;
+            case "Most items": Collections.sort(names, (a, b) -> Store.playlist(this, b).size() - Store.playlist(this, a).size()); break;
+            case "Fewest items": Collections.sort(names, (a, b) -> Store.playlist(this, a).size() - Store.playlist(this, b).size()); break;
+            default: Collections.sort(names, String::compareToIgnoreCase);
+        }
+        count.setText(names.size() + " playlists");
+        List<Object[]> hist = Store.history(this);
+        out.add(Row.icon("refresh", "History", Store.bool(this, "history_on", true) ? hist.size() + " items" : "Off",
+                () -> goPage(HISTORY), null));
+        out.add(Row.icon("plus", "New playlist", null, () -> Actions.newPlaylist(this, n -> rebuild()), null));
+        boolean grid = view() == 1;
+        for (String n : names) {
+            int c = Store.playlist(this, n).size();
+            Row r = Row.icon(n.startsWith("♥") ? "heart_filled" : "queue", n, c + (c == 1 ? " item" : " items"),
+                    () -> { openPlaylist = n; rebuild(); list.scrollToPosition(0); },
+                    () -> new AlertDialog.Builder(this).setTitle("Delete “" + n + "”?").setMessage("The songs themselves stay on your phone.")
+                            .setPositiveButton("Delete playlist", (d, w) -> { Store.deletePlaylist(this, n); rebuild(); })
+                            .setNegativeButton("Cancel", null).show());
+            if (grid) r.type = Row.SQUARE;
+            out.add(r);
+        }
+        show(out, grid ? 2 : 1);
+    }
+
+    private void buildHistory(List<Row> out) {
+        List<Object[]> h = Store.history(this);
+        out.add(Row.back("‹  Playlists", null, () -> goPage(PLAYLISTS)));
+        if (!Store.bool(this, "history_on", true)) {
+            out.add(Row.empty("History is off. Turn it on in Settings."));
+            count.setText("");
+            show(out, 1);
+            return;
+        }
+        out.add(Row.icon("delete", "Clear history", null, () -> new AlertDialog.Builder(this).setTitle("Clear history?")
+                .setMessage("Clear the list of opened files? The files themselves stay.")
+                .setPositiveButton("Clear", (d, w) -> { Store.clearHistory(this); rebuild(); }).setNegativeButton("Cancel", null).show(), null));
+        String s = Sorts.current(this, HISTORY);
+        if (s.equals(Sorts.OLD)) Collections.reverse(h);
+        else if (s.equals(Sorts.AZ)) Collections.sort(h, (a, b) -> ((MediaInfo) a[0]).title.compareToIgnoreCase(((MediaInfo) b[0]).title));
+        else if (s.equals(Sorts.ZA)) Collections.sort(h, (a, b) -> ((MediaInfo) b[0]).title.compareToIgnoreCase(((MediaInfo) a[0]).title));
+        List<MediaInfo> all = new ArrayList<>();
+        for (Object[] o : h) all.add((MediaInfo) o[0]);
+        SimpleDateFormat tf = new SimpleDateFormat("h:mm a", Locale.getDefault());
+        for (int i = 0; i < h.size(); i++) {
+            MediaInfo m = (MediaInfo) h.get(i)[0];
+            if (!query.isEmpty() && !m.title.toLowerCase(Locale.ROOT).contains(query)) continue;
+            long t = (Long) h.get(i)[1];
+            String d = day(t);
+            String when = d.equals("TODAY") ? "Today " + tf.format(new Date(t)) : d.equals("YESTERDAY") ? "Yesterday " + tf.format(new Date(t)) : d;
+            final int idx = i;
+            Row r = Row.media(m, () -> open(all, idx), () -> Actions.menu(this, m, null, this::rebuild));
+            r.sub = when + " · " + (m.isAudio() ? "Song · " + m.artistOrUnknown() : m.isVideo() ? "Video" : "Photo");
+            out.add(r);
+        }
+        if (h.isEmpty()) out.add(Row.empty("Nothing opened yet"));
+        count.setText(h.size() + " items");
+        show(out, 1);
+    }
+
+    // ------------------------------------------------------------------ folders (file explorer)
+    private static boolean isRoot(File f) {
+        for (File r : storageRoots(null)) if (r.equals(f)) return true;
+        return false;
+    }
+
+    static List<File> storageRoots(Activity a) {
+        List<File> out = new ArrayList<>();
+        out.add(Environment.getExternalStorageDirectory());
+        File[] ext = a == null ? null : a.getExternalFilesDirs(null);
+        if (ext != null) for (File f : ext) {
+            if (f == null) continue;
+            String p = f.getAbsolutePath();
+            int i = p.indexOf("/Android/data/");
+            if (i > 0) {
+                File r = new File(p.substring(0, i));
+                if (!out.contains(r)) out.add(r);
+            }
+        }
+        return out;
+    }
+
+    private void buildFolders() {
+        if (!Perms.allFiles(this)) {
+            List<Row> out = new ArrayList<>();
+            out.add(Row.perm("Folders shows every file and folder on your phone. Android needs you to allow access to all files first.",
+                    "ALLOW ACCESS", () -> Perms.askAllFiles(this, "Folders shows every file and folder on your phone, like a file manager.")));
+            count.setText("");
+            show(out, 1);
+            return;
+        }
+        final File cur = dir;
+        final String q = query, sort = Sorts.current(this, FOLDERS);
+        final boolean hidden = Store.bool(this, "show_hidden", false);
+        final boolean grid = view() == 1;
+        final List<File> roots = storageRoots(this);
+        bg.execute(() -> {
+            List<Row> out = new ArrayList<>();
+            String cnt;
+            if (cur == null) {
+                for (int i = 0; i < roots.size(); i++) {
+                    File r = roots.get(i);
+                    String name = i == 0 ? "Phone storage" : "SD card / USB (" + r.getName() + ")";
+                    out.add(Row.icon("folder", name, r.getAbsolutePath(), () -> { dir = r; rebuild(); list.scrollToPosition(0); }, null));
+                }
+                cnt = roots.size() + " storage";
+            } else {
+                File[] kids = cur.listFiles();
+                out.add(Row.back("‹  " + (isRoot(cur) ? "All storage" : cur.getParentFile() != null ? cur.getParentFile().getName() : "Up"),
+                        pretty(cur), () -> { dir = isRoot(cur) ? null : cur.getParentFile(); rebuild(); }));
+                if (kids == null) {
+                    out.add(Row.empty(cur.getName().equals("data") || cur.getName().equals("obb")
+                            ? "Android doesn't let any app open this folder on Android 11 and newer." : "This folder can't be opened."));
+                    cnt = "Locked";
+                } else {
+                    List<File> l = new ArrayList<>();
+                    int hiddenCount = 0;
+                    boolean nomedia = new File(cur, ".nomedia").exists() && !hidden;
+                    for (File f : kids) {
+                        boolean isHidden = f.getName().startsWith(".") || (f.isDirectory() && new File(f, ".nomedia").exists());
+                        if (isHidden && !hidden) { hiddenCount++; continue; }
+                        if (!q.isEmpty() && !f.getName().toLowerCase(Locale.ROOT).contains(q)) continue;
+                        l.add(f);
+                    }
+                    Sorts.files(l, sort);
+                    int nf = 0, nx = 0;
+                    if (hiddenCount > 0) out.add(Row.note(hiddenCount + (hiddenCount == 1 ? " hidden folder or file" : " hidden folders and files")
+                            + " not shown. Show them in Settings."));
+                    for (File f : l) {
+                        boolean d = f.isDirectory();
+                        if (d) nf++; else nx++;
+                        String sub;
+                        if (d) {
+                            String[] in = f.list();
+                            sub = in == null ? "Locked by Android" : in.length == 0 ? "Empty" : in.length + (in.length == 1 ? " item" : " items");
+                        } else {
+                            sub = Ui.size(f.length()) + " · " + new SimpleDateFormat("d MMM yyyy", Locale.getDefault()).format(new Date(f.lastModified()));
+                        }
+                        boolean h = f.getName().startsWith(".");
+                        Row r = Row.file(f, (h ? "Hidden · " : "") + sub, () -> {
+                            if (f.isDirectory()) { dir = f; rebuild(); list.scrollToPosition(0); }
+                            else Media.openFile(this, f, l);
+                        }, () -> fileMenu(f));
+                        r.hiddenMark = h;
+                        if (grid) r.type = Row.SQUARE;
+                        out.add(r);
+                    }
+                    if (l.isEmpty()) out.add(Row.empty(q.isEmpty() ? "This folder is empty" : "Nothing matches"));
+                    cnt = nf + (nf == 1 ? " folder · " : " folders · ") + nx + (nx == 1 ? " file" : " files");
+                }
+            }
+            final String fc = cnt;
+            runOnUiThread(() -> {
+                if (page != FOLDERS || dir != cur) return;
+                count.setText(fc);
+                show(out, grid && cur != null ? 3 : 1);
+            });
+        });
+    }
+
+    private String pretty(File f) {
+        String p = f.getAbsolutePath(), r = Environment.getExternalStorageDirectory().getAbsolutePath();
+        return p.startsWith(r) ? "Phone storage" + p.substring(r.length()) : p;
+    }
+
+    private void fileMenu(File f) {
+        String[] opts = f.isDirectory() ? new String[]{"Open", "Rename", "Delete", "Details"} : new String[]{"Open", "Open with another app", "Share", "Rename", "Delete", "Details"};
+        new AlertDialog.Builder(this).setTitle(f.getName()).setItems(opts, (d, w) -> {
+            switch (opts[w]) {
+                case "Open": if (f.isDirectory()) { dir = f; rebuild(); } else Media.openFile(this, f, Collections.singletonList(f)); break;
+                case "Open with another app": Media.openExternal(this, f, MediaInfo.mimeOf(f.getName())); break;
+                case "Share": Media.shareFile(this, f); break;
+                case "Rename": rename(f); break;
+                case "Delete":
+                    new AlertDialog.Builder(this).setTitle("Delete “" + f.getName() + "”?").setMessage("This can't be undone.")
+                            .setPositiveButton("Delete", (x, y) -> { Ui.msg(this, Actions.deleteFile(this, f) ? "Deleted" : "Couldn't delete"); rebuild(); })
+                            .setNegativeButton("Cancel", null).show();
+                    break;
+                default:
+                    MediaInfo m = MediaInfo.fromFile(f);
+                    Actions.details(this, m, this::rebuild);
+            }
+        }).show();
+    }
+
+    private void rename(File f) {
+        EditText e = new EditText(this);
+        e.setText(f.getName());
+        e.setTextColor(Ui.TEXT);
+        e.setSingleLine(true);
+        LinearLayout box = Ui.col(this);
+        box.setPadding(Ui.dp(this, 20), Ui.dp(this, 8), Ui.dp(this, 20), 0);
+        box.addView(e);
+        new AlertDialog.Builder(this).setTitle("Rename").setView(box).setPositiveButton("Rename", (d, w) -> {
+            String n = e.getText().toString().trim();
+            if (n.isEmpty() || n.contains("/")) return;
+            File to = new File(f.getParentFile(), n);
+            Ui.msg(this, f.renameTo(to) ? "Renamed" : "Couldn't rename");
+            android.media.MediaScannerConnection.scanFile(this, new String[]{f.getAbsolutePath(), to.getAbsolutePath()}, null, null);
+            rebuild();
+        }).setNegativeButton("Cancel", null).show();
+    }
+
+    // ------------------------------------------------------------------ rows + adapter
+    static final class Row {
+        static final int ROW = 0, HEADER = 1, SQUARE = 2, WIDE = 3, GROUP = 4, BACK = 5, ACTION = 6, EMPTY = 7, PERM = 8, NOTE = 9;
+        int type;
+        MediaInfo m;
+        File file;
+        Group group;
+        String title, sub, icon, button;
+        Runnable click, longClick;
+        boolean compact, hiddenMark, gap;
+        int thumbPx = 256;
+
+        static Row media(MediaInfo m, Runnable c, Runnable l) {
+            Row r = new Row(); r.type = ROW; r.m = m; r.title = m.title; r.sub = m.subtitle(); r.click = c; r.longClick = l; r.hiddenMark = m.hidden; return r;
+        }
+        static Row square(MediaInfo m, Runnable c, Runnable l) { Row r = media(m, c, l); r.type = SQUARE; r.title = null; return r; }
+        static Row wide(MediaInfo m, Runnable c, Runnable l) { Row r = media(m, c, l); r.type = WIDE; return r; }
+        static Row header(String s) { Row r = new Row(); r.type = HEADER; r.title = s; return r; }
+        static Row group(Group g, Runnable c) { Row r = new Row(); r.type = GROUP; r.group = g; r.click = c; return r; }
+        static Row back(String t, String s, Runnable c) { Row r = new Row(); r.type = BACK; r.title = t; r.sub = s; r.click = c; return r; }
+        static Row action(String icon, String t, Runnable c) { Row r = new Row(); r.type = ACTION; r.icon = icon; r.title = t; r.click = c; return r; }
+        static Row empty(String t) { Row r = new Row(); r.type = EMPTY; r.title = t; return r; }
+        static Row note(String t) { Row r = new Row(); r.type = NOTE; r.title = t; return r; }
+        static Row perm(String t, String b, Runnable c) { Row r = new Row(); r.type = PERM; r.title = t; r.button = b; r.click = c; return r; }
+        static Row icon(String icon, String t, String s, Runnable c, Runnable l) {
+            Row r = new Row(); r.type = ROW; r.icon = icon; r.title = t; r.sub = s; r.click = c; r.longClick = l; return r;
+        }
+        static Row file(File f, String sub, Runnable c, Runnable l) {
+            Row r = new Row(); r.type = ROW; r.file = f; r.title = f.getName(); r.sub = sub; r.click = c; r.longClick = l; return r;
+        }
+    }
+
+    final class Adapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+        @Override public int getItemCount() { return rows.size(); }
+        @Override public int getItemViewType(int p) { return rows.get(p).type; }
+
+        @NonNull
+        @Override
+        public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int type) {
+            View v;
+            switch (type) {
+                case Row.HEADER: {
+                    TextView t = Ui.label(MainActivity.this, "", 10, Ui.TEXT, 0.18f);
+                    t.setPadding(Ui.dp(MainActivity.this, 4), Ui.dp(MainActivity.this, 14), 0, Ui.dp(MainActivity.this, 8));
+                    v = t;
+                    break;
+                }
+                case Row.SQUARE: v = new Tile(MainActivity.this, false); break;
+                case Row.WIDE: v = new Tile(MainActivity.this, true); break;
+                case Row.GROUP: v = new GroupTile(MainActivity.this); break;
+                case Row.EMPTY: case Row.NOTE: {
+                    TextView t = Ui.text(MainActivity.this, "", type == Row.EMPTY ? 14 : 12, Ui.MUTED);
+                    t.setGravity(type == Row.EMPTY ? Gravity.CENTER : Gravity.START);
+                    t.setPadding(Ui.dp(MainActivity.this, 16), Ui.dp(MainActivity.this, type == Row.EMPTY ? 48 : 10), Ui.dp(MainActivity.this, 16), Ui.dp(MainActivity.this, 4));
+                    v = t;
+                    break;
+                }
+                case Row.PERM: v = new PermBox(MainActivity.this); break;
+                default: v = new ListRow(MainActivity.this);
+            }
+            v.setLayoutParams(new RecyclerView.LayoutParams(Ui.MATCH, Ui.WRAP));
+            return new RecyclerView.ViewHolder(v) {};
+        }
+
+        @Override
+        public void onBindViewHolder(@NonNull RecyclerView.ViewHolder h, int pos) {
+            Row r = rows.get(pos);
+            View v = h.itemView;
+            v.setOnClickListener(r.click == null ? null : x -> r.click.run());
+            v.setOnLongClickListener(r.longClick == null ? null : x -> { r.longClick.run(); return true; });
+            if (r.click == null) v.setClickable(false);
+            switch (r.type) {
+                case Row.HEADER: case Row.EMPTY: case Row.NOTE: ((TextView) v).setText(r.title); break;
+                case Row.SQUARE: case Row.WIDE: ((Tile) v).bind(r, spanCount); break;
+                case Row.GROUP: ((GroupTile) v).bind(r.group); break;
+                case Row.PERM: ((PermBox) v).bind(r); break;
+                default: ((ListRow) v).bind(r, r.m != null && r.m.uri.equals(nowUri));
+            }
+        }
+    }
+
+    /** Standard list row: 48dp thumbnail, title, subtitle, ⋮. */
+    final class ListRow extends LinearLayout {
+        final ImageView thumb = new ImageView(getContext());
+        final TextView title, sub;
+        final ImageButton more;
+
+        ListRow(Activity a) {
+            super(a);
+            setOrientation(HORIZONTAL);
+            setGravity(Gravity.CENTER_VERTICAL);
+            setPadding(Ui.dp(a, 8), Ui.dp(a, 8), Ui.dp(a, 2), Ui.dp(a, 8));
+            setMinimumHeight(Ui.dp(a, 64));
+            thumb.setBackground(Ui.rect(a, Ui.FILL, 8, 0, 0));
+            thumb.setClipToOutline(true);
+            addView(thumb, Ui.lp(Ui.dp(a, 48), Ui.dp(a, 48)));
+            LinearLayout t = Ui.col(a);
+            t.setPadding(Ui.dp(a, 12), 0, Ui.dp(a, 4), 0);
+            title = Ui.single(Ui.text(a, "", 14, Ui.TEXT));
+            sub = Ui.single(Ui.text(a, "", 12, Ui.MUTED));
+            sub.setPadding(0, Ui.dp(a, 3), 0, 0);
+            t.addView(title);
+            t.addView(sub);
+            addView(t, Ui.lpw(0, Ui.WRAP, 1));
+            more = Ui.iconBtn(a, "more", 44, Ui.MUTED);
+            addView(more);
+        }
+
+        void bind(Row r, boolean now) {
+            Activity a = MainActivity.this;
+            boolean plain = r.type == Row.BACK || r.type == Row.ACTION;
+            setBackground(r.type == Row.ACTION ? Ui.pressable(Ui.rect(a, 0x0F00E5FF, 12, Ui.BORDER, 1), Ui.rect(a, 0x2400E5FF, 12, 0x5900E5FF, 1))
+                    : Ui.rowBg(a, now));
+            LayoutParams0.top(this, Ui.dp(a, 6));
+            title.setText(r.title);
+            title.setTextColor(now || r.type == Row.BACK || r.type == Row.ACTION ? Ui.ACCENT : Ui.TEXT);
+            sub.setText(r.sub == null ? "" : r.sub);
+            sub.setVisibility(r.sub == null ? GONE : VISIBLE);
+            thumb.setVisibility(r.type == Row.BACK ? GONE : VISIBLE);
+            more.setVisibility(r.longClick != null && !plain ? VISIBLE : GONE);
+            more.setOnClickListener(x -> { if (r.longClick != null) r.longClick.run(); });
+            if (r.m != null) {
+                thumb.setBackground(Ui.rect(a, Ui.FILL, 8, 0, 0));
+                Thumbs.load(thumb, r.m, Ui.dp(a, 96), r.m.isAudio() ? "music" : r.m.isVideo() ? "video" : "image");
+            } else {
+                thumb.setTag(null);
+                thumb.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+                String ic = r.icon;
+                int color = Ui.ACCENT;
+                if (r.file != null) {
+                    if (r.file.isDirectory()) ic = "folder";
+                    else {
+                        int k = MediaInfo.kindOf(r.file.getName());
+                        ic = k == MediaInfo.AUDIO ? "music" : k == MediaInfo.VIDEO ? "video" : k == MediaInfo.IMAGE ? "image" : "file";
+                        color = Ui.MUTED;
+                    }
+                    if (r.hiddenMark) color = Ui.ACCENT2;
+                    if (!r.file.isDirectory() && (MediaInfo.kindOf(r.file.getName()) == MediaInfo.IMAGE || MediaInfo.kindOf(r.file.getName()) == MediaInfo.VIDEO)) {
+                        Thumbs.load(thumb, MediaInfo.fromFile(r.file), Ui.dp(a, 96), ic);
+                        return;
+                    }
+                }
+                thumb.setImageDrawable(new Icon(a, ic == null ? "file" : ic, color));
+                thumb.setBackground(Ui.rect(a, r.type == Row.ACTION ? 0 : Ui.FILL, 8, 0, 0));
+                int p = Ui.dp(a, 12);
+                thumb.setPadding(p, p, p, p);
+                return;
+            }
+            thumb.setPadding(0, 0, 0, 0);
+        }
+    }
+
+    static final class LayoutParams0 {
+        static void top(View v, int px) {
+            ViewGroup.LayoutParams lp = v.getLayoutParams();
+            if (lp instanceof ViewGroup.MarginLayoutParams) ((ViewGroup.MarginLayoutParams) lp).topMargin = px;
+        }
+    }
+
+    /** Square (gallery, song grid, folder grid) and 16:9 (videos) tiles. */
+    final class Tile extends LinearLayout {
+        final FrameLayout frame;
+        final ImageView img = new ImageView(getContext());
+        final TextView badge, title, sub;
+        final View dot, label;
+        final boolean wide;
+
+        Tile(Activity a, boolean wide) {
+            super(a);
+            this.wide = wide;
+            setOrientation(VERTICAL);
+            frame = wide ? new WideFrame(a) : new SquareFrame(a);
+            frame.setBackground(Ui.rect(a, Ui.CELL, wide ? 12 : 4, 0, 0));
+            frame.setClipToOutline(true);
+            img.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            frame.addView(img, new FrameLayout.LayoutParams(Ui.MATCH, Ui.MATCH));
+            badge = Ui.text(a, "", 10, Ui.TEXT);
+            badge.setBackground(Ui.rect(a, 0xBF05080F, 10, 0, 0));
+            badge.setPadding(Ui.dp(a, 6), Ui.dp(a, 1), Ui.dp(a, 6), Ui.dp(a, 1));
+            FrameLayout.LayoutParams bp = new FrameLayout.LayoutParams(Ui.WRAP, Ui.WRAP, Gravity.BOTTOM | Gravity.START);
+            bp.setMargins(Ui.dp(a, 5), 0, 0, Ui.dp(a, 5));
+            frame.addView(badge, bp);
+            dot = new View(a);
+            dot.setBackground(Ui.oval(a, Ui.ACCENT2, Ui.BG, 1));
+            FrameLayout.LayoutParams dp = new FrameLayout.LayoutParams(Ui.dp(a, 9), Ui.dp(a, 9), Gravity.TOP | Gravity.END);
+            dp.setMargins(0, Ui.dp(a, 6), Ui.dp(a, 6), 0);
+            frame.addView(dot, dp);
+            addView(frame, new LayoutParams(Ui.MATCH, Ui.WRAP));
+            LinearLayout lab = Ui.col(a);
+            title = Ui.text(a, "", 13, Ui.TEXT);
+            title.setMaxLines(2);
+            title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            sub = Ui.single(Ui.text(a, "", 11, Ui.MUTED));
+            lab.addView(title);
+            lab.addView(sub);
+            lab.setPadding(Ui.dp(a, 2), Ui.dp(a, 6), Ui.dp(a, 2), Ui.dp(a, 8));
+            label = lab;
+            addView(lab);
+        }
+
+        void bind(Row r, int cols) {
+            Activity a = MainActivity.this;
+            int pad = r.gap ? Ui.dp(a, 0.75f) : Ui.dp(a, 4);
+            setPadding(pad, pad, pad, pad);
+            MediaInfo m = r.m;
+            if (m != null) {
+                Thumbs.load(img, m, Ui.dp(a, wide ? 220 : r.thumbPx / 2f), m.isAudio() ? "music" : m.isVideo() ? "video" : "image");
+                badge.setVisibility(m.isVideo() ? VISIBLE : GONE);
+                badge.setText("▶ " + Ui.time(m.duration));
+                dot.setVisibility(m.hidden ? VISIBLE : GONE);
+                boolean showText = wide ? !r.compact : r.title != null;
+                label.setVisibility(showText ? VISIBLE : GONE);
+                title.setText(m.title);
+                title.setTextSize(wide && cols == 1 ? 15 : cols >= 3 ? 11 : 13);
+                sub.setText(wide ? m.folder : m.artistOrUnknown());
+            } else {
+                img.setTag(null);
+                img.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+                boolean folder = r.file != null && r.file.isDirectory();
+                String ic = r.file != null ? (folder ? "folder" : "file") : r.icon;
+                img.setImageDrawable(new Icon(a, ic == null ? "file" : ic, r.hiddenMark ? Ui.ACCENT2 : folder || r.file == null ? Ui.ACCENT : Ui.MUTED));
+                int p = Ui.dp(a, 30);
+                img.setPadding(p, p, p, p);
+                badge.setVisibility(GONE);
+                dot.setVisibility(GONE);
+                label.setVisibility(VISIBLE);
+                title.setText(r.title);
+                sub.setText(r.sub == null ? "" : r.sub);
+                return;
+            }
+            img.setPadding(0, 0, 0, 0);
+        }
+    }
+
+    final class GroupTile extends FrameLayout {
+        final ImageView img = new ImageView(getContext());
+        final TextView name, cnt;
+
+        GroupTile(Activity a) {
+            super(a);
+            setPadding(Ui.dp(a, 5), Ui.dp(a, 5), Ui.dp(a, 5), Ui.dp(a, 5));
+            SquareFrame f = new SquareFrame(a);
+            f.setBackground(Ui.rect(a, Ui.FILL, 16, Ui.BORDER, 1));
+            f.setClipToOutline(true);
+            img.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            img.setAlpha(0.55f);
+            f.addView(img, new LayoutParams(Ui.MATCH, Ui.MATCH));
+            LinearLayout t = Ui.col(a);
+            t.setPadding(Ui.dp(a, 12), Ui.dp(a, 12), Ui.dp(a, 12), Ui.dp(a, 12));
+            name = Ui.text(a, "", 15, Ui.TEXT);
+            name.setTypeface(null, android.graphics.Typeface.BOLD);
+            name.setMaxLines(2);
+            cnt = Ui.text(a, "", 12, 0xFFB6C3D6);
+            t.addView(name);
+            t.addView(cnt);
+            f.addView(t, new LayoutParams(Ui.MATCH, Ui.WRAP, Gravity.BOTTOM));
+            addView(f, new LayoutParams(Ui.MATCH, Ui.WRAP));
+        }
+
+        void bind(Group g) {
+            name.setText(g.name);
+            cnt.setText(g.items.size() + " songs");
+            Thumbs.load(img, g.items.get(0), Ui.dp(getContext(), 160), "music");
+        }
+    }
+
+    final class PermBox extends LinearLayout {
+        final TextView msg, btn;
+
+        PermBox(Activity a) {
+            super(a);
+            setOrientation(VERTICAL);
+            setGravity(Gravity.CENTER_HORIZONTAL);
+            setPadding(Ui.dp(a, 24), Ui.dp(a, 60), Ui.dp(a, 24), Ui.dp(a, 24));
+            ImageView ic = new ImageView(a);
+            ic.setImageDrawable(new Icon(a, "folder", Ui.ACCENT));
+            addView(ic, Ui.lp(Ui.dp(a, 48), Ui.dp(a, 48)));
+            msg = Ui.text(a, "", 15, Ui.TEXT);
+            msg.setGravity(Gravity.CENTER);
+            msg.setPadding(0, Ui.dp(a, 14), 0, Ui.dp(a, 18));
+            addView(msg);
+            btn = Ui.pill(a, "", true, Ui.ACCENT);
+            addView(btn, Ui.lp(Ui.WRAP, Ui.dp(a, 50)));
+        }
+
+        void bind(Row r) {
+            msg.setText(r.title);
+            btn.setText(r.button);
+            btn.setOnClickListener(v -> r.click.run());
+        }
+    }
+
+    /** A frame that is always square. */
+    static class SquareFrame extends FrameLayout {
+        SquareFrame(Activity a) { super(a); }
+        @Override protected void onMeasure(int w, int h) { super.onMeasure(w, w); }
+    }
+
+    /** A 16:9 frame. */
+    static class WideFrame extends FrameLayout {
+        WideFrame(Activity a) { super(a); }
+        @Override protected void onMeasure(int w, int h) {
+            int width = View.MeasureSpec.getSize(w);
+            super.onMeasure(w, View.MeasureSpec.makeMeasureSpec(width * 9 / 16, View.MeasureSpec.EXACTLY));
+        }
+    }
+
+    // ------------------------------------------------------------------ music squares
+    static final class Group {
+        final String name;
+        final List<MediaInfo> items;
+        Group(String n, List<MediaInfo> l) { name = n; items = l; }
+
+        static Map<String, List<Group>> build(Activity a, List<MediaInfo> songs) {
+            Map<String, List<Group>> out = new LinkedHashMap<>();
+            List<Group> forYou = new ArrayList<>();
+            List<MediaInfo> recent = new ArrayList<>(songs);
+            Collections.sort(recent, (x, y) -> Long.compare(y.date, x.date));
+            if (recent.size() >= 3) forYou.add(new Group("Recently added", new ArrayList<>(recent.subList(0, Math.min(50, recent.size())))));
+            List<MediaInfo> played = new ArrayList<>();
+            for (MediaInfo m : songs) if (Store.plays(a, m.uri) > 0) played.add(m);
+            Collections.sort(played, (x, y) -> Store.plays(a, y.uri) - Store.plays(a, x.uri));
+            if (played.size() >= 3) forYou.add(new Group("Most played", new ArrayList<>(played.subList(0, Math.min(50, played.size())))));
+            if (!forYou.isEmpty()) out.put("FOR YOU", forYou);
+            put(out, "SAME ARTIST", songs, m -> {
+                String ar = m.artistOrUnknown();
+                if (ar.equals("Unknown artist")) return null;
+                return ar.split("\\s*(,|&| feat\\.? | ft\\.? | x |/)\\s*")[0].trim() + " mix";
+            });
+            put(out, "SAME GENRE", songs, m -> m.genre == null || m.genre.isEmpty() ? null : m.genre);
+            put(out, "SAME ALBUM", songs, m -> m.album.isEmpty() || m.album.equalsIgnoreCase("<unknown>") ? null : m.album);
+            put(out, "BY DECADE", songs, m -> m.year > 1900 ? (m.year / 10 * 10) + "s" : null);
+            put(out, "BY FOLDER", songs, m -> m.folder.isEmpty() ? null : m.folder);
+            return out;
+        }
+
+        interface Key { String of(MediaInfo m); }
+
+        static void put(Map<String, List<Group>> out, String section, List<MediaInfo> songs, Key k) {
+            Map<String, List<MediaInfo>> g = new LinkedHashMap<>();
+            for (MediaInfo m : songs) {
+                String key = k.of(m);
+                if (key == null) continue;
+                List<MediaInfo> l = g.get(key);
+                if (l == null) { l = new ArrayList<>(); g.put(key, l); }
+                l.add(m);
+            }
+            List<Group> gs = new ArrayList<>();
+            for (Map.Entry<String, List<MediaInfo>> e : g.entrySet()) if (e.getValue().size() >= 3) gs.add(new Group(e.getKey(), e.getValue()));
+            Collections.sort(gs, (x, y) -> y.items.size() - x.items.size());
+            if (gs.size() > 12) gs = new ArrayList<>(gs.subList(0, 12));
+            if (!gs.isEmpty()) out.put(section, gs);
+        }
+    }
+
 }
