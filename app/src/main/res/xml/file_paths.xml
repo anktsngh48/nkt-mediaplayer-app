@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- lets "Share" hand hidden files to other apps -->
+<paths>
+    <external-path name="storage" path="." />
+    <cache-path name="cache" path="." />
+    <!-- SD cards and USB drives (Folders page: Open with, Share) -->
+    <root-path name="root" path="." />
+</paths>
