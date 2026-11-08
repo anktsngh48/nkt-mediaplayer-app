@@ -126,6 +126,24 @@
         </LinearLayout>
     </LinearLayout>
 
+    <!-- UP · NEW · PASTE · PLAY ALL · SAVE TO: buttons, styled apart from the files below -->
+    <HorizontalScrollView
+        android:id="@+id/rm_actions_box"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="16dp"
+        android:paddingEnd="8dp"
+        android:paddingBottom="8dp"
+        android:scrollbars="none"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/rm_actions"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal" />
+    </HorizontalScrollView>
+
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"

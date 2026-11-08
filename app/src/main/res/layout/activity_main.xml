@@ -27,6 +27,13 @@
             android:paddingBottom="12dp"
             android:scrollbars="none" />
 
+        <!-- Online Music: the page is added here the first time it opens -->
+        <FrameLayout
+            android:id="@+id/online_box"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+
         <!-- Everything above the files: slides away when you scroll down, comes back when you scroll up -->
         <LinearLayout
             android:id="@+id/collapse"

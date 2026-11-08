@@ -444,6 +444,7 @@
     <string name="hide_nomedia">Hide folders with a .nomedia file</string>
     <string name="hide_thumbdirs">Hide .thumbnails folders</string>
     <string name="folders_page_only">All Files page only</string>
+    <string name="hide_everywhere_sub">Hidden in All Files, Audio, Videos and Gallery</string>
     <string name="show_hidden_media">Show hidden files in Audio, Videos, Gallery</string>
     <string name="video_end">When a video ends</string>
     <string name="karaoke_strength">Karaoke strength</string>
@@ -633,6 +634,17 @@
     <string name="restored_to">Restored to %s</string>
     <string name="restore_failed">Couldn\'t put it back</string>
     <string name="undo_caps">UNDO</string>
+    <!-- Online Music -->
+    <string name="menu_online">Online Music</string>
+    <string name="page_online">ONLINE MUSIC</string>
+    <string name="online_prompt">What do you want to play?</string>
+    <string name="online_no_speech">Didn\'t catch that — tap the mic and try again</string>
+    <string name="online_no_voice">Voice typing isn\'t available on this phone — type the song name</string>
+    <string name="online_search_failed">Couldn\'t search right now — check the internet and try again</string>
+    <string name="play_all_caps">PLAY ALL</string>
+    <string name="save_to_caps">SAVE TO · %s</string>
+    <string name="new_folder_failed">Couldn\'t make the folder there</string>
+    <string name="rename_needs_access">Allow access to all files to rename folders</string>
     <string name="bin_cant_title">Can\'t go to the Recycle bin</string>
     <string name="delete_permanently">Delete permanently</string>
     <string name="keep_caps">Keep</string>

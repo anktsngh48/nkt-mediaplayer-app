@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- NKT palette (same as NKT JustSay) -->
+<!-- NKT palette -->
 <resources>
     <color name="bg">#FF05080F</color>
     <color name="card">#FF111827</color>
