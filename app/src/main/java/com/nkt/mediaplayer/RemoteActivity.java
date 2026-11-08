@@ -133,7 +133,15 @@ public class RemoteActivity extends Activity implements RowAdapter.Listener, Sel
         sel = new Selection(this);
         findViewById(R.id.rm_sel_close).setOnClickListener(v -> sel.clear());
         findViewById(R.id.rm_sel_all).setOnClickListener(v -> sel.addAll(shownFiles()));
-        findViewById(R.id.rm_sel_copy).setOnClickListener(v -> { List<MediaInfo> l = sel.items(); sel.clear(); copy(l); });
+        findViewById(R.id.rm_sel_copy).setOnClickListener(v -> {
+            List<MediaInfo> l = sel.items();
+            String[] opts = {getString(R.string.copy_to_phone), getString(R.string.copy_files), getString(R.string.cut)};
+            Dialogs.builder(this).setItems(opts, (d, w) -> {
+                sel.clear();
+                if (w == 0) copy(l);
+                else { FileJobs.put(this, l, w == 2, device); show(); }
+            }).show();
+        });
 
         list = findViewById(R.id.rm_list);
         list.setItemAnimator(null);
@@ -253,6 +261,8 @@ public class RemoteActivity extends Activity implements RowAdapter.Listener, Sel
         if (device == null) {
             title.setText(R.string.other_devices_caps);
             sub.setText(R.string.devices_hint);
+            sub.setMaxLines(4);                                   // the whole hint, on as many lines as it needs
+            sub.setEllipsize(android.text.TextUtils.TruncateAt.END);
             bar.setVisibility(View.GONE);
             disconnectBtn.setVisibility(View.GONE);
             addBtn.setVisibility(View.VISIBLE);
@@ -273,11 +283,14 @@ public class RemoteActivity extends Activity implements RowAdapter.Listener, Sel
 
         title.setText(device.label().toUpperCase(java.util.Locale.ROOT));
         sub.setText(device.address() + path);
+        sub.setMaxLines(1);                                       // a long path keeps its end in view
+        sub.setEllipsize(android.text.TextUtils.TruncateAt.START);
         bar.setVisibility(View.VISIBLE);
         disconnectBtn.setVisibility(View.VISIBLE);
         addBtn.setVisibility(View.GONE);
         status.setText(listing ? getString(R.string.connecting) : getString(device.readWrite ? R.string.connected_rw : R.string.connected_ro));
         sortBtn.setText(SortSheet.chip(this, Prefs.sort(this, "remote", "name")));
+        showPaste();
         boolean grid = "grid".equals(view());
         viewList.setSelected(!grid);
         viewGrid.setSelected(grid);
@@ -305,7 +318,13 @@ public class RemoteActivity extends Activity implements RowAdapter.Listener, Sel
             if (name == null || ".".equals(name) || "..".equals(name)) continue;
             long t = f.getTimestamp() == null ? 0 : f.getTimestamp().getTimeInMillis();
             if (f.isDirectory()) {
-                out.add(new RowAdapter.Row(RowAdapter.FOLDER, name, t > 0 ? date(t) : "", null, "dir:" + Remote.child(path, name), R.drawable.ic_folder));
+                RowAdapter.Row fr = new RowAdapter.Row(RowAdapter.FOLDER, name, t > 0 ? date(t) : "", null, "dir:" + Remote.child(path, name), R.drawable.ic_folder);
+                MediaInfo dm = MediaInfo.remoteFile(Remote.uri(device, Remote.child(path, name)), name, 0, t);
+                dm.other = true;                          // a folder: long-press picks it for copy / cut
+                List<MediaInfo> one = new ArrayList<>();
+                one.add(dm);
+                fr.pick = one;
+                out.add(fr);
             } else {
                 MediaInfo m = MediaInfo.remoteFile(Remote.uri(device, Remote.child(path, name)), name, f.getSize(), t);
                 out.add(RowAdapter.Row.media(m, getString(R.string.file_line, Formatter.formatShortFileSize(this, f.getSize()), t > 0 ? date(t) : "")));
@@ -322,6 +341,46 @@ public class RemoteActivity extends Activity implements RowAdapter.Listener, Sel
         rows.setRows(out);
         empty.setText(listing ? R.string.connecting : R.string.folder_empty);
         empty.setVisibility(listing || sorted.isEmpty() ? View.VISIBLE : View.GONE);
+    }
+
+    private TextView pasteChip;
+
+    /** PASTE n ITEMS on the bar while something is copied or cut (from this phone or any device). */
+    private void showPaste() {
+        if (pasteChip == null) {
+            int dp = Ui.dp(this, 1);
+            pasteChip = new TextView(this);
+            pasteChip.setTypeface(Ui.orbitron(this));
+            pasteChip.setTextSize(9.5f);
+            pasteChip.setTextColor(getColor(R.color.accent));
+            pasteChip.setGravity(Gravity.CENTER);
+            pasteChip.setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_paste, 0, 0, 0);
+            pasteChip.setCompoundDrawableTintList(ColorStateList.valueOf(getColor(R.color.accent)));
+            pasteChip.setCompoundDrawablePadding(6 * dp);
+            pasteChip.setBackgroundResource(R.drawable.bg_tile_btn);
+            pasteChip.setPadding(10 * dp, 0, 12 * dp, 0);
+            pasteChip.setOnClickListener(v -> pasteHere());
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, 30 * dp);
+            lp.setMarginEnd(8 * dp);
+            ((LinearLayout) bar).addView(pasteChip, 1, lp);
+        }
+        boolean on = device != null && FileJobs.hasClip();
+        pasteChip.setVisibility(on ? View.VISIBLE : View.GONE);
+        if (on) pasteChip.setText(FileJobs.pasteLabel(this));
+    }
+
+    private void pasteHere() {
+        if (device == null || !FileJobs.hasClip()) return;
+        final Remote.Device d = device;
+        final String dir = path;
+        FileJobs.pasteRemote(this, d, dir, (ok, bad) -> { if (device == d && dir.equals(path)) list(path); });
+        show();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (device != null) showPaste();
     }
 
     private RowAdapter.Row deviceRow(Remote.Device d, boolean wifi) {
@@ -582,7 +641,10 @@ public class RemoteActivity extends Activity implements RowAdapter.Listener, Sel
                 else connect(d);
                 break;
             }
-            case RowAdapter.FOLDER: if (r.key.startsWith("dir:")) list(r.key.substring(4)); break;
+            case RowAdapter.FOLDER:
+                if (sel.active() && r.pick != null) { sel.toggleAll(r.pick); return; }
+                if (r.key.startsWith("dir:")) list(r.key.substring(4));
+                break;
             case RowAdapter.BACK: list(Remote.parent(path)); break;
             case RowAdapter.MEDIA:
                 if (sel.active()) { sel.toggle(r.media); return; }
@@ -615,6 +677,7 @@ public class RemoteActivity extends Activity implements RowAdapter.Listener, Sel
     @Override
     public void onLongClick(RowAdapter.Row r, int position) {
         if (r.type == RowAdapter.PLAYLIST) { deviceMenu(r); return; }
+        if (r.type == RowAdapter.FOLDER && r.pick != null) { sel.toggleAll(r.pick); return; }
         if (r.type == RowAdapter.MEDIA) { if (sel.active()) sel.toggle(r.media); else sel.start(r.media); }
     }
 
@@ -624,11 +687,14 @@ public class RemoteActivity extends Activity implements RowAdapter.Listener, Sel
         if (r.type != RowAdapter.MEDIA) return;
         MediaInfo m = r.media;
         String[] opts = {getString(m.kind() <= MediaInfo.VIDEO ? R.string.play : R.string.open), getString(R.string.copy_to_phone),
-                getString(R.string.select), getString(R.string.properties)};
+                getString(R.string.copy_files), getString(R.string.cut), getString(R.string.select), getString(R.string.properties)};
         Dialogs.builder(this).setTitle(m.fileName).setItems(opts, (d, w) -> {
+            List<MediaInfo> one = new ArrayList<>();
+            one.add(m);
             if (w == 0) open(m);
-            else if (w == 1) { List<MediaInfo> one = new ArrayList<>(); one.add(m); copy(one); }
-            else if (w == 2) sel.start(m);
+            else if (w == 1) copy(one);
+            else if (w == 2 || w == 3) { FileJobs.put(this, one, w == 3, device); show(); }
+            else if (w == 4) sel.start(m);
             else FileOps.properties(this, m, null, null, null);
         }).show();
     }

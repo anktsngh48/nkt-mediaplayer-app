@@ -71,6 +71,10 @@ public class ViewerActivity extends Activity {
     private androidx.media3.ui.PlayerView playerView;
     private android.widget.ImageButton playBtn;
     private String playingKey;
+    private View seekRow;
+    private android.widget.SeekBar seek;
+    private TextView posText, durText;
+    private boolean seeking = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -104,12 +108,41 @@ public class ViewerActivity extends Activity {
         findViewById(R.id.vw_share).setOnClickListener(v -> Share.send(this, items.get(current)));
         deleter = new FileOps.Deleter(this);
         findViewById(R.id.vw_info).setOnClickListener(v -> FileOps.properties(this, items.get(current), deleter, gone -> removeItem(current), null));
+        findViewById(R.id.vw_delete).setOnClickListener(v -> {
+            List<MediaInfo> one = new ArrayList<>();
+            one.add(items.get(current));
+            final int at = current;
+            deleter.delete(one, gone -> removeItem(at));          // gone at once; UNDO in the message
+        });
+        findViewById(R.id.vw_more).setOnClickListener(v -> viewerMenu());
         prevBtn = findViewById(R.id.vw_prev);
         nextBtn = findViewById(R.id.vw_next);
         fullBtn = findViewById(R.id.vw_full);
         prevBtn.setOnClickListener(v -> go(current - 1));
         nextBtn.setOnClickListener(v -> go(current + 1));
         fullBtn.setOnClickListener(v -> openFullPlayer());
+        seekRow = findViewById(R.id.vw_seek_row);
+        seek = findViewById(R.id.vw_seek);
+        posText = findViewById(R.id.vw_pos);
+        durText = findViewById(R.id.vw_dur);
+        seek.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(android.widget.SeekBar b, int p, boolean fromUser) {
+                if (!fromUser || player == null || player.getDuration() <= 0) return;
+                long to = player.getDuration() * p / 1000;
+                posText.setText(Ui.time(to));
+                player.seekTo(to);                       // the picture follows the finger
+            }
+            @Override public void onStartTrackingTouch(android.widget.SeekBar b) {
+                seeking = true;
+                if (player != null) player.setSeekParameters(androidx.media3.exoplayer.SeekParameters.CLOSEST_SYNC);
+            }
+            @Override public void onStopTrackingTouch(android.widget.SeekBar b) {
+                seeking = false;
+                if (player == null || player.getDuration() <= 0) return;
+                player.setSeekParameters(androidx.media3.exoplayer.SeekParameters.EXACT);
+                player.seekTo(player.getDuration() * b.getProgress() / 1000);
+            }
+        });
         Ui.padTopBar(findViewById(R.id.vw_top));
         Ui.padBottomBar(findViewById(R.id.vw_bottom));
         boolean anyVideo = false;
@@ -129,6 +162,16 @@ public class ViewerActivity extends Activity {
                 if (p >= 0 && p != current) { current = p; updateBars(); }
                 attachVideo();
             }
+
+            /** Start the video as soon as its page is more than half in view, not after the swipe settles. */
+            @Override public void onScrolled(RecyclerView rv, int dx, int dy) {
+                if (dx == 0) return;
+                int mid = rv.getWidth() / 2;
+                View c = rv.findChildViewUnder(mid, rv.getHeight() / 2f);
+                if (c == null) return;
+                int p = rv.getChildAdapterPosition(c);
+                if (p >= 0 && p < items.size() && items.get(p).video && !items.get(p).key().equals(playingKey)) attachVideo(p);
+            }
         });
 
         film = findViewById(R.id.vw_film);
@@ -138,6 +181,28 @@ public class ViewerActivity extends Activity {
         film.setAdapter(filmAdapter);
         updateBars();
         pager.post(this::attachVideo);
+    }
+
+    private void viewerMenu() {
+        MediaInfo m = items.get(current);
+        List<String> opts = new ArrayList<>();
+        List<String> ids = new ArrayList<>();
+        opts.add(getString(R.string.rename)); ids.add("rename");
+        opts.add(getString(R.string.copy_files)); ids.add("copy");
+        opts.add(getString(R.string.cut)); ids.add("cut");
+        if (m.image) { opts.add(getString(R.string.set_wallpaper)); ids.add("wall"); }
+        opts.add(getString(R.string.properties)); ids.add("props");
+        Dialogs.builder(this).setTitle(m.title).setItems(opts.toArray(new String[0]), (d, w) -> {
+            List<MediaInfo> one = new ArrayList<>();
+            one.add(m);
+            switch (ids.get(w)) {
+                case "rename": FileOps.rename(this, m, null); break;
+                case "copy": FileJobs.put(this, one, false, null); break;
+                case "cut": FileJobs.put(this, one, true, null); break;
+                case "wall": Wallpapers.set(this, m); break;
+                default: FileOps.properties(this, m, deleter, gone -> removeItem(current), null);
+            }
+        }).show();
     }
 
     /** ‹ › : smooth step to the previous or next photo or video. */
@@ -166,10 +231,10 @@ public class ViewerActivity extends Activity {
         if (player != null) return;
         player = Players.build(this, false);
         player.setRepeatMode(androidx.media3.common.Player.REPEAT_MODE_OFF);
-        playerView = new androidx.media3.ui.PlayerView(this);
+        playerView = (androidx.media3.ui.PlayerView) getLayoutInflater().inflate(R.layout.viewer_player, null, false);
         playerView.setUseController(false);
         playerView.setShutterBackgroundColor(0);
-        playerView.setKeepContentOnPlayerReset(true);
+        playerView.setKeepContentOnPlayerReset(false);
         playerView.setPlayer(player);
         playBtn = new android.widget.ImageButton(this);
         playBtn.setBackgroundResource(R.drawable.bg_play_btn);
@@ -188,6 +253,10 @@ public class ViewerActivity extends Activity {
                 playBtn.setImageResource(playing ? R.drawable.ic_pause : R.drawable.ic_play);
                 playBtn.animate().alpha(playing ? 0f : 1f).setDuration(200).start();
             }
+            @Override public void onRenderedFirstFrame() {
+                // the video is drawing: now (and only now) take the still picture away, so there is no jump
+                if (posterShowing != null) { posterShowing.setVisibility(View.GONE); posterShowing = null; }
+            }
             @Override public void onPlaybackStateChanged(int state) {
                 if (state == androidx.media3.common.Player.STATE_ENDED) {
                     playBtn.setImageResource(R.drawable.ic_repeat);
@@ -200,29 +269,55 @@ public class ViewerActivity extends Activity {
     /** Puts the player into the video page that is showing (or stops it on a photo). */
     private void attachVideo() {
         if (items.isEmpty()) return;
-        MediaInfo m = items.get(current);
-        if (!m.video) { stopVideo(); return; }
-        RecyclerView.ViewHolder vh = pager.findViewHolderForAdapterPosition(current);
+        if (!items.get(current).video) { stopVideo(); return; }
+        attachVideo(current);
+    }
+
+    private ImageView posterShowing, holderPoster;
+
+    private void attachVideo(int pos) {
+        MediaInfo m = items.get(pos);
+        RecyclerView.ViewHolder vh = pager.findViewHolderForAdapterPosition(pos);
         if (!(vh instanceof VideoVH)) return;
         VideoVH h = (VideoVH) vh;
         ensurePlayer();
         if (m.key().equals(playingKey) && playerView.getParent() == h.box) return;
         detachPlayerView();
-        h.box.addView(playerView, 1, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        // the video sits under the still picture; the picture goes when the first frame is drawn
+        h.box.addView(playerView, 0, new android.widget.FrameLayout.LayoutParams(-1, -1));
         int size = dp(72);
         android.widget.FrameLayout.LayoutParams lp = new android.widget.FrameLayout.LayoutParams(size, size, android.view.Gravity.CENTER);
         h.box.addView(playBtn, lp);
         h.poster.setVisibility(View.VISIBLE);
+        posterShowing = h.poster;
+        holderPoster = h.poster;
         if (!m.key().equals(playingKey)) {
             playingKey = m.key();
             player.setMediaItem(new androidx.media3.common.MediaItem.Builder().setUri(m.uri).setMediaId(m.key()).build());
             player.prepare();
         }
         player.play();
-        h.box.postDelayed(() -> { if (m.key().equals(playingKey)) h.poster.setVisibility(View.GONE); }, 250);
+        if (!barsVisible) toggleBars();                 // arriving at a video: show its time and seek bar
+        ui.removeCallbacks(progressTick);
+        ui.post(progressTick);
     }
 
+    private final Runnable progressTick = new Runnable() {
+        @Override public void run() {
+            if (player == null || playingKey == null || isFinishing()) return;
+            long d = player.getDuration(), p = player.getCurrentPosition();
+            if (d > 0 && !seeking) {
+                seek.setProgress((int) (1000 * p / d));
+                seek.setSecondaryProgress((int) (1000 * player.getBufferedPosition() / d));
+                posText.setText(Ui.time(p));
+                durText.setText(Ui.time(d));
+            }
+            ui.postDelayed(this, 250);
+        }
+    };
+
     private void detachPlayerView() {
+        if (holderPoster != null) { holderPoster.setVisibility(View.VISIBLE); holderPoster = null; }
         if (playerView != null && playerView.getParent() instanceof ViewGroup) ((ViewGroup) playerView.getParent()).removeView(playerView);
         if (playBtn != null && playBtn.getParent() instanceof ViewGroup) ((ViewGroup) playBtn.getParent()).removeView(playBtn);
     }
@@ -276,6 +371,8 @@ public class ViewerActivity extends Activity {
         prevBtn.setVisibility(current > 0 ? View.VISIBLE : View.INVISIBLE);
         nextBtn.setVisibility(current < items.size() - 1 ? View.VISIBLE : View.INVISIBLE);
         fullBtn.setVisibility(m.video ? View.VISIBLE : View.GONE);
+        seekRow.setVisibility(m.video ? View.VISIBLE : View.GONE);
+        if (m.video) { seek.setProgress(0); posText.setText("0:00"); durText.setText(m.durationMs > 0 ? Ui.time(m.durationMs) : "0:00"); }
         if (!m.key().equals(recorded)) { recorded = m.key(); History.record(this, m); }
         title.setText(m.dateMs > 0
                 ? DateFormat.getMediumDateFormat(this).format(new Date(m.dateMs)) + ", " + DateFormat.getTimeFormat(this).format(new Date(m.dateMs))
@@ -363,8 +460,7 @@ public class ViewerActivity extends Activity {
             if (holder instanceof VideoVH) {
                 VideoVH h = (VideoVH) holder;
                 h.poster.setVisibility(View.VISIBLE);
-                Thumbs.load(h.poster, m, 720);
-                h.poster.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                showFirstFrame(h.poster, m);
                 h.box.setOnClickListener(v -> toggleBars());
                 if (position == current) h.box.post(ViewerActivity.this::attachVideo);
                 return;
@@ -388,6 +484,39 @@ public class ViewerActivity extends Activity {
                 playingKey = null;
             }
         }
+    }
+
+    // ── Still picture for a video page: its very first frame, at screen size, so playback starts with no jump ──
+
+    private final android.util.LruCache<String, Bitmap> firstFrames = new android.util.LruCache<String, Bitmap>(24 * 1024 * 1024) {
+        @Override protected int sizeOf(String k, Bitmap b) { return b.getByteCount(); }
+    };
+
+    private void showFirstFrame(ImageView v, MediaInfo m) {
+        String key = m.key();
+        v.setTag(R.id.frame_key, key);
+        Bitmap b = firstFrames.get(key);
+        if (b != null) { v.setTag(R.id.thumb_key, null); v.setScaleType(ImageView.ScaleType.FIT_CENTER); v.setImageBitmap(b); return; }
+        Thumbs.load(v, m, 720);
+        v.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        final int w = getResources().getDisplayMetrics().widthPixels;
+        pool.execute(() -> {
+            Bitmap f = null;
+            android.media.MediaMetadataRetriever r = new android.media.MediaMetadataRetriever();
+            try {
+                r.setDataSource(this, m.uri);
+                Bitmap full = r.getFrameAtTime(0, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
+                if (full != null && full.getWidth() > w) {
+                    f = Bitmap.createScaledBitmap(full, w, Math.max(1, full.getHeight() * w / full.getWidth()), true);
+                    if (f != full) full.recycle();
+                } else f = full;
+            } catch (Throwable ignored) {
+            } finally { try { r.release(); } catch (Exception ignored) { } }
+            if (f == null) return;
+            final Bitmap got = f;
+            firstFrames.put(key, got);
+            ui.post(() -> { if (key.equals(v.getTag(R.id.frame_key))) { v.setTag(R.id.thumb_key, null); v.setScaleType(ImageView.ScaleType.FIT_CENTER); v.setImageBitmap(got); } });
+        });
     }
 
     static class PageVH extends RecyclerView.ViewHolder {

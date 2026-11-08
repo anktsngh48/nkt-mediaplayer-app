@@ -24,6 +24,8 @@ public class RowAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         public final MediaInfo media;     // MEDIA rows
         public final String key;          // folder / playlist name, or action id
         public final int icon;
+        /** Folder rows that can be picked: what picking them selects (its videos, or the folder itself). */
+        public List<MediaInfo> pick;
         public boolean on;                // TOGGLE rows
 
         public Row(int type, String title, String sub, MediaInfo media, String key, int icon) {
@@ -112,10 +114,17 @@ public class RowAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         VH h = (VH) holder;
         h.title.setText(r.title);
         h.sub.setText(r.sub == null ? "" : r.sub);
+        if (!grid || !tile(r.type)) {
+            // messages and actions (like "Turn on NKT Share on the other phone…") wrap instead of being cut off
+            boolean wrap = r.type == ACTION;
+            h.title.setMaxLines(wrap ? 3 : 1);
+            h.sub.setMaxLines(wrap ? 4 : 1);
+        }
         h.sub.setVisibility(r.sub == null || r.sub.isEmpty() ? View.GONE : View.VISIBLE);
 
-        boolean picking = selection.active() && r.type == MEDIA;
-        boolean picked = picking && selection.has(r.media);
+        boolean pickable = r.type == MEDIA || (r.type == FOLDER && r.pick != null && !r.pick.isEmpty());
+        boolean picking = selection.active() && pickable;
+        boolean picked = picking && (r.type == MEDIA ? selection.has(r.media) : selection.hasAll(r.pick));
         boolean playing = r.type == MEDIA && playingId != null && playingId.equals(r.media.uri.toString());
         h.title.setTextColor(h.itemView.getContext().getColor(playing || picked ? R.color.accent : R.color.text));
         h.itemView.setSelected(playing);

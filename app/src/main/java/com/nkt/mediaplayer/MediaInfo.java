@@ -8,7 +8,7 @@ import org.json.JSONObject;
 public class MediaInfo {
     public final long id;            // MediaStore id, or -1 for links and hidden files
     public final Uri uri;
-    public final String title;
+    public String title;
     public final String artist;
     public final String album;
     public final long albumId;

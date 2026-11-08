@@ -93,7 +93,7 @@ public class NowPlayingActivity extends Activity {
             if (controller.isPlaying()) controller.pause();
             else {
                 if (controller.getPlaybackState() == Player.STATE_ENDED) controller.seekTo(0, 0);
-                controller.play();
+                Media.play(controller);
             }
         });
         findViewById(R.id.np_prev).setOnClickListener(v -> { if (controller != null) controller.seekToPrevious(); });
@@ -116,6 +116,7 @@ public class NowPlayingActivity extends Activity {
         optFav.setOnClickListener(v -> toggleFavourite());
         findViewById(R.id.opt_lyrics).setOnClickListener(v -> toggleLyrics());
         findViewById(R.id.opt_karaoke).setOnClickListener(v -> toggleKaraoke());
+        deleter = new FileOps.Deleter(this);
         findViewById(R.id.opt_karaoke).setOnLongClickListener(v -> { startActivity(new Intent(this, EqualizerActivity.class)); return true; });
         showKaraoke();
         findViewById(R.id.np_watch).setOnClickListener(v -> watchVideo());
@@ -311,7 +312,10 @@ public class NowPlayingActivity extends Activity {
         }
         opts.add(getString(R.string.share)); ids.add("share");
         if (Downloads.isOnline(m)) { opts.add(getString(R.string.download)); ids.add("download"); }
-        opts.add(getString(R.string.details)); ids.add("details");
+        boolean local = m.uri != null && ("content".equals(m.uri.getScheme()) || "file".equals(m.uri.getScheme()));
+        if (local) { opts.add(getString(R.string.rename)); ids.add("rename"); }
+        if (local) { opts.add(getString(R.string.delete_file)); ids.add("delete"); }
+        opts.add(getString(R.string.properties)); ids.add("details");
         Dialogs.builder(this)
                 .setTitle(m.title)
                 .setItems(opts.toArray(new String[0]), (d, w) -> {
@@ -321,7 +325,14 @@ public class NowPlayingActivity extends Activity {
                         case "ringtone": Ringtones.set(this, m); break;
                         case "share": Share.send(this, m); break;
                         case "download": Downloads.start(this, m.uri, m.title); break;
-                        case "details": Dialogs.details(this, m); break;
+                        case "details": FileOps.properties(this, m, deleter, gone -> dropCurrent(), null); break;
+                        case "rename": FileOps.rename(this, m, null); break;
+                        case "delete": {
+                            List<MediaInfo> one = new ArrayList<>();
+                            one.add(m);
+                            deleter.delete(one, gone -> dropCurrent());
+                            break;
+                        }
                     }
                 })
                 .show();
@@ -338,6 +349,28 @@ public class NowPlayingActivity extends Activity {
         controller.clearMediaItems();
         PlayerActivity.open(this, list, index, pos);
         finish();
+    }
+
+    // ── Delete the song that's playing: it leaves the queue too ─────────────
+
+    private FileOps.Deleter deleter;
+
+    private void dropCurrent() {
+        if (controller == null || controller.getMediaItemCount() == 0) return;
+        controller.removeMediaItem(controller.getCurrentMediaItemIndex());
+    }
+
+    @SuppressWarnings("deprecation")
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, android.content.Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (deleter != null) deleter.onActivityResult(requestCode, resultCode);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(requestCode, permissions, results);
+        if (deleter != null) deleter.onRequestPermissionsResult(requestCode, results);
     }
 
     // ── Karaoke: one tap; lyrics open big while singing ─────────────────────
@@ -406,7 +439,9 @@ public class NowPlayingActivity extends Activity {
         MediaInfo m = Media.current(controller);
         if (m == null || m.key().equals(lyrFor)) return;
         lyrFor = m.key();
-        MediaMetadata md = controller.getMediaMetadata();
+        // the queued song's own details: the player's combined details can still be the previous song's
+        // for a moment after changing song, which used to fetch (and keep) the previous song's lyrics
+        MediaMetadata md = controller.getCurrentMediaItem().mediaMetadata;
         String t = md.title == null ? m.title : md.title.toString();
         String a = md.artist == null ? "" : md.artist.toString();
         String al = md.albumTitle == null ? "" : md.albumTitle.toString();
@@ -625,7 +660,7 @@ public class NowPlayingActivity extends Activity {
             h.itemView.setSelected(now);
             h.itemView.setOnClickListener(v -> {
                 int p = h.getBindingAdapterPosition();
-                if (p >= 0 && controller != null) { controller.seekTo(p, 0); controller.play(); }
+                if (p >= 0 && controller != null) { controller.seekTo(p, 0); Media.play(controller); }
             });
             h.remove.setOnClickListener(v -> {
                 int p = h.getBindingAdapterPosition();

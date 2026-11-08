@@ -69,12 +69,18 @@ A red ✗ means something went wrong: click the run, then the red step, copy the
 ## How to use the app
 
 **☰ menu** (top left, or swipe in from the left edge)
-- Pages: **Songs · Videos · Gallery · Folders · Playlists · History**, each with how many items it has.
-- **⌂** next to a page makes it the page the app opens on (the filled ⌂ shows the current one).
-- Then **EQ & karaoke · Other devices · NKT Share · Settings**. At the bottom: NKT Media Player · Version 1.0.
+- Pages: **Audio · Videos · Gallery · All Files · PDFs · Playlists · History**, each with how many items it has.
+- **⌂** next to a page selects the default page (the filled ⌂ shows the current one).
+- Then **EQ & karaoke · Save WhatsApp status · Recycle bin · Other devices · NKT Share · Settings**. At the bottom: NKT Media Player · Version 1.0.
 - Back closes the menu first, then goes up a level, then to your start page.
 
-**Fast start**: the app shows your library from last time at once and checks the phone in the background ("⟳ Updating" for a moment). New photos, songs and videos appear by themselves.
+**Fast start**: the app shows your library from last time at once and checks the phone in the background ("⟳ Updating" for a moment). Android's library shows within a second; hidden folders are added when their scan finishes, without emptying the screen. New photos, songs and videos appear by themselves.
+
+**Carries on where you left off**: the music player remembers the queue, the song and the moment, even after the phone restarts. Tap play to continue.
+
+**Delete & Recycle bin**: deleted items leave the screen instantly, with **UNDO**. They go to the **Recycle bin** (☰ menu) for 30 days: Restore puts them back where they were, Delete forever removes them. They sit in the app's private folder, which other apps can't see (Android 11+), and they're removed if the app is uninstalled. After 30 days they're deleted permanently — checked once a day, even when the app isn't opened. If something can't be moved to the Recycle bin, the app tells you it won't be saved there and asks before deleting it permanently. Without "All files access", Android's own trash is used and Android asks first.
+
+**Copy · Cut · Paste**: ⋮ (or long-press several → ⋮) → Copy or Cut, then open any folder in **All Files** — or a folder on **Other devices** — and tap **PASTE**. Works for files and folders, between phone storage, SD card, USB and other devices (NKT Share or any FTP app). Progress shows in the notification.
 
 **Everything above the files** (title, search, sort and view) slides away when you scroll down and comes back when you scroll up.
 
@@ -82,24 +88,31 @@ A red ✗ means something went wrong: click the run, then the red step, copy the
 
 **Side bar**: drag the thin bar on the right of long lists to jump; a bubble shows the letter, date, length or size.
 
-**Select many**: long-press, then select all · add to playlist · share · delete.
+**Select many**: long-press files — or whole folders (Videos folder view, All Files) — then select all · ⓘ details (count, total size, kinds, length, dates) · share · delete · ⋮ (copy, cut, add to playlist).
 
 **Properties** (⋮ → Properties, or ⓘ in the viewer and video player): name, place, size, date, length, resolution, type, with **OPEN WITH · RENAME · SHARE · DELETE**.
 
-**Songs**: tap to play. ⋮: Play · ♥ · Add to playlist · Edit info · Set as ringtone · Share · Select · Properties · Delete.
+**Audio**: tap to play. ⋮: Play · ♥ · Add to playlist · Edit info · Set as ringtone · Share · Select · Copy · Cut · Rename · Delete · Properties.
 
-**Music player**: EQ · Timer · Speed · Lyrics · **Karaoke** · Queue · ♥. Karaoke turns the singer down with one tap (hold it for strength and key); with "Show lyrics while singing" the current line shows big.
+**PDFs**: every PDF on the phone, newest first, list or grid; opens in the PDF reader.
+
+**Save WhatsApp status** (☰ menu): the photos and videos of statuses you've watched in WhatsApp or WhatsApp Business. Tap to view, Save (or SAVE ALL) to keep them in Pictures / Movies → NKT Media Player Status. The SAVED tab shows what you kept.
+
+**Lock screen & notification**: the NKT logo and the app's name; the song's own art when it has some, otherwise the NKT Media Player logo.
+
+**Music player**: EQ · Timer · Speed · Lyrics · **Karaoke** · Queue · ♥. Lyrics follow the song when you change it from the queue (if a song still shows another song's words from before this update, tap 🔍 in the lyrics to search again). Karaoke turns the singer down with one tap (hold it for strength and key); with "Show lyrics while singing" the current line shows big.
 
 **Equalizer & karaoke**: presets, bands, bass, surround, loudness. Karaoke works on songs and videos, stereo and surround: **Light / Normal / Strong**, and a **key** up or down for the song that's playing (remembered per song).
 
 **Videos**
 - **Seek bar or slide sideways**: the video itself moves to that moment while you drag (no small picture); it lands exactly where you let go. The middle shows how far and where, like "+0:15 · 1:23".
-- ⋮: **Save this frame as image** (Pictures/NKT Media Player) · Karaoke on/off · **When this video ends: play next, go back, or stop on the last frame** (with a replay button) · Background play · Save sound · Zoom · Add to playlist · Share · Properties.
+- **‹ ›** on the sides (with the controls) jump to the previous or next video; ⏮ ⏭ stay at the bottom too.
+- ⋮: **Save this frame as image** (Pictures/NKT Media Player) · Karaoke on/off · **When this video ends: play next, go back, or stop on the last frame** (with a replay button) · Background play · Save sound · Zoom · Add to playlist · Share · Rename · Delete · Properties.
 - Swipe up/down: brightness (left) and volume (right). Double-tap ±10 s. Pinch fill/fit. Hold for 2×.
 
-**Gallery**: photos and videos together, in the same order as the grid — the viewer no longer skips videos. Videos play right in the viewer (⛶ opens the full video player). **‹ ›** step to the previous or next photo or video; the film strip marks videos with ▶.
+**Gallery**: photos and videos together, in the same order as the grid — the viewer no longer skips videos. Videos start smoothly as you swipe onto them (no thumbnail jump) and have their own time and seek bar; ⛶ opens the full video player. **‹ ›** step to the previous or next photo or video; the film strip marks videos with ▶. Top bar: ♥ · share · ⓘ · delete · ⋮ (rename, copy, cut, **set as wallpaper**: home, lock or both).
 
-**Folders**: every folder on the phone from the top, hidden ones too (hide them in Settings). Switch between phone storage, SD card and USB; the path shows where you are. Opens songs, videos, photos, text files and PDFs; anything else asks which app. **＋** makes a new folder or text file. Long-press a folder for its properties.
+**All Files**: every folder on the phone from the top, hidden ones too (hide them in Settings). Switch between phone storage, SD card and USB; the path shows where you are. **UP · NEW · PASTE** are buttons above the list, so they never look like files. Search looks through this folder **and every folder inside it**. Opens audio, videos, photos, text files and PDFs; anything else asks which app. Long-press folders or files to pick them; ⋮ on a folder: open, select, copy, cut, rename, delete, properties.
 
 **Text editor**: line numbers, undo/redo, find & replace, wrap, A− / A+, line/column, keeps the file's encoding, asks before leaving with unsaved changes and keeps a draft.
 
@@ -111,7 +124,7 @@ A red ✗ means something went wrong: click the run, then the red step, copy the
 - **Copy to this phone** (⋮, or long-press several): progress in the notification. **Copies save to · CHANGE**: pick any folder (phone or SD card, quick Download / Music / Movies / Pictures / DCIM, new folder) or **Ask every time** — remembered per device.
 - **Disconnect** at the top. Saved passwords are locked with the phone's keystore.
 
-**Settings**: show hidden media · show .thumbnails · Folders: hide dot-folders, .nomedia folders, .thumbnails (Folders page only) · EQ & karaoke · Karaoke strength · Video rotation · When a video ends · History · Version 1.0. The start page is chosen with ⌂ in the ☰ menu; sharing is in the ☰ menu.
+**Settings**: show hidden media · show .thumbnails · All Files: hide dot-folders, .nomedia folders, .thumbnails (All Files page only) · Video rotation · When a video ends · History · Version 1.0. (Equalizer, karaoke and karaoke strength are in ☰ → EQ & karaoke.) The start page is chosen with ⌂ in the ☰ menu; sharing is in the ☰ menu.
 
 **Links** (🔗 at the top): paste a link → AUDIO, VIDEO or DOWNLOAD. YouTube links open in YouTube's own player.
 
@@ -119,5 +132,6 @@ A red ✗ means something went wrong: click the run, then the red step, copy the
 1. Tap **START** (first time: allow "All files access").
 2. On a computer, type the address shown (like `ftp://192.168.1.5:2121`) into File Explorer (Mac: Finder → Go → Connect to Server). Other phones with NKT Media Player find it under **Other devices**.
 3. Pick the shared folder, Read & write or Read only, and a password if you want one. Tap **STOP** when done.
+4. **Quick settings tile**: pull down the status bar, tap ✎ (edit), and drag the **NKT Share** tile in. Tap it to start or stop sharing, like the torch. While sharing it lights up and shows the address.
 
 Built on Google's Media3 (Apache 2.0), Apache FtpServer and Commons Net (Apache 2.0) and jaudiotagger (LGPL). Lyrics from LRCLIB (lrclib.net). Orbitron font: SIL Open Font License (`app/src/main/assets/fonts/OFL.txt`).

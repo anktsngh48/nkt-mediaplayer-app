@@ -29,6 +29,10 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Other devices: find phones running NKT Share on the same Wi-Fi -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <!-- Recycle bin: the daily 30-day clean-up keeps running after the phone restarts -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- "Set as wallpaper" for photos -->
+    <uses-permission android:name="android.permission.SET_WALLPAPER" />
     <!-- "Set as ringtone" -->
     <uses-permission
         android:name="android.permission.WRITE_SETTINGS"
@@ -144,6 +148,16 @@
             android:exported="false"
             android:launchMode="singleTop" />
 
+        <!-- Recycle bin: deleted files, kept 30 days -->
+        <activity android:name=".TrashActivity" android:exported="false" />
+        <service
+            android:name=".BinCleanupJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- WhatsApp status saver -->
+        <activity android:name=".StatusActivity" android:exported="false" />
+
         <!-- Text editor; also "Open with" for text files -->
         <activity
             android:name=".TextEditorActivity"
@@ -198,6 +212,36 @@
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="User-started local Wi-Fi file sharing (FTP server) that runs until the user stops it" />
+        </service>
+
+        <!-- NKT Share tile in the quick settings panel: tap to start / stop sharing -->
+        <service
+            android:name=".NktShareTile"
+            android:exported="true"
+            android:icon="@drawable/ic_pc"
+            android:label="@string/nkt_share"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="true" />
+        </service>
+
+        <!-- NKT Share tile in the quick settings panel (pull down the status bar): tap to start / stop -->
+        <service
+            android:name=".NktShareTile"
+            android:exported="true"
+            android:icon="@drawable/ic_pc"
+            android:label="@string/nkt_share"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="true" />
         </service>
 
         <!-- Lets "Share" hand files to other apps -->

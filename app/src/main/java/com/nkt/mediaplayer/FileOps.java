@@ -5,6 +5,7 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.PendingIntent;
 import android.content.ContentValues;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
@@ -45,11 +46,23 @@ public final class FileOps {
 
     public static final int REQ_DELETE = 4301, REQ_DELETE_PERM = 4302;
 
-    public interface Deleted { void done(Set<String> goneKeys); }
+    public interface Deleted {
+        /** Called at once: take these out of sight. */
+        void done(Set<String> goneKeys);
+        /** UNDO or a failed move: they are back. */
+        default void restored() { }
+    }
+
+    /** Files can go into the app's own Recycle bin (needs "All files access" on Android 11+). */
+    public static boolean canUseBin(Activity a) {
+        if (Build.VERSION.SDK_INT >= 30) return HiddenScanner.hasAllFilesAccess(a);
+        return a.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
+    }
 
     /**
-     * One per screen. Deletes with Android's own confirmation on Android 11+ and the app's on older phones.
-     * The screen forwards onActivityResult and onRequestPermissionsResult here.
+     * One per screen. Delete = move to the Recycle bin: instant, with UNDO. Without "All files access" on
+     * Android 11+, files go to Android's own trash instead (Android asks first). The screen forwards
+     * onActivityResult and onRequestPermissionsResult here.
      */
     public static final class Deleter {
         private final Activity a;
@@ -62,76 +75,118 @@ public final class FileOps {
             if (items == null || items.isEmpty()) return;
             pending = new ArrayList<>(items);
             callback = done;
-            List<Uri> content = new ArrayList<>();
-            for (MediaInfo m : items) if ("content".equals(m.uri.getScheme())) content.add(m.uri);
-            if (Build.VERSION.SDK_INT >= 30 && !content.isEmpty()) {
-                try {
-                    PendingIntent pi = MediaStore.createDeleteRequest(a.getContentResolver(), content);
-                    a.startIntentSenderForResult(pi.getIntentSender(), REQ_DELETE, null, 0, 0, 0);
-                } catch (Exception e) { Ui.toast(a, R.string.delete_failed); }
-                return;
-            }
-            if (Build.VERSION.SDK_INT <= 29 && a.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+            if (canUseBin(a)) { toBin(pending, done); return; }
+            if (Build.VERSION.SDK_INT <= 29) {
                 a.requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQ_DELETE_PERM);
                 return;
             }
-            confirm();
-        }
-
-        private void confirm() {
-            final List<MediaInfo> items = pending;
-            Dialogs.builder(a)
-                    .setTitle(a.getResources().getQuantityString(R.plurals.delete_title, items.size(), items.size()))
-                    .setMessage(R.string.delete_warning)
-                    .setPositiveButton(R.string.delete, (d, w) -> run(items, true))
-                    .setNegativeButton(R.string.cancel, null)
-                    .show();
+            // Android 11+ without All files access: Android's trash (kept 30 days, shown in the Recycle bin too)
+            List<Uri> content = new ArrayList<>();
+            for (MediaInfo m : items) if ("content".equals(m.uri.getScheme())) content.add(m.uri);
+            if (content.isEmpty()) { Ui.toast(a, R.string.delete_failed); return; }
+            try {
+                PendingIntent pi = MediaStore.createTrashRequest(a.getContentResolver(), content, true);
+                a.startIntentSenderForResult(pi.getIntentSender(), REQ_DELETE, null, 0, 0, 0);
+            } catch (Exception e) { Ui.toast(a, R.string.delete_failed); }
         }
 
         /** Returns true when the result was ours. */
         public boolean onActivityResult(int requestCode, int resultCode) {
             if (requestCode != REQ_DELETE || pending == null) return false;
-            if (resultCode == Activity.RESULT_OK) run(pending, false);   // Android already deleted the library items
-            else pending = null;
+            if (resultCode == Activity.RESULT_OK) {
+                Set<String> gone = new HashSet<>();
+                for (MediaInfo m : pending) { gone.add(m.key()); Thumbs.forget(m); }
+                Deleted cb = callback;
+                int n = pending.size();
+                pending = null;
+                if (cb != null) cb.done(gone);                     // out of sight straight away
+                Ui.toast(a, a.getResources().getQuantityString(R.plurals.moved_to_bin, n, n));
+            } else pending = null;
             return true;
         }
 
         public boolean onRequestPermissionsResult(int requestCode, int[] results) {
             if (requestCode != REQ_DELETE_PERM || pending == null) return false;
-            if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) confirm();
+            if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) toBin(pending, callback);
             else Ui.toast(a, R.string.delete_failed);
             return true;
         }
 
-        private void run(List<MediaInfo> items, boolean deleteContent) {
-            final Deleted cb = callback;
+        private void toBin(List<MediaInfo> items, Deleted cb) {
+            pending = null;
+            Set<String> gone = new HashSet<>();
+            for (MediaInfo m : items) { gone.add(m.key()); Thumbs.forget(m); }
+            if (cb != null) cb.done(gone);                         // out of sight at once; the move follows
+            final Context app = a.getApplicationContext();
             new Thread(() -> {
-                int ok = 0;
-                Set<String> gone = new HashSet<>();
-                List<String> scan = new ArrayList<>();
+                List<String> ids = new ArrayList<>();
+                List<MediaInfo> noBin = new ArrayList<>();          // can't go to the bin: deleted for good after a warning
                 for (MediaInfo m : items) {
-                    boolean done = false;
-                    try {
-                        if ("file".equals(m.uri.getScheme())) {
-                            File f = new File(m.uri.getPath());
-                            done = f.isDirectory() ? deleteTree(f) : f.delete();
-                            if (done) scan.add(f.getAbsolutePath());
-                        } else if (!deleteContent) done = true;
-                        else done = a.getContentResolver().delete(m.uri, null, null) > 0;
-                    } catch (Exception ignored) { }
-                    if (done) { ok++; gone.add(m.key()); Thumbs.forget(m); }
+                    File f = FileJobs.localFile(m);
+                    if (f == null && m.path != null && !m.path.isEmpty()) f = new File(m.path);
+                    Trash.Entry e = f == null ? null : Trash.put(app, f);
+                    if (e != null) ids.add(e.id); else noBin.add(m);
                 }
-                if (!scan.isEmpty()) {
-                    try { MediaScannerConnection.scanFile(a.getApplicationContext(), scan.toArray(new String[0]), null, null); } catch (Exception ignored) { }
-                }
-                final int n = ok;
+                final int n = ids.size();
                 new Handler(Looper.getMainLooper()).post(() -> {
-                    pending = null;
-                    Ui.toast(a, n > 0 ? a.getResources().getQuantityString(R.plurals.deleted, n, n) : a.getString(R.string.delete_failed));
-                    if (cb != null && n > 0) cb.done(gone);
+                    if (!noBin.isEmpty()) warnPermanent(noBin, cb);
+                    if (n == 0) return;
+                    String msg = app.getResources().getQuantityString(R.plurals.moved_to_bin, n, n);
+                    if (a.isFinishing()) { Ui.toastApp(app, msg); return; }
+                    Ui.toast(a, msg, R.string.undo_caps, () -> new Thread(() -> {
+                        for (String id : ids) {
+                            Trash.Entry e = Trash.find(app, id);
+                            if (e != null) Trash.restore(app, e);
+                        }
+                        new Handler(Looper.getMainLooper()).post(() -> {
+                            Ui.toastApp(app, app.getResources().getQuantityString(R.plurals.restored_n, n, n));
+                            if (cb != null) cb.restored();
+                        });
+                    }).start());
                 });
             }).start();
         }
+
+        /** These can't go to the Recycle bin: say so, then delete them for good (or keep them). */
+        private void warnPermanent(List<MediaInfo> items, Deleted cb) {
+            final Context app = a.getApplicationContext();
+            int n = items.size();
+            if (a.isFinishing()) { if (cb != null) cb.restored(); return; }
+            String name = items.get(0).fileName.isEmpty() ? items.get(0).title : items.get(0).fileName;
+            Dialogs.builder(a)
+                    .setTitle(R.string.bin_cant_title)
+                    .setMessage(a.getResources().getQuantityString(R.plurals.bin_cant_msg, n, n, name))
+                    .setPositiveButton(R.string.delete_permanently, (d, w) -> new Thread(() -> {
+                        int ok = 0;
+                        List<String> scan = new ArrayList<>();
+                        for (MediaInfo m : items) if (deleteForGood(app, m, scan)) ok++;
+                        if (!scan.isEmpty()) {
+                            try { MediaScannerConnection.scanFile(app, scan.toArray(new String[0]), null, null); } catch (Exception ignored) { }
+                        }
+                        final int done = ok;
+                        new Handler(Looper.getMainLooper()).post(() -> {
+                            Ui.toastApp(app, done > 0 ? app.getResources().getQuantityString(R.plurals.deleted_for_good, done, done)
+                                    : app.getString(R.string.delete_failed));
+                            if (done < items.size() && cb != null) cb.restored();
+                        });
+                    }).start())
+                    .setNegativeButton(R.string.keep_caps, (d, w) -> { if (cb != null) cb.restored(); })
+                    .setOnCancelListener(d -> { if (cb != null) cb.restored(); })
+                    .show();
+        }
+    }
+
+    /** Gone for good: the file itself, or the library entry when there's no file to reach. */
+    static boolean deleteForGood(Context c, MediaInfo m, List<String> scan) {
+        File f = FileJobs.localFile(m);
+        if (f == null && m.path != null && !m.path.isEmpty()) f = new File(m.path);
+        if (f != null && f.exists()) {
+            boolean ok = f.isDirectory() ? deleteTree(f) : f.delete();
+            if (ok) { scan.add(f.getAbsolutePath()); return true; }
+        }
+        try {
+            return m.uri != null && "content".equals(m.uri.getScheme()) && c.getContentResolver().delete(m.uri, null, null) > 0;
+        } catch (Exception e) { return false; }
     }
 
     static boolean deleteTree(File f) {

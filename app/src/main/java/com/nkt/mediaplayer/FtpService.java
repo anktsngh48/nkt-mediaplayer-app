@@ -210,11 +210,13 @@ public class FtpService extends Service {
                 s.start();
                 server = s;
                 running = true;
+                NktShareTile.refresh(this);
                 ui.post(this::holdLocks);
                 ui.post(() -> announce(pwOn, rw));
             } catch (Throwable t) {
                 error = getString(R.string.share_failed);
                 running = false;
+                NktShareTile.refresh(this);
                 ui.post(this::stopSelf);
             }
         }).start();
@@ -272,6 +274,7 @@ public class FtpService extends Service {
         if (nsd != null && nsdListener != null) try { nsd.unregisterService(nsdListener); } catch (Throwable ignored) { }
         nsdListener = null;
         running = false;
+        NktShareTile.refresh(this);
         connected.set(0);
         final FtpServer s = server;
         server = null;

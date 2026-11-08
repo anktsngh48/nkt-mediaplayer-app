@@ -129,6 +129,35 @@ public final class MediaLibrary {
         return out;
     }
 
+    /** Every PDF the phone's library knows (Android 11+: needs "All files access" to include other apps' PDFs). */
+    public static List<MediaInfo> pdfs(Context ctx) {
+        List<MediaInfo> out = new ArrayList<>();
+        Uri coll = MediaStore.Files.getContentUri("external");
+        String[] proj = {MediaStore.Files.FileColumns._ID, MediaStore.Files.FileColumns.DISPLAY_NAME, MediaStore.Files.FileColumns.SIZE,
+                MediaStore.Files.FileColumns.DATE_MODIFIED, MediaStore.MediaColumns.DATA};
+        try (Cursor c = ctx.getContentResolver().query(coll, proj, MediaStore.Files.FileColumns.MIME_TYPE + "=?",
+                new String[]{"application/pdf"}, MediaStore.Files.FileColumns.DATE_MODIFIED + " DESC")) {
+            if (c == null) return out;
+            int iId = col(c, MediaStore.Files.FileColumns._ID), iN = col(c, MediaStore.Files.FileColumns.DISPLAY_NAME),
+                iS = col(c, MediaStore.Files.FileColumns.SIZE), iD = col(c, MediaStore.Files.FileColumns.DATE_MODIFIED),
+                iP = col(c, MediaStore.MediaColumns.DATA);
+            while (c.moveToNext()) {
+                long id = c.getLong(iId);
+                String name = str(c, iN), path = str(c, iP);
+                if (name.isEmpty()) name = new java.io.File(path).getName();
+                MediaInfo m = new MediaInfo(id, ContentUris.withAppendedId(coll, id), MediaInfo.stripExt(name), "", "", -1,
+                        parentName(path), 0, false);
+                m.other = true;
+                m.fileName = name;
+                m.path = path;
+                m.size = lng(c, iS);
+                m.dateMs = lng(c, iD) * 1000;
+                out.add(m);
+            }
+        } catch (Exception ignored) { }
+        return out;
+    }
+
     static String parentName(String path) {
         if (path == null || path.isEmpty()) return "Other";
         File parent = new File(path).getParentFile();

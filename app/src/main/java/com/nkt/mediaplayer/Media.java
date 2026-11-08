@@ -21,6 +21,8 @@ public final class Media {
 
     private Media() { }
 
+    static final Uri LOGO = Uri.parse("android.resource://com.nkt.mediaplayer/drawable/art_logo");
+
     public static MediaItem item(MediaInfo m) {
         MediaMetadata.Builder md = new MediaMetadata.Builder()
                 .setTitle(m.title)
@@ -30,6 +32,9 @@ public final class Media {
         // Older phones: point the notification at the album art. Newer ones read it from the file itself.
         if (!m.video && m.albumId > 0 && Build.VERSION.SDK_INT < 29) {
             md.setArtworkUri(ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), m.albumId));
+        } else {
+            // lock screen & notification: the song's own art when it has some, otherwise the NKT Media Player logo
+            md.setArtworkUri(LOGO);
         }
         return new MediaItem.Builder()
                 .setMediaId(m.uri.toString())
@@ -37,6 +42,14 @@ public final class Media {
                 .setRequestMetadata(new MediaItem.RequestMetadata.Builder().setMediaUri(m.uri).build())
                 .setMediaMetadata(md.build())
                 .build();
+    }
+
+    /** Play; a queue put back from last time is prepared first. */
+    public static void play(androidx.media3.common.Player p) {
+        if (p == null) return;
+        if (p.getPlaybackState() == androidx.media3.common.Player.STATE_IDLE && p.getMediaItemCount() > 0) p.prepare();
+        if (p.getPlaybackState() == androidx.media3.common.Player.STATE_ENDED) p.seekToDefaultPosition();
+        p.play();
     }
 
     public static List<MediaItem> items(List<MediaInfo> list) {

@@ -33,7 +33,7 @@ public final class SortSheet {
         switch (page) {
             case "songs": return new String[]{"artist", "album", "long", "short", "large", "plays"};
             case "videos": return new String[]{"long", "short", "large", "small"};
-            case "gallery": return new String[]{"large", "small"};
+            case "gallery": case "pdfs": return new String[]{"large", "small"};
             case "folders": return new String[]{"large", "small"};
             case "videofolders": case "musicfolders": return new String[]{"most", "large"};
             case "playlists": return new String[]{"most"};
@@ -48,7 +48,7 @@ public final class SortSheet {
         switch (page) {
             case "songs": return new String[]{"list", "grid", "squares"};
             case "videos": case "videofolders": return new String[]{"list", "grid", "folders"};
-            case "folders": case "playlists": case "remote": case "playlist": return new String[]{"list", "grid"};
+            case "folders": case "playlists": case "remote": case "playlist": case "pdfs": return new String[]{"list", "grid"};
         }
         return new String[0];
     }

@@ -62,15 +62,15 @@ import java.util.TreeMap;
  */
 public class MainActivity extends Activity implements RowAdapter.Listener, Selection.Changed {
 
-    static final int SONGS = 0, VIDEOS = 1, GALLERY = 2, FOLDERS = 3, PLAYLISTS = 4, HISTORY = 5, SETTINGS = 6;
-    static final String[] PAGE_KEYS = {"songs", "videos", "gallery", "folders", "playlists", "history", "settings"};
+    static final int SONGS = 0, VIDEOS = 1, GALLERY = 2, FOLDERS = 3, PDFS = 4, PLAYLISTS = 5, HISTORY = 6, SETTINGS = 7;
+    static final String[] PAGE_KEYS = {"songs", "videos", "gallery", "folders", "pdfs", "playlists", "history", "settings"};
     private static final int[] PAGE_TITLES = {R.string.page_songs, R.string.page_videos, R.string.page_gallery, R.string.page_folders,
-            R.string.page_playlists, R.string.page_history, R.string.page_settings};
+            R.string.page_pdfs, R.string.page_playlists, R.string.page_history, R.string.page_settings};
     private static final int[] MENU_LABELS = {R.string.menu_songs, R.string.menu_videos, R.string.menu_gallery, R.string.menu_folders,
-            R.string.menu_playlists, R.string.menu_history, R.string.menu_settings};
+            R.string.menu_pdfs, R.string.menu_playlists, R.string.menu_history, R.string.menu_settings};
     private static final int[] PAGE_ICONS = {R.drawable.ic_music, R.drawable.ic_movie, R.drawable.ic_image, R.drawable.ic_folder,
-            R.drawable.ic_playlist, R.drawable.ic_history, R.drawable.ic_settings};
-    private static final String[] SORT_DEF = {"name", "new", "new", "name", "name", "", ""};
+            R.drawable.ic_pdf, R.drawable.ic_playlist, R.drawable.ic_history, R.drawable.ic_settings};
+    private static final String[] SORT_DEF = {"name", "new", "new", "name", "new", "name", "", ""};
     private static final int REQ_PERMS = 11, REQ_LEGACY_WRITE = 12;
     private static final int[] GALLERY_STEPS = {2, 3, 4, 5, 7};
     private static final String ALL_ALBUMS = "All";
@@ -79,6 +79,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
     private final List<MediaInfo> audio = new ArrayList<>();
     private final List<MediaInfo> video = new ArrayList<>();
     private final List<MediaInfo> images = new ArrayList<>();
+    private final List<MediaInfo> pdfs = new ArrayList<>();
 
     private RecyclerView list;
     private RowAdapter rows;
@@ -91,6 +92,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
     private FileOps.Deleter deleter;
     private TextView empty, zoomPop, gridSize, tabHint, sortBtn, segAll, segPhotos, segVideos, selCount, pageLabel, updating;
     private TextView folderPath, folderNote;
+    private LinearLayout folderActions;
     private ImageButton[] viewSegs;
     private View permBox, mini, tabBar, viewSwitch, galleryBar, folderBar, collapse, selectBar, scrim;
     private ViewGroup drawer, drawerItems, storageRow;
@@ -126,6 +128,8 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         setContentView(R.layout.activity_main);
         Ui.padForSystemBars(findViewById(R.id.frame));
         Prefs.migrateFavourites(this);
+        Ui.track(getApplication());
+        BinCleanupJob.schedule(this);                       // Recycle bin: 30 days, then deleted permanently
         deleter = new FileOps.Deleter(this);
 
         TextView title = findViewById(R.id.header_title);
@@ -169,6 +173,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         folderBar = findViewById(R.id.folder_bar);
         folderPath = findViewById(R.id.folder_path);
         folderNote = findViewById(R.id.folder_note);
+        folderActions = findViewById(R.id.folder_actions);
         storageRow = findViewById(R.id.storage_row);
         segAll = findViewById(R.id.seg_all);
         segPhotos = findViewById(R.id.seg_photos);
@@ -182,9 +187,10 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         selectBar = findViewById(R.id.select_bar);
         selCount = findViewById(R.id.sel_count);
         findViewById(R.id.sel_close).setOnClickListener(v -> sel.clear());
-        findViewById(R.id.sel_all).setOnClickListener(v -> sel.addAll(visibleMedia()));
-        findViewById(R.id.sel_share).setOnClickListener(v -> Share.sendMany(this, sel.items()));
-        findViewById(R.id.sel_playlist).setOnClickListener(v -> Dialogs.addToPlaylist(this, sel.items(), sel::clear));
+        findViewById(R.id.sel_all).setOnClickListener(v -> sel.addAll(visiblePickable()));
+        findViewById(R.id.sel_share).setOnClickListener(v -> Share.sendMany(this, filesOnly(sel.items())));
+        findViewById(R.id.sel_info).setOnClickListener(v -> selectionDetails(sel.items()));
+        findViewById(R.id.sel_more).setOnClickListener(v -> selectionMenu());
         findViewById(R.id.sel_delete).setOnClickListener(v -> deleteItems(sel.items()));
 
         scroller = findViewById(R.id.fast_scroller);
@@ -205,7 +211,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
                 if (f.equals(filter)) return;
                 filter = f;
                 ui.removeCallbacks(searchRefresh);
-                ui.postDelayed(searchRefresh, 120);       // typing stays smooth on big libraries
+                ui.postDelayed(searchRefresh, page == FOLDERS ? 350 : 120);   // typing stays smooth on big libraries
             }
         });
 
@@ -226,7 +232,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         miniPlay = findViewById(R.id.mini_play);
         miniPlay.setOnClickListener(v -> {
             if (controller == null) return;
-            if (controller.isPlaying()) controller.pause(); else controller.play();
+            if (controller.isPlaying()) controller.pause(); else Media.play(controller);
         });
         findViewById(R.id.mini_next).setOnClickListener(v -> { if (controller != null) controller.seekToNextMediaItem(); });
         findViewById(R.id.mini_close).setOnClickListener(v -> {
@@ -247,7 +253,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         if (hasPermission()) startLoading(); else showPermissionBox();
     }
 
-    private final Runnable searchRefresh = this::refresh;
+    private final Runnable searchRefresh = () -> { if (page == FOLDERS) deepSearch(filter); else refresh(); };
 
     @Override
     protected void onSaveInstanceState(Bundle out) {
@@ -304,6 +310,14 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         drawerItems.addView(menuRow(R.drawable.ic_eq, getString(R.string.eq_and_karaoke), null, false, false, () -> {
             closeDrawer();
             startActivity(new Intent(this, EqualizerActivity.class));
+        }, null));
+        drawerItems.addView(menuRow(R.drawable.ic_status, getString(R.string.menu_status), null, false, false, () -> {
+            closeDrawer();
+            startActivity(new Intent(this, StatusActivity.class));
+        }, null));
+        drawerItems.addView(menuRow(R.drawable.ic_delete, getString(R.string.menu_bin), null, false, false, () -> {
+            closeDrawer();
+            startActivity(new Intent(this, TrashActivity.class));
         }, null));
         drawerItems.addView(menuRow(R.drawable.ic_devices, getString(R.string.other_devices), null, false, false, () -> {
             closeDrawer();
@@ -376,6 +390,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
             case SONGS: return getResources().getQuantityString(R.plurals.songs, audio.size(), audio.size());
             case VIDEOS: return getResources().getQuantityString(R.plurals.videos, video.size(), video.size());
             case GALLERY: { int n = images.size() + video.size(); return getResources().getQuantityString(R.plurals.items, n, n); }
+            case PDFS: return getResources().getQuantityString(R.plurals.pdfs, pdfs.size(), pdfs.size());
             case PLAYLISTS: { int n = Playlists.names(this).size(); return getResources().getQuantityString(R.plurals.items, n, n); }
             case HISTORY: return History.enabled(this) ? getResources().getQuantityString(R.plurals.items, History.count(this), History.count(this)) : getString(R.string.history_off_short);
         }
@@ -519,6 +534,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         final String settings = librarySettings();
         new Thread(() -> {
             LibraryCache.Snapshot snap = LibraryCache.load(this);
+            try { Trash.purgeOld(this); } catch (Throwable ignored) { }      // 30 days in the bin: gone for good
             long gen = LibraryCache.generation(this);
             ui.post(() -> {
                 boolean fresh = false;
@@ -531,6 +547,10 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
                     fresh = gen >= 0 && gen == snap.generation;
                 }
                 if (!fresh) load(loaded);
+                else new Thread(() -> {                     // PDFs aren't in the saved copy: a quick look
+                    List<MediaInfo> pd = MediaLibrary.pdfs(this);
+                    ui.post(() -> { pdfs.clear(); pdfs.addAll(pd); if (page == PDFS) refresh(); });
+                }).start();
                 watchLibrary();
             });
         }).start();
@@ -549,29 +569,44 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         final String settings = librarySettings();
         new Thread(() -> {
             long gen = LibraryCache.generation(this);
+            // 1) Android's own library: quick. Shown straight away.
             List<MediaInfo> a = MediaLibrary.audio(this);
             List<MediaInfo> v = MediaLibrary.video(this);
             List<MediaInfo> im = MediaLibrary.images(this);
+            List<MediaInfo> pd = MediaLibrary.pdfs(this);
             if (!withThumbs) { dropThumbs(a); dropThumbs(v); dropThumbs(im); }
-            if (withHidden || withThumbs) {
+            boolean more = withHidden || withThumbs;
+            publish(a, v, im, pd, !more);
+            // 2) hidden folders: a walk through the storage, which takes longer. Added when done.
+            if (more) {
+                List<MediaInfo> a2 = new ArrayList<>(a), v2 = new ArrayList<>(v), im2 = new ArrayList<>(im);
                 HiddenScanner.Result h = HiddenScanner.scan(withHidden, withThumbs);
-                addMissing(a, h.audio);
-                addMissing(v, h.video);
-                addMissing(im, h.images);
-            }
-            LibraryCache.save(this, a, v, im, gen, settings);
-            ui.post(() -> {
-                boolean changed = !same(audio, a) || !same(video, v) || !same(images, im);
+                addMissing(a2, h.audio);
+                addMissing(v2, h.video);
+                addMissing(im2, h.images);
+                publish(a2, v2, im2, pd, true);
+                LibraryCache.save(this, a2, v2, im2, gen, settings);
+            } else LibraryCache.save(this, a, v, im, gen, settings);
+        }).start();
+    }
+
+    /** Shows a freshly read library without emptying the screen; done = the last step of this reading. */
+    private void publish(List<MediaInfo> a, List<MediaInfo> v, List<MediaInfo> im, List<MediaInfo> pd, boolean done) {
+        ui.post(() -> {
+            boolean changed = !same(audio, a) || !same(video, v) || !same(images, im) || !same(pdfs, pd);
+            if (changed) {
                 audio.clear(); audio.addAll(a);
                 video.clear(); video.addAll(v);
                 images.clear(); images.addAll(im);
-                loaded = true;
-                loading = false;
-                updating.setVisibility(View.GONE);
-                if (changed || empty.getVisibility() == View.VISIBLE) refresh();
-                if (reloadAgain) { reloadAgain = false; load(true); }
-            });
-        }).start();
+                pdfs.clear(); pdfs.addAll(pd);
+            }
+            loaded = true;
+            if (changed || empty.getVisibility() == View.VISIBLE) refresh();
+            if (!done) return;
+            loading = false;
+            if (!browseLoading) updating.setVisibility(View.GONE);
+            if (reloadAgain) { reloadAgain = false; load(true); }
+        });
     }
 
     private static boolean same(List<MediaInfo> x, List<MediaInfo> y) {
@@ -654,7 +689,8 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         if ("thumbs".equals(pendingAccess)) Prefs.setShowThumbnails(this, true);
         boolean library = !"folders".equals(pendingAccess);
         pendingAccess = null;
-        if (library) { Ui.toast(this, R.string.hidden_scanning); load(true); }
+        if (library) Ui.toast(this, R.string.hidden_scanning);
+        load(true);                                  // PDFs and hidden files appear with access
         if (page == FOLDERS) browse(browseDir);
         refresh();
     }
@@ -692,6 +728,9 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         openPlaylist = null;
         openSquare = null;
         openVideoFolder = null;
+        searchGen++;
+        searchHits = null;
+        searching = false;
         if (filter.length() > 0) { search.setText(""); filter = ""; }
         pageLabel.setText(PAGE_TITLES[p]);
         search.setHint(p == GALLERY ? R.string.search_gallery_hint : p == SETTINGS ? R.string.search_settings_hint : R.string.search_hint);
@@ -733,6 +772,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
             case VIDEOS: return Prefs.view(this, "videos", "list");
             case FOLDERS: return Prefs.view(this, "folders", "list");
             case PLAYLISTS: return Prefs.view(this, "playlists", "list");
+            case PDFS: return Prefs.view(this, "pdfs", "list");
         }
         return "list";
     }
@@ -870,6 +910,14 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         } else if (page == PLAYLISTS) {
             emptyText = buildPlaylists(out);
             grid = "grid".equals(view);
+        } else if (page == PDFS) {
+            if (Build.VERSION.SDK_INT >= 30 && !HiddenScanner.hasAllFilesAccess(this))
+                out.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.allow), getString(R.string.folders_need_access), null, "folders_access", R.drawable.ic_lock));
+            for (MediaInfo m : sorted(pdfs, currentSort())) if (matches(m))
+                out.add(RowAdapter.Row.media(m, getString(R.string.file_line, Formatter.formatShortFileSize(this, m.size), shortDate(m.dateMs)) + " · " + m.folder));
+            tabHint.setText(getResources().getQuantityString(R.plurals.pdfs, pdfs.size(), pdfs.size()));
+            grid = "grid".equals(view);
+            emptyText = R.string.no_pdfs;
         } else if (page == HISTORY) {
             emptyText = buildHistory(out);
         } else {
@@ -920,9 +968,11 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
             long ms = 0;
             for (MediaInfo m : l) ms += m.durationMs;
             boolean hid = l.get(0).hidden;
-            out.add(new RowAdapter.Row(RowAdapter.FOLDER, e.getKey(),
+            RowAdapter.Row fr = new RowAdapter.Row(RowAdapter.FOLDER, e.getKey(),
                     (hid ? getString(R.string.hidden_prefix) : "") + getResources().getQuantityString(R.plurals.videos, l.size(), l.size())
-                            + (ms > 0 ? " · " + Ui.time(ms) : ""), l.get(0), "vf:" + e.getKey(), R.drawable.ic_folder));
+                            + (ms > 0 ? " · " + Ui.time(ms) : ""), l.get(0), "vf:" + e.getKey(), R.drawable.ic_folder);
+            fr.pick = l;                                   // long-press picks the whole folder
+            out.add(fr);
         }
         tabHint.setText(getResources().getQuantityString(R.plurals.folders, entries.size(), entries.size()));
     }
@@ -935,6 +985,12 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
 
     private void browse(File dir) {
         if (dir == null) return;
+        if (searchHits != null) {                      // leaving a search: back to plain listing
+            searchGen++;
+            searchHits = null;
+            searching = false;
+            if (search.getText().length() > 0) { filter = ""; search.setText(""); }
+        }
         browseDir = dir;
         browseLoading = true;
         browseRows.clear();
@@ -968,8 +1024,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
                 int n = in == null ? 0 : in.length;
                 String sub = getResources().getQuantityString(R.plurals.items, n, n) + " · " + shortDate(d.lastModified());
                 boolean hid = d.getName().startsWith(".") || new File(d, ".nomedia").exists();
-                dirRows.add(new RowAdapter.Row(RowAdapter.FOLDER, d.getName(), (hid ? getString(R.string.hidden_prefix) : "") + sub,
-                        null, d.getAbsolutePath(), hid ? R.drawable.ic_eye_off : R.drawable.ic_folder));
+                dirRows.add(folderRow(d, (hid ? getString(R.string.hidden_prefix) : "") + sub, hid));
             }
             for (File f : files) {
                 MediaInfo m = MediaInfo.fromFile(f);
@@ -1052,22 +1107,127 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
                 ? getResources().getQuantityString(R.plurals.folders_hidden_n, browseHidden, browseHidden)
                 : getString(R.string.folders_all_shown));
 
-        if (!atRoot()) {
-            File parent = browseDir.getParentFile();
-            out.add(new RowAdapter.Row(RowAdapter.BACK, getString(R.string.back_to, parent == null ? "" : parent.getName()),
-                    null, null, "up", R.drawable.ic_arrow_up));
+        // UP · NEW · PASTE: buttons, not rows, so they never look like the files below
+        folderActions.removeAllViews();
+        if (!atRoot()) folderAction(R.drawable.ic_arrow_up, getString(R.string.up_caps), this::goBack);
+        folderAction(R.drawable.ic_add, getString(R.string.new_caps), this::newHere);
+        if (FileJobs.hasClip()) {
+            folderAction(R.drawable.ic_paste, FileJobs.pasteLabel(this), this::pasteHere);
+            folderAction(R.drawable.ic_close, null, () -> { FileJobs.clear(); refresh(); });
         }
+
         if (Build.VERSION.SDK_INT >= 30 && !HiddenScanner.hasAllFilesAccess(this))
             out.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.allow), getString(R.string.folders_need_access), null, "folders_access", R.drawable.ic_lock));
+        if (searchHits != null) {                                   // searching: this folder and every folder inside
+            out.addAll(searchHits);
+            tabHint.setText(searching ? getString(R.string.searching_inside)
+                    : getResources().getQuantityString(R.plurals.found_inside, searchHits.size(), searchHits.size()));
+            return;
+        }
         int songs = 0;
         for (RowAdapter.Row r : browseRows) if (r.media != null && r.media.kind() == MediaInfo.AUDIO) songs++;
         if (songs > 1 && filter.isEmpty())
             out.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.play_all_here), null, null, "play_here", R.drawable.ic_play));
-        out.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.new_folder) + " · " + getString(R.string.new_text_file),
-                null, null, "new_here", R.drawable.ic_add));
         int n = 0;
         for (RowAdapter.Row r : browseRows) if (matchesText(r.title)) { out.add(r); n++; }
         tabHint.setText(getResources().getQuantityString(R.plurals.items, n, n));
+    }
+
+    private void folderAction(int icon, String label, Runnable r) {
+        int dp = Ui.dp(this, 1);
+        TextView b = new TextView(this);
+        if (label != null) b.setText(label);
+        b.setTypeface(Ui.orbitron(this));
+        b.setTextSize(9.5f);
+        b.setLetterSpacing(0.1f);
+        b.setTextColor(getColor(R.color.accent));
+        b.setGravity(Gravity.CENTER);
+        b.setCompoundDrawablesRelativeWithIntrinsicBounds(icon, 0, 0, 0);
+        b.setCompoundDrawableTintList(ColorStateList.valueOf(getColor(R.color.accent)));
+        b.setCompoundDrawablePadding(label == null ? 0 : 6 * dp);
+        b.setBackgroundResource(R.drawable.bg_tile_btn);
+        b.setPadding(10 * dp, 0, label == null ? 10 * dp : 14 * dp, 0);
+        if (label == null) b.setContentDescription(getString(R.string.clear_clip));
+        b.setOnClickListener(v -> r.run());
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, 34 * dp);
+        lp.setMarginEnd(8 * dp);
+        folderActions.addView(b, lp);
+    }
+
+    /** A folder row that can be picked (long-press) like a file. */
+    private RowAdapter.Row folderRow(File d, String sub, boolean hid) {
+        RowAdapter.Row r = new RowAdapter.Row(RowAdapter.FOLDER, d.getName(), sub, null, d.getAbsolutePath(),
+                hid ? R.drawable.ic_eye_off : R.drawable.ic_folder);
+        List<MediaInfo> one = new ArrayList<>();
+        one.add(folderInfo(d));
+        r.pick = one;
+        return r;
+    }
+
+    // ── Paste into the folder that's open ────────────────────────────────────
+
+    private void pasteHere() {
+        if (browseDir == null || !FileJobs.hasClip()) return;
+        if (!FileOps.canUseBin(this)) { needAccessFor("folders"); return; }       // writing needs All files access
+        final File dir = browseDir;
+        FileJobs.pasteLocal(this, dir, (ok, bad) -> {
+            if (page == FOLDERS && dir.equals(browseDir)) browse(dir);
+            load(true);
+        });
+        refresh();
+    }
+
+    // ── Search inside every folder below the open one ────────────────────────
+
+    private List<RowAdapter.Row> searchHits;
+    private boolean searching = false;
+    private int searchGen = 0;
+
+    private void deepSearch(String q) {
+        final int gen = ++searchGen;
+        if (q.isEmpty() || browseDir == null) { searchHits = null; searching = false; refresh(); return; }
+        searching = true;
+        searchHits = new ArrayList<>();
+        refresh();
+        final File start = browseDir;
+        final boolean hideDot = Prefs.hideDot(this), hideNomedia = Prefs.hideNomedia(this), hideThumbs = Prefs.hideThumbDirs(this);
+        final List<File> roots = FolderPicker.roots(this);
+        new Thread(() -> {
+            List<RowAdapter.Row> found = new ArrayList<>();
+            java.util.ArrayDeque<File> queue = new java.util.ArrayDeque<>();
+            queue.add(start);
+            long lastPost = System.currentTimeMillis();
+            while (!queue.isEmpty() && gen == searchGen && found.size() < 1000) {
+                File dir = queue.poll();
+                File[] kids = dir.listFiles();
+                if (kids == null) continue;
+                for (File f : kids) {
+                    String n = f.getName();
+                    boolean isDir = f.isDirectory();
+                    if (hideDot && n.startsWith(".")) continue;
+                    if (isDir && hideThumbs && n.equalsIgnoreCase(".thumbnails")) continue;
+                    if (isDir && hideNomedia && new File(f, ".nomedia").exists()) continue;
+                    if (n.toLowerCase(Locale.ROOT).contains(q)) {
+                        String where = FolderPicker.pretty(this, roots, dir);
+                        if (isDir) found.add(folderRow(f, where, n.startsWith(".")));
+                        else found.add(RowAdapter.Row.media(MediaInfo.fromFile(f),
+                                Formatter.formatShortFileSize(this, f.length()) + " · " + where));
+                    }
+                    if (isDir) queue.add(f);
+                }
+                if (System.currentTimeMillis() - lastPost > 400) {     // show what's found so far
+                    lastPost = System.currentTimeMillis();
+                    final List<RowAdapter.Row> part = new ArrayList<>(found);
+                    ui.post(() -> { if (gen == searchGen) { searchHits = part; refresh(); } });
+                }
+            }
+            ui.post(() -> {
+                if (gen != searchGen) return;
+                searchHits = found;
+                searching = false;
+                refresh();
+            });
+        }).start();
     }
 
     private void newHere() {
@@ -1200,9 +1360,6 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         all.add(RowAdapter.Row.toggle(getString(R.string.hide_thumbdirs), getString(R.string.folders_page_only), "hide_thumbdirs",
                 R.drawable.ic_folder, Prefs.hideThumbDirs(this)));
         all.add(RowAdapter.Row.header(getString(R.string.set_playback)));
-        all.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.eq_and_karaoke), getString(R.string.eq_and_karaoke_sub), null, "eq", R.drawable.ic_eq));
-        all.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.karaoke_strength),
-                getResources().getStringArray(R.array.karaoke_strengths)[Prefs.karaokeStrength(this)], null, "k_strength", R.drawable.ic_mic_off));
         all.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.video_rotation),
                 getResources().getStringArray(R.array.orientations)[Prefs.videoOrientation(this)], null, "orient", R.drawable.ic_screen_rotation));
         all.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.video_end),
@@ -1247,7 +1404,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
     private void chooseSort() {
         final String key = sortPrefKey();
         Boolean ff = page == FOLDERS ? Prefs.foldersFirst(this, "folders") : null;
-        String cur = page == VIDEOS || page == SONGS || page == FOLDERS || page == PLAYLISTS ? view() : null;
+        String cur = page == VIDEOS || page == SONGS || page == FOLDERS || page == PLAYLISTS || page == PDFS ? view() : null;
         SortSheet.show(this, key, currentSort(), cur, ff, new SortSheet.Listener() {
             @Override public void onSort(String k) {
                 Prefs.setSort(MainActivity.this, key, k);
@@ -1504,15 +1661,110 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
     }
 
     private void deleteItems(List<MediaInfo> items) {
-        deleter.delete(items, gone -> {
-            removeGone(audio, gone); removeGone(video, gone); removeGone(images, gone);
-            for (int i = browseRows.size() - 1; i >= 0; i--) {
-                RowAdapter.Row r = browseRows.get(i);
-                if (r.media != null && gone.contains(r.media.key())) browseRows.remove(i);
-            }
-            sel.clear();
-            refresh();
+        deleter.delete(items, new FileOps.Deleted() {
+            @Override public void done(Set<String> gone) { takeAway(gone); sel.clear(); }
+            @Override public void restored() { load(true); if (page == FOLDERS) browse(browseDir); }
         });
+    }
+
+    /** Out of sight at once, everywhere in the library. */
+    private void takeAway(Set<String> gone) {
+        removeGone(audio, gone); removeGone(video, gone); removeGone(images, gone); removeGone(pdfs, gone);
+        for (int i = browseRows.size() - 1; i >= 0; i--) {
+            RowAdapter.Row r = browseRows.get(i);
+            MediaInfo m = r.media != null ? r.media : r.pick != null && !r.pick.isEmpty() ? r.pick.get(0) : null;
+            if (m != null && gone.contains(m.key())) browseRows.remove(i);
+        }
+        if (searchHits != null) for (int i = searchHits.size() - 1; i >= 0; i--) {
+            RowAdapter.Row r = searchHits.get(i);
+            MediaInfo m = r.media != null ? r.media : r.pick != null && !r.pick.isEmpty() ? r.pick.get(0) : null;
+            if (m != null && gone.contains(m.key())) searchHits.remove(i);
+        }
+        refresh();
+    }
+
+    /** Media and folders on screen that can be picked. */
+    private List<MediaInfo> visiblePickable() {
+        RecyclerView.Adapter<?> a = list.getAdapter();
+        if (a != rows) return visibleMedia();
+        List<MediaInfo> out = new ArrayList<>();
+        for (RowAdapter.Row r : rows.rows()) {
+            if (r.type == RowAdapter.MEDIA) out.add(r.media);
+            else if (r.type == RowAdapter.FOLDER && r.pick != null) out.addAll(r.pick);
+        }
+        return out;
+    }
+
+    private static boolean isFolder(MediaInfo m) {
+        File f = FileJobs.localFile(m);
+        return m.other && f != null && f.isDirectory();
+    }
+
+    private static List<MediaInfo> filesOnly(List<MediaInfo> l) {
+        List<MediaInfo> out = new ArrayList<>();
+        for (MediaInfo m : l) if (!isFolder(m)) out.add(m);
+        return out;
+    }
+
+    private void selectionMenu() {
+        final List<MediaInfo> items = sel.items();
+        String[] opts = {getString(R.string.copy_files), getString(R.string.cut), getString(R.string.add_to_playlist)};
+        Dialogs.builder(this).setItems(opts, (d, w) -> {
+            if (w == 0 || w == 1) { FileJobs.put(this, items, w == 1, null); sel.clear(); refresh(); }
+            else {
+                List<MediaInfo> media = new ArrayList<>();
+                for (MediaInfo m : filesOnly(items)) if (!m.other) media.add(m);
+                Dialogs.addToPlaylist(this, media, sel::clear);
+            }
+        }).show();
+    }
+
+    /** ⓘ for everything picked: how many, total size, what kinds, total length, dates. */
+    private void selectionDetails(List<MediaInfo> items) {
+        if (items.isEmpty()) return;
+        if (items.size() == 1) { properties(items.get(0)); return; }
+        final android.app.AlertDialog dlg = Dialogs.builder(this)
+                .setTitle(getResources().getQuantityString(R.plurals.info_title, items.size(), items.size()))
+                .setMessage(R.string.loading)
+                .setPositiveButton(R.string.close_caps, null)
+                .show();
+        new Thread(() -> {
+            long size = 0, ms = 0, first = Long.MAX_VALUE, last = 0;
+            int au = 0, vi = 0, ph = 0, ot = 0, dirs = 0, inside = 0;
+            for (MediaInfo m : items) {
+                File f = FileJobs.localFile(m);
+                if (m.other && f != null && f.isDirectory()) {
+                    dirs++;
+                    size += FileJobs.sizeOf(f);
+                    inside += countFiles(f);
+                    continue;
+                }
+                long sz = m.size > 0 ? m.size : f != null ? f.length() : 0;
+                size += sz;
+                ms += m.durationMs;
+                int k = m.kind();
+                if (k == MediaInfo.AUDIO) au++; else if (k == MediaInfo.VIDEO) vi++; else if (k == MediaInfo.IMAGE) ph++; else ot++;
+                long t = m.dateMs > 0 ? m.dateMs : f != null ? f.lastModified() : 0;
+                if (t > 0) { first = Math.min(first, t); last = Math.max(last, t); }
+            }
+            StringBuilder b = new StringBuilder();
+            b.append(getString(R.string.info_total)).append(": ").append(Formatter.formatFileSize(this, size)).append('\n');
+            b.append(getString(R.string.info_contains)).append(": ").append(getString(R.string.info_kinds, au, vi, ph, ot));
+            if (dirs > 0) b.append('\n').append(getString(R.string.info_folders, dirs, inside));
+            if (ms > 0) b.append('\n').append(getString(R.string.info_length)).append(": ").append(Ui.time(ms));
+            if (last > 0) b.append('\n').append(getString(R.string.info_dates)).append(": ").append(shortDate(first))
+                    .append(first == last ? "" : " – " + shortDate(last));
+            final String text = b.toString();
+            ui.post(() -> { if (dlg.isShowing()) dlg.setMessage(text); });
+        }).start();
+    }
+
+    private static int countFiles(File d) {
+        File[] k = d.listFiles();
+        if (k == null) return 0;
+        int n = 0;
+        for (File f : k) n += f.isDirectory() ? countFiles(f) : 1;
+        return n;
     }
 
     @SuppressWarnings("deprecation")
@@ -1527,10 +1779,9 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
     }
 
     private void properties(MediaInfo m) {
-        FileOps.properties(this, m, deleter, gone -> {
-            removeGone(audio, gone); removeGone(video, gone); removeGone(images, gone);
-            if (page == FOLDERS) browse(browseDir);
-            refresh();
+        FileOps.properties(this, m, deleter, new FileOps.Deleted() {
+            @Override public void done(Set<String> gone) { takeAway(gone); }
+            @Override public void restored() { load(true); if (page == FOLDERS) browse(browseDir); }
         }, () -> {
             if (page == FOLDERS) browse(browseDir); else load(true);
         });
@@ -1550,7 +1801,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
     }
 
     private void openMedia(MediaInfo m) {
-        if (page == FOLDERS) { openFile(m, visibleMedia()); return; }
+        if (page == FOLDERS || m.other || searchHits != null) { openFile(m, visibleMedia()); return; }
         int kind = m.image ? 2 : m.video ? 1 : 0;
         List<MediaInfo> same = visible(kind);
         int idx = Math.max(0, same.indexOf(m));
@@ -1567,6 +1818,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
                 openMedia(r.media);
                 break;
             case RowAdapter.FOLDER:
+                if (sel.active() && r.pick != null) { sel.toggleAll(r.pick); return; }
                 rememberScroll();
                 if (r.key.startsWith("vf:")) openVideoFolder = r.key.substring(3);
                 else { browse(new File(r.key)); }
@@ -1664,7 +1916,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
     @Override
     public void onLongClick(RowAdapter.Row r, int position) {
         if (r.type == RowAdapter.PLAYLIST) { playlistMenu(r); return; }
-        if (r.type == RowAdapter.FOLDER) { if (r.key.startsWith("/")) properties(MediaInfo.fromFile(new File(r.key))); return; }
+        if (r.type == RowAdapter.FOLDER) { if (r.pick != null) sel.toggleAll(r.pick); return; }
         if (r.type != RowAdapter.MEDIA) return;
         if (sel.active()) sel.toggle(r.media); else sel.start(r.media);
     }
@@ -1672,8 +1924,25 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
     @Override
     public void onMore(RowAdapter.Row r, int position) {
         if (r.type == RowAdapter.PLAYLIST) { playlistMenu(r); return; }
-        if (r.type == RowAdapter.FOLDER && r.key.startsWith("/")) { properties(folderInfo(new File(r.key))); return; }
+        if (r.type == RowAdapter.FOLDER && r.key.startsWith("/")) { folderMenu(folderInfo(new File(r.key))); return; }
         if (r.type == RowAdapter.MEDIA) itemMenu(r.media);
+    }
+
+    private void folderMenu(MediaInfo m) {
+        String[] opts = {getString(R.string.open), getString(R.string.select), getString(R.string.copy_files), getString(R.string.cut),
+                getString(R.string.rename), getString(R.string.delete_file), getString(R.string.properties)};
+        Dialogs.builder(this).setTitle(m.fileName).setItems(opts, (d, w) -> {
+            List<MediaInfo> one = new ArrayList<>();
+            one.add(m);
+            switch (w) {
+                case 0: browse(new File(m.path)); refresh(); showHeader(); break;
+                case 1: sel.toggleAll(one); break;
+                case 2: case 3: FileJobs.put(this, one, w == 3, null); refresh(); break;
+                case 4: FileOps.rename(this, m, () -> browse(browseDir)); break;
+                case 5: deleteItems(one); break;
+                default: properties(m);
+            }
+        }).show();
     }
 
     private static MediaInfo folderInfo(File d) {
@@ -1710,10 +1979,14 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
             opts.add(getString(R.string.set_as_ringtone)); ids.add("ringtone");
         }
         opts.add(getString(R.string.share)); ids.add("share");
-        if (media) { opts.add(getString(R.string.select)); ids.add("select"); }
-        opts.add(getString(R.string.properties)); ids.add("props");
+        opts.add(getString(R.string.select)); ids.add("select");
         if (inPlaylist) { opts.add(getString(R.string.remove_from_playlist)); ids.add("remove"); }
+        opts.add(getString(R.string.copy_files)); ids.add("copy");
+        opts.add(getString(R.string.cut)); ids.add("cut");
+        opts.add(getString(R.string.rename)); ids.add("rename");
         opts.add(getString(R.string.delete_file)); ids.add("delete");
+        if (m.image) { opts.add(getString(R.string.set_wallpaper)); ids.add("wallpaper"); }
+        opts.add(getString(R.string.properties)); ids.add("props");
         Dialogs.builder(this)
                 .setTitle(m.other ? m.fileName : m.title)
                 .setItems(opts.toArray(new String[0]), (d, which) -> {
@@ -1730,6 +2003,15 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
                         case "share": Share.send(this, m); break;
                         case "select": sel.start(m); break;
                         case "props": properties(m); break;
+                        case "copy": case "cut": {
+                            List<MediaInfo> one = new ArrayList<>();
+                            one.add(m);
+                            FileJobs.put(this, one, ids.get(which).equals("cut"), null);
+                            if (page == FOLDERS) refresh();
+                            break;
+                        }
+                        case "rename": FileOps.rename(this, m, () -> { if (page == FOLDERS) browse(browseDir); else load(true); }); break;
+                        case "wallpaper": Wallpapers.set(this, m); break;
                         case "remove": {
                             List<MediaInfo> items = Playlists.items(this, openPlaylist);
                             for (int i = 0; i < items.size(); i++)

@@ -220,5 +220,31 @@ public final class Ui {
         if (hide != null) { tv.removeCallbacks(hide); tv.postDelayed(hide, 4000); }
     }
 
+    // ── Messages from background work, shown in whichever screen is open ─────
+
+    private static java.lang.ref.WeakReference<Activity> top = new java.lang.ref.WeakReference<>(null);
+    private static boolean tracking = false;
+
+    /** Called once from the first screen; afterwards messages find the screen that's showing. */
+    public static void track(android.app.Application app) {
+        if (tracking) return;
+        tracking = true;
+        app.registerActivityLifecycleCallbacks(new android.app.Application.ActivityLifecycleCallbacks() {
+            @Override public void onActivityResumed(Activity a) { top = new java.lang.ref.WeakReference<>(a); }
+            @Override public void onActivityPaused(Activity a) { }
+            @Override public void onActivityCreated(Activity a, android.os.Bundle b) { }
+            @Override public void onActivityStarted(Activity a) { }
+            @Override public void onActivityStopped(Activity a) { }
+            @Override public void onActivitySaveInstanceState(Activity a, android.os.Bundle b) { }
+            @Override public void onActivityDestroyed(Activity a) { }
+        });
+    }
+
+    public static void toastApp(Context c, CharSequence text) {
+        Activity a = c instanceof Activity ? (Activity) c : top.get();
+        if (a != null && !a.isFinishing()) toast(a, text);
+        else android.widget.Toast.makeText(c.getApplicationContext(), text, android.widget.Toast.LENGTH_SHORT).show();
+    }
+
     public static int dp(Context c, float v) { return Math.round(v * c.getResources().getDisplayMetrics().density); }
 }

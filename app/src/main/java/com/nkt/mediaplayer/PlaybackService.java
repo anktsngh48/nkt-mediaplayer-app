@@ -65,6 +65,15 @@ public class PlaybackService extends MediaSessionService {
                 Prefs.countPlay(PlaybackService.this, item.mediaId);
                 History.record(PlaybackService.this, Media.info(item, 0));
                 applyKey();
+                saveQueue();
+            }
+            @Override public void onIsPlayingChanged(boolean playing) {
+                saveQueue();
+                h.removeCallbacks(saveTick);
+                if (playing) h.postDelayed(saveTick, 5000);
+            }
+            @Override public void onTimelineChanged(androidx.media3.common.Timeline t, int reason) {
+                if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) saveQueue();
             }
             @Override public void onPlayWhenReadyChanged(boolean playWhenReady, int reason) {
                 if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM && sleepEndOfSong) {
@@ -97,6 +106,11 @@ public class PlaybackService extends MediaSessionService {
                     }
                 })
                 .build();
+        // status bar & lock screen: the NKT logo as the small icon (the app's name shows beside it)
+        androidx.media3.session.DefaultMediaNotificationProvider np = new androidx.media3.session.DefaultMediaNotificationProvider.Builder(this).build();
+        np.setSmallIcon(R.drawable.ic_stat_nkt);
+        setMediaNotificationProvider(np);
+        restoreQueue();
         instance = this;
     }
 
@@ -173,17 +187,68 @@ public class PlaybackService extends MediaSessionService {
         Prefs.sp(this).edit().putBoolean("skip_silence", on).apply();
     }
 
+    // ── Carry on where you left off: the queue, the song and the moment ─────
+
+    private final Runnable saveTick = new Runnable() {
+        @Override public void run() {
+            saveQueue();
+            if (player != null && player.isPlaying()) h.postDelayed(this, 5000);
+        }
+    };
+
+    private boolean restoring = false;
+
+    void saveQueue() {
+        if (player == null || restoring) return;
+        try {
+            int n = player.getMediaItemCount();
+            if (n == 0) { Prefs.sp(this).edit().remove("last_queue").apply(); return; }
+            org.json.JSONArray items = new org.json.JSONArray();
+            for (int i = 0; i < n; i++) items.put(Media.info(player.getMediaItemAt(i), 0).toJson());
+            org.json.JSONObject o = new org.json.JSONObject()
+                    .put("items", items)
+                    .put("index", player.getCurrentMediaItemIndex())
+                    .put("pos", Math.max(0, player.getCurrentPosition()))
+                    .put("shuffle", player.getShuffleModeEnabled())
+                    .put("repeat", player.getRepeatMode());
+            Prefs.sp(this).edit().putString("last_queue", o.toString()).apply();
+        } catch (Exception ignored) { }
+    }
+
+    /** Puts the last queue back, paused at the same moment; play continues from there. */
+    private void restoreQueue() {
+        String json = Prefs.sp(this).getString("last_queue", null);
+        if (json == null || player.getMediaItemCount() > 0) return;
+        try {
+            org.json.JSONObject o = new org.json.JSONObject(json);
+            org.json.JSONArray a = o.getJSONArray("items");
+            List<MediaInfo> list = new ArrayList<>();
+            for (int i = 0; i < a.length(); i++) list.add(MediaInfo.fromJson(a.getJSONObject(i)));
+            if (list.isEmpty()) return;
+            int index = Math.max(0, Math.min(list.size() - 1, o.optInt("index")));
+            restoring = true;
+            player.setMediaItems(Media.items(list), index, o.optLong("pos"));
+            player.setShuffleModeEnabled(o.optBoolean("shuffle"));
+            player.setRepeatMode(o.optInt("repeat", Player.REPEAT_MODE_OFF));
+            player.setPlayWhenReady(false);
+            restoring = false;
+            // not prepared yet (no notification until you press play); play() prepares it
+        } catch (Exception e) { restoring = false; }
+    }
+
     // ── Lifecycle ────────────────────────────────────────────────────────────
 
     @Override
     public void onTaskRemoved(Intent rootIntent) {
         // Swiped away from recent apps: keep playing if music is on, otherwise stop.
+        saveQueue();
         Player p = session == null ? null : session.getPlayer();
         if (p == null || !p.getPlayWhenReady() || p.getMediaItemCount() == 0) stopSelf();
     }
 
     @Override
     public void onDestroy() {
+        saveQueue();
         instance = null;
         h.removeCallbacksAndMessages(null);
         AudioFx.release();

@@ -145,6 +145,8 @@ public class PlayerActivity extends Activity {
         });
         findViewById(R.id.ctl_prev).setOnClickListener(v -> { keepControls(); player.seekToPrevious(); });
         findViewById(R.id.ctl_next).setOnClickListener(v -> { keepControls(); if (player.getNextMediaItemIndex() != C.INDEX_UNSET) player.seekToNextMediaItem(); });
+        findViewById(R.id.vid_prev).setOnClickListener(v -> { keepControls(); if (player.hasPreviousMediaItem()) { player.seekToPreviousMediaItem(); player.play(); } });
+        findViewById(R.id.vid_next).setOnClickListener(v -> { keepControls(); if (player.hasNextMediaItem()) { player.seekToNextMediaItem(); player.play(); } });
         seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar sb, int p, boolean fromUser) {
                 if (!fromUser || player.getDuration() <= 0) return;
@@ -613,6 +615,8 @@ public class PlayerActivity extends Activity {
         opts.add(getString(zoomed ? R.string.zoom_fit_menu : R.string.zoom_fill_menu)); ids.add("zoom");
         opts.add(getString(R.string.add_to_playlist)); ids.add("add");
         opts.add(getString(R.string.share)); ids.add("share");
+        if (!m.remote && !Downloads.isOnline(m)) { opts.add(getString(R.string.rename)); ids.add("rename"); }
+        if (!m.remote && !Downloads.isOnline(m)) { opts.add(getString(R.string.delete_file)); ids.add("delete"); }
         opts.add(getString(R.string.properties)); ids.add("props");
         if (Downloads.isOnline(m)) { opts.add(getString(R.string.download)); ids.add("download"); }
         Dialogs.builder(this)
@@ -644,6 +648,13 @@ public class PlayerActivity extends Activity {
                             FileOps.properties(this, m, deleter, gone -> removeCurrent(), null);
                             break;
                         case "download": Downloads.start(this, m.uri, m.title); break;
+                        case "rename": FileOps.rename(this, m, null); break;
+                        case "delete": {
+                            List<MediaInfo> one = new ArrayList<>();
+                            one.add(m);
+                            deleter.delete(one, gone -> removeCurrent());
+                            break;
+                        }
                     }
                 })
                 .show();
@@ -740,6 +751,8 @@ public class PlayerActivity extends Activity {
     private void updateControls() {
         if (player == null) return;
         boolean end = atEnd() && !scrubbing;
+        findViewById(R.id.vid_prev).setVisibility(player.hasPreviousMediaItem() ? View.VISIBLE : View.INVISIBLE);
+        findViewById(R.id.vid_next).setVisibility(player.hasNextMediaItem() ? View.VISIBLE : View.INVISIBLE);
         playBtn.setImageResource(player.isPlaying() ? R.drawable.ic_pause : end ? R.drawable.ic_repeat : R.drawable.ic_play);
         if (!end && replayBtn.getVisibility() == View.VISIBLE) replayBtn.setVisibility(View.GONE);
         if (draggingBar) return;

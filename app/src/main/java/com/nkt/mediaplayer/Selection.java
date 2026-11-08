@@ -40,6 +40,21 @@ public final class Selection {
         changed.onSelectionChanged();
     }
 
+    public boolean hasAll(List<MediaInfo> l) {
+        if (l == null || l.isEmpty()) return false;
+        for (MediaInfo m : l) if (!picked.containsKey(m.key())) return false;
+        return true;
+    }
+
+    /** A folder: picks all of it, or un-picks it when it's all picked already. */
+    public void toggleAll(List<MediaInfo> l) {
+        if (l == null || l.isEmpty()) return;
+        if (hasAll(l)) for (MediaInfo m : l) picked.remove(m.key());
+        else { active = true; for (MediaInfo m : l) picked.put(m.key(), m); }
+        if (picked.isEmpty()) active = false;
+        changed.onSelectionChanged();
+    }
+
     public void clear() {
         picked.clear();
         active = false;
