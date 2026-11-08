@@ -2,8 +2,8 @@ name: Build APK
 
 on:
   push:
-    branches: [ main ]
-  workflow_dispatch:
+    branches: [main]
+  workflow_dispatch: {}
 
 jobs:
   build:
@@ -22,23 +22,25 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      - name: Restore signing key (only if you added it)
+      # Uses your fixed signing key when the 4 repository secrets are set,
+      # so each new APK installs over the old one as an update.
+      - name: Prepare signing key
         if: env.KS_B64 != ''
         run: |
           echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/nkt.jks"
           echo "NKT_KEYSTORE_PATH=$RUNNER_TEMP/nkt.jks" >> "$GITHUB_ENV"
 
-      - name: Build the app
-        run: gradle assembleRelease --no-daemon --stacktrace
+      - name: Build
         env:
           NKT_KEYSTORE_PASSWORD: ${{ secrets.NKT_KEYSTORE_PASSWORD }}
           NKT_KEY_ALIAS: ${{ secrets.NKT_KEY_ALIAS }}
           NKT_KEY_PASSWORD: ${{ secrets.NKT_KEY_PASSWORD }}
+        run: gradle assembleRelease --no-daemon --stacktrace
 
-      - name: Rename
-        run: cp app/build/outputs/apk/release/app-release.apk NKT-MP.apk
+      - name: Name the APK
+        run: cp app/build/outputs/apk/release/app-release.apk NKT-Media-Player.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: NKT-MP-apk
-          path: NKT-MP.apk
+          name: NKT-Media-Player.apk
+          path: NKT-Media-Player.apk
