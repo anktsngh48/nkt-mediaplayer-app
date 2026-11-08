@@ -51,8 +51,26 @@ public class RowAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private final Listener listener;
     private final Selection selection;
     private String playingId;
+    private boolean grid;
 
     public RowAdapter(Listener l, Selection s) { listener = l; selection = s; }
+
+    /** Tiles instead of rows for songs, files, folders and playlists; headers and actions stay full width. */
+    public void setGrid(boolean g) {
+        if (grid == g) return;
+        grid = g;
+        notifyDataSetChanged();
+    }
+
+    public boolean grid() { return grid; }
+
+    private static boolean tile(int type) { return type == MEDIA || type == FOLDER || type == PLAYLIST; }
+
+    public androidx.recyclerview.widget.GridLayoutManager.SpanSizeLookup spans(int cols) {
+        return new androidx.recyclerview.widget.GridLayoutManager.SpanSizeLookup() {
+            @Override public int getSpanSize(int p) { return p < rows.size() && grid && tile(rows.get(p).type) ? 1 : cols; }
+        };
+    }
 
     public void setRows(List<Row> list) {
         rows.clear();
@@ -69,12 +87,16 @@ public class RowAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     }
 
     @Override public int getItemCount() { return rows.size(); }
-    @Override public int getItemViewType(int p) { return rows.get(p).type == HEADER ? 1 : 0; }
+    @Override public int getItemViewType(int p) {
+        int t = rows.get(p).type;
+        return t == HEADER ? 1 : grid && tile(t) ? 2 : 0;
+    }
 
     @Override
     public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
         LayoutInflater inf = LayoutInflater.from(parent.getContext());
         if (viewType == 1) return new HeaderVH(inf.inflate(R.layout.gallery_header, parent, false));
+        if (viewType == 2) return new VH(inf.inflate(R.layout.tile_item, parent, false));
         return new VH(inf.inflate(R.layout.row_item, parent, false));
     }
 
@@ -107,14 +129,16 @@ public class RowAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             h.toggle.setChecked(r.on);
             h.toggle.setOnCheckedChangeListener((b, on) -> { r.on = on; listener.onToggle(r, on); });
         }
-        if (r.type == MEDIA) {
-            Thumbs.load(h.thumb, r.media);
-            h.more.setVisibility(picking ? View.GONE : View.VISIBLE);
+        if (r.media != null) {
+            Thumbs.load(h.thumb, r.media, grid ? 320 : 256);
+            if (r.type == FOLDER || r.type == PLAYLIST) h.badge(r.icon); else h.badge(0);
         } else {
             h.thumb.setTag(R.id.thumb_key, null);
             Thumbs.showPlaceholder(h.thumb, r.icon);
-            h.more.setVisibility(r.type == PLAYLIST ? View.VISIBLE : View.GONE);
+            h.badge(0);
         }
+        boolean more = !picking && (r.type == MEDIA || r.type == PLAYLIST || (r.type == FOLDER && r.key != null && r.key.startsWith("/")));
+        h.more.setVisibility(more ? View.VISIBLE : View.GONE);
 
         h.itemView.setOnClickListener(v -> {
             int p = h.getBindingAdapterPosition();
@@ -126,7 +150,7 @@ public class RowAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             int p = h.getBindingAdapterPosition();
             if (p == RecyclerView.NO_POSITION) return false;
             Row row = rows.get(p);
-            if (row.type != MEDIA && row.type != PLAYLIST) return false;
+            if (row.type != MEDIA && row.type != PLAYLIST && row.type != FOLDER) return false;
             listener.onLongClick(row, p);
             return true;
         });
@@ -146,6 +170,13 @@ public class RowAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         final TextView title, sub;
         final ImageButton more;
         final android.widget.Switch toggle;
+        final ImageView folderBadge;
+
+        void badge(int icon) {
+            if (folderBadge == null) return;
+            folderBadge.setVisibility(icon == 0 ? View.GONE : View.VISIBLE);
+            if (icon != 0) folderBadge.setImageResource(icon);
+        }
 
         VH(View v) {
             super(v);
@@ -156,6 +187,7 @@ public class RowAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             sub = v.findViewById(R.id.row_sub);
             more = v.findViewById(R.id.row_more);
             toggle = v.findViewById(R.id.row_switch);
+            folderBadge = v.findViewById(R.id.row_badge);
         }
     }
 }

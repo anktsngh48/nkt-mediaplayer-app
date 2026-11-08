@@ -1,44 +1,32 @@
 package com.nkt.mediaplayer;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.app.PictureInPictureParams;
-import android.content.ContentValues;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
-import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
-import android.graphics.drawable.GradientDrawable;
 import android.media.AudioManager;
 import android.media.MediaMetadataRetriever;
-import android.media.MediaScannerConnection;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
-import android.provider.MediaStore;
 import android.util.Rational;
 import android.view.GestureDetector;
-import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
 import android.view.View;
-import android.view.Window;
-import android.view.WindowInsets;
-import android.view.WindowInsetsController;
 import android.view.WindowManager;
-import android.widget.FrameLayout;
 import android.widget.ImageButton;
-import android.widget.LinearLayout;
+import android.widget.ImageView;
 import android.widget.SeekBar;
 import android.widget.TextView;
 
-import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 import androidx.media3.common.AudioAttributes;
 import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
@@ -48,636 +36,754 @@ import androidx.media3.common.Player;
 import androidx.media3.common.VideoSize;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.SeekParameters;
+import androidx.media3.session.MediaController;
 import androidx.media3.ui.AspectRatioFrameLayout;
 import androidx.media3.ui.PlayerView;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.OutputStream;
+import com.google.common.util.concurrent.ListenableFuture;
+
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 
-/** Full-screen video player with its own controls, gestures, live scrubbing on the main picture, and PiP. */
+/**
+ * Full-screen video. Controls stay hidden until you tap; they all sit at the bottom.
+ * Gestures: swipe up/down left = brightness, right = volume; slide sideways = seek, the picture itself follows the finger;
+ * double-tap left/right = −/+10 s; pinch = fill/fit; press and hold = 2× while held.
+ */
 public class PlayerActivity extends Activity {
-    private ExoPlayer player;
-    private PlayerView pv;
-    private FrameLayout root;
-    private View topBar, bottomBar;
-    private TextView titleView, posView, durView, popup, speedBtn, holdBadge;
-    private SeekBar seek;
-    private ImageButton playBtn, loveBtn, rotBtn;
-    private List<MediaInfo> items = new ArrayList<>();
-    private final Handler h = new Handler(Looper.getMainLooper());
-    private boolean controlsShown, scrubbing, inPip, zoomed;
-    private float speed = 1f, heldSpeed;
-    private long lastScrubSeek;
 
-    // gestures
-    private float downX, downY, startBright, startVol;
-    private long startPos;
-    private int gesture; // 0 none, 1 seek, 2 brightness, 3 volume
-    private GestureDetector gd;
-    private ScaleGestureDetector sgd;
+    private static final String EXTRA_URIS = "uris", EXTRA_TITLES = "titles", EXTRA_INDEX = "index", EXTRA_POS = "pos";
 
-    @Override
-    protected void onCreate(Bundle b) {
-        super.onCreate(b);
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        int orient = Store.num(this, "video_orient", 0);
-        setRequestedOrientation(orient == 1 ? ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-                : orient == 2 ? ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE : ActivityInfo.SCREEN_ORIENTATION_USER);
-        buildUi();
-        setContentView(root);
-        immersive();
-        player = new ExoPlayer.Builder(this)
-                .setAudioAttributes(new AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), true)
-                .setHandleAudioBecomingNoisy(true)
-                .build();
-        pv.setPlayer(player);
-        player.addListener(listener);
-        load(getIntent());
+    /** Full details for the list being opened (favourites, history, details); the intent keeps a plain copy. */
+    private static List<MediaInfo> pendingItems;
+
+    public static void open(Context c, List<MediaInfo> list, int index) { open(c, list, index, 0); }
+
+    public static void open(Context c, List<MediaInfo> list, int index, long startMs) {
+        c.startActivity(intent(c, list, index, startMs));
     }
 
-    @Override
-    protected void onNewIntent(Intent i) {
-        super.onNewIntent(i);
-        setIntent(i);
-        load(i);
-    }
-
-    private void load(Intent in) {
-        items = new ArrayList<>(Media.handoff);
-        Media.handoff = new ArrayList<>();
-        int idx = in.getIntExtra("index", 0);
-        long position = in.getLongExtra("position", 0);
-        if (Intent.ACTION_VIEW.equals(in.getAction()) && in.getData() != null) {
-            items = Collections.singletonList(Media.fromUri(this, in.getData(), MediaInfo.VIDEO));
-            idx = 0;
-        } else if (items.isEmpty() && in.getStringExtra("uri") != null) {
-            MediaInfo m = new MediaInfo();
-            m.uri = in.getStringExtra("uri");
-            m.title = in.getStringExtra("title") == null ? "Video" : in.getStringExtra("title");
-            m.kind = MediaInfo.VIDEO;
-            items = Collections.singletonList(m);
+    public static Intent intent(Context c, List<MediaInfo> list, int index, long startMs) {
+        String[] uris = new String[list.size()], titles = new String[list.size()];
+        for (int i = 0; i < list.size(); i++) {
+            uris[i] = list.get(i).uri.toString();
+            titles[i] = list.get(i).title;
         }
-        if (items.isEmpty()) { finish(); return; }
-        List<MediaItem> mi = new ArrayList<>();
-        for (MediaInfo m : items) mi.add(new MediaItem.Builder().setUri(m.uri).setMediaId(m.uri).build());
-        player.setMediaItems(mi, Math.max(0, Math.min(idx, items.size() - 1)), position);
-        applyEndMode();
+        pendingItems = new ArrayList<>(list);
+        return new Intent(c, PlayerActivity.class)
+                .putExtra(EXTRA_URIS, uris)
+                .putExtra(EXTRA_TITLES, titles)
+                .putExtra(EXTRA_INDEX, index)
+                .putExtra(EXTRA_POS, startMs);
+    }
+
+    private final Handler ui = new Handler(Looper.getMainLooper());
+    private ExoPlayer player;
+    private PlayerView playerView;
+    private TextView titleView, indicator, speedBtn, holdBadge, posText, durText;
+    private View controls, replayBtn;
+    private SeekBar seekBar;
+    private ImageButton playBtn;
+    private boolean draggingBar = false;
+    private ImageButton rotateBtn, favBtn;
+    private AudioManager audio;
+    private boolean zoomed = false, scaling = false, holding = false, inPip = false;
+    private int scrollMode = 0;          // 0 = undecided, 1 = brightness, 2 = volume, 3 = seek
+    private float volumeAcc = 0, scaleAcc = 1, speedBeforeHold = 1f;
+    private long seekStartPos = 0, seekTarget = -1;
+    private final List<MediaInfo> items = new ArrayList<>();
+
+    // live scrubbing: the video jumps to key frames while the finger moves, then to the exact moment on release
+    private boolean scrubbing = false, playingBeforeScrub = false;
+    private long scrubTarget = -1, scrubShown = -1, scrubFrom = 0;
+    private FileOps.Deleter deleter;
+
+    private final Runnable hideIndicator = () -> indicator.setVisibility(View.GONE);
+
+    @SuppressLint("ClickableViewAccessibility")
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_player);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        Ui.fullScreen(this);
+        applyOrientation(Prefs.videoOrientation(this));
+
+        audio = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        playerView = findViewById(R.id.player_view);
+        indicator = findViewById(R.id.indicator);
+        indicator.setTypeface(Ui.orbitron(this));
+        holdBadge = findViewById(R.id.hold_badge);
+        holdBadge.setTypeface(Ui.orbitron(this));
+        deleter = new FileOps.Deleter(this);
+        replayBtn = findViewById(R.id.btn_replay);
+        replayBtn.setOnClickListener(v -> replay());
+        Ui.padTopBar(findViewById(R.id.top_bar));
+        Ui.padBottomBar(findViewById(R.id.bottom_bar));
+
+        // our own control layer (hidden until you tap)
+        controls = findViewById(R.id.controls);
+        titleView = findViewById(R.id.video_title);
+        speedBtn = findViewById(R.id.btn_speed);
+        rotateBtn = findViewById(R.id.btn_rotate);
+        favBtn = findViewById(R.id.btn_fav);
+        posText = findViewById(R.id.ctl_position);
+        durText = findViewById(R.id.ctl_duration);
+        seekBar = findViewById(R.id.ctl_seek);
+        playBtn = findViewById(R.id.ctl_play);
+        findViewById(R.id.btn_back).setOnClickListener(v -> finish());
+        rotateBtn.setOnClickListener(v -> { keepControls(); chooseOrientation(); });
+        speedBtn.setOnClickListener(v -> { keepControls(); openSpeed(); });
+        favBtn.setOnClickListener(v -> { keepControls(); toggleFavourite(); });
+        findViewById(R.id.btn_more).setOnClickListener(v -> { keepControls(); moreMenu(); });
+        playBtn.setOnClickListener(v -> {
+            keepControls();
+            if (player.isPlaying()) player.pause();
+            else if (atEnd()) replay();
+            else player.play();
+        });
+        findViewById(R.id.ctl_prev).setOnClickListener(v -> { keepControls(); player.seekToPrevious(); });
+        findViewById(R.id.ctl_next).setOnClickListener(v -> { keepControls(); if (player.getNextMediaItemIndex() != C.INDEX_UNSET) player.seekToNextMediaItem(); });
+        seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar sb, int p, boolean fromUser) {
+                if (!fromUser || player.getDuration() <= 0) return;
+                long pos = player.getDuration() * p / 1000;
+                posText.setText(Ui.time(pos));
+                scrubTo(pos);
+            }
+            @Override public void onStartTrackingTouch(SeekBar sb) {
+                draggingBar = true;
+                ui.removeCallbacks(hideControls);
+                startScrub();
+            }
+            @Override public void onStopTrackingTouch(SeekBar sb) {
+                draggingBar = false;
+                endScrub(player.getDuration() > 0 ? player.getDuration() * sb.getProgress() / 1000 : -1);
+                keepControls();
+            }
+        });
+        View pip = findViewById(R.id.btn_pip);
+        if (Build.VERSION.SDK_INT >= 26 && getPackageManager().hasSystemFeature("android.software.picture_in_picture"))
+            pip.setOnClickListener(v -> enterPip());
+        else pip.setVisibility(View.GONE);
+        updateRotateIcon();
+
+        // karaoke works on videos too; focus pauses the music player while a video plays
+        KaraokeProcessor.enabled = Prefs.karaoke(this);
+        KaraokeProcessor.strength = Prefs.karaokeStrength(this);
+        player = Players.build(this, false);
+        applyVideoEnd();
+        playerView.setPlayer(player);
+        player.addListener(new Player.Listener() {
+            @Override public void onMediaItemTransition(MediaItem item, int reason) { onNewItem(); }
+            @Override public void onPlayerError(PlaybackException error) { flash(getString(R.string.cant_play)); }
+            @Override public void onEvents(Player p, Player.Events e) { updateControls(); }
+            @Override public void onPlayWhenReadyChanged(boolean playWhenReady, int reason) {
+                if (reason != Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM) return;
+                videoEnded();
+            }
+            @Override public void onPlaybackStateChanged(int state) {
+                if (state == Player.STATE_ENDED) videoEnded();
+            }
+        });
+        ui.post(tick);
+
+        load(getIntent());
+        setupGestures();
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        load(intent);
+    }
+
+    private void load(Intent i) {
+        List<MediaItem> list = new ArrayList<>();
+        items.clear();
+        int index = 0;
+        long pos = 0;
+        if (Intent.ACTION_VIEW.equals(i.getAction()) && i.getData() != null) {
+            // "Open with NKT Media Player" on a video file
+            Uri u = i.getData();
+            items.add(MediaInfo.link(u, Ui.displayName(this, u), true));
+        } else {
+            String[] uris = i.getStringArrayExtra(EXTRA_URIS);
+            String[] t = i.getStringArrayExtra(EXTRA_TITLES);
+            if (uris == null || uris.length == 0) { finish(); return; }
+            List<MediaInfo> rich = pendingItems;
+            pendingItems = null;
+            boolean richOk = rich != null && rich.size() == uris.length && rich.get(0).uri.toString().equals(uris[0]);
+            for (int k = 0; k < uris.length; k++) {
+                if (richOk) items.add(rich.get(k));
+                else {
+                    String title = t != null && k < t.length ? t[k] : null;
+                    items.add(MediaInfo.link(Uri.parse(uris[k]), title == null ? "" : title, true));
+                }
+            }
+            index = Math.max(0, Math.min(i.getIntExtra(EXTRA_INDEX, 0), uris.length - 1));
+            pos = i.getLongExtra(EXTRA_POS, 0);
+        }
+        for (MediaInfo m : items) list.add(new MediaItem.Builder().setUri(m.uri).setMediaId(m.key()).build());
+        player.setMediaItems(list, index, pos);
         player.prepare();
         player.play();
-        hideControls();
+        hideControls.run();
+        onNewItem();
     }
-
-    /** 0 = play next video, 1 = go back, 2 = stop on the last frame. */
-    private int endMode() { return Store.num(this, "video_end", 0); }
-
-    private void applyEndMode() { if (player != null) player.setPauseAtEndOfMediaItems(endMode() != 0); }
 
     private MediaInfo current() {
         int i = player == null ? -1 : player.getCurrentMediaItemIndex();
         return i >= 0 && i < items.size() ? items.get(i) : null;
     }
 
-    private final Player.Listener listener = new Player.Listener() {
-        @Override public void onMediaItemTransition(@Nullable MediaItem item, int reason) {
-            MediaInfo m = current();
-            if (m != null) {
-                titleView.setText(m.title.isEmpty() ? m.name : m.title);
-                Store.addHistory(PlayerActivity.this, m);
-                updateLove();
-            }
-        }
-
-        @Override public void onPlayWhenReadyChanged(boolean pwr, int reason) {
-            if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM) {
-                if (endMode() == 1) finish();
-                else showControls(false);
-            }
-            updatePlayIcon();
-        }
-
-        @Override public void onPlaybackStateChanged(int state) {
-            if (state == Player.STATE_ENDED) {
-                if (endMode() == 1) finish(); else showControls(false);
-            }
-            updatePlayIcon();
-        }
-
-        @Override public void onIsPlayingChanged(boolean playing) { updatePlayIcon(); }
-
-        @Override public void onPlayerError(@NonNull PlaybackException e) { Ui.msg(PlayerActivity.this, "Can't play this video"); }
-
-        @Override public void onVideoSizeChanged(@NonNull VideoSize vs) { if (Build.VERSION.SDK_INT >= 26) updatePipParams(); }
-    };
-
-    // ---------------------------------------------------------------- UI
-    private void buildUi() {
-        root = new FrameLayout(this);
-        root.setBackgroundColor(0xFF000000);
-        pv = new PlayerView(this);
-        pv.setUseController(false);
-        pv.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
-        pv.setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING);
-        pv.setKeepContentOnPlayerReset(true);
-        root.addView(pv, new FrameLayout.LayoutParams(Ui.MATCH, Ui.MATCH));
-
-        View touch = new View(this);
-        root.addView(touch, new FrameLayout.LayoutParams(Ui.MATCH, Ui.MATCH));
-        setupGestures(touch);
-
-        LinearLayout top = Ui.row(this);
-        top.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{0xCC000000, 0}));
-        top.setPadding(Ui.dp(this, 16), Ui.dp(this, 12), Ui.dp(this, 16), Ui.dp(this, 28));
-        ImageButton back = Ui.iconBtn(this, "back", 44, 0xFFFFFFFF);
-        back.setOnClickListener(v -> finish());
-        top.addView(back);
-        titleView = Ui.single(Ui.text(this, "", 15, 0xFFFFFFFF));
-        titleView.setPadding(Ui.dp(this, 8), 0, 0, 0);
-        top.addView(titleView, Ui.lpw(0, Ui.WRAP, 1));
-        topBar = top;
-        root.addView(top, new FrameLayout.LayoutParams(Ui.MATCH, Ui.WRAP, Gravity.TOP));
-
-        LinearLayout bottom = Ui.col(this);
-        bottom.setBackground(new GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, new int[]{0xE6000000, 0}));
-        bottom.setPadding(Ui.dp(this, 16), Ui.dp(this, 36), Ui.dp(this, 16), Ui.dp(this, 10));
-        LinearLayout r1 = Ui.row(this);
-        posView = Ui.text(this, "0:00", 13, 0xFFFFFFFF);
-        durView = Ui.text(this, "0:00", 13, 0xFFFFFFFF);
-        seek = new SeekBar(this);
-        Ui.styleSeek(seek);
-        seek.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(0x54FFFFFF));
-        seek.setSecondaryProgressTintList(android.content.res.ColorStateList.valueOf(0x87FFFFFF));
-        seek.setMax(1000);
-        seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            public void onProgressChanged(SeekBar s, int p, boolean user) {
-                if (!user || player == null) return;
-                long target = player.getDuration() * p / 1000;
-                scrubTo(target, target - startPos);
-            }
-            public void onStartTrackingTouch(SeekBar s) { startScrub(); }
-            public void onStopTrackingTouch(SeekBar s) { endScrub(player.getDuration() * s.getProgress() / 1000); }
-        });
-        r1.addView(posView);
-        r1.addView(seek, Ui.lpw(0, Ui.WRAP, 1));
-        r1.addView(durView);
-        bottom.addView(r1);
-        LinearLayout r2 = Ui.row(this);
-        rotBtn = ctrl(r2, "rotate", v -> rotationDialog());
-        speedBtn = Ui.label(this, "1×", 13, 0xFFFFFFFF, 0f);
-        speedBtn.setGravity(Gravity.CENTER);
-        speedBtn.setOnClickListener(v -> { touchControls(); NowPlayingActivity.speedSheet(this, false); });
-        r2.addView(speedBtn, Ui.lpw(0, Ui.dp(this, 46), 1));
-        ctrl(r2, "prev", v -> { if (player != null) player.seekToPrevious(); touchControls(); });
-        playBtn = ctrl(r2, "pause", v -> { if (player != null) { if (player.isPlaying()) player.pause(); else { if (player.getPlaybackState() == Player.STATE_ENDED) player.seekTo(0); player.play(); } } touchControls(); });
-        playBtn.setImageDrawable(new Icon(this, "pause", Ui.ACCENT));
-        ctrl(r2, "next", v -> { if (player != null) player.seekToNext(); touchControls(); });
-        ctrl(r2, "camera", v -> saveFrame());
-        loveBtn = ctrl(r2, "heart", v -> {
-            MediaInfo m = current();
-            if (m == null) return;
-            boolean on = Store.toggleFav(this, m);
-            Ui.msg(this, on ? "Added to ♥ Favourite videos" : "Removed from ♥ Favourite videos");
-            updateLove();
-        });
-        ImageButton pip = ctrl(r2, "pip", v -> enterPip());
-        if (Build.VERSION.SDK_INT < 26 || !getPackageManager().hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) pip.setVisibility(View.GONE);
-        ctrl(r2, "more", v -> menu());
-        bottom.addView(r2);
-        bottomBar = bottom;
-        root.addView(bottom, new FrameLayout.LayoutParams(Ui.MATCH, Ui.WRAP, Gravity.BOTTOM));
-
-        popup = Ui.label(this, "", 15, Ui.ACCENT, 0f);
-        popup.setAllCaps(false);
-        popup.setGravity(Gravity.CENTER);
-        popup.setBackground(Ui.rect(this, 0xCC05080F, 24, 0x5900E5FF, 1));
-        popup.setPadding(Ui.dp(this, 20), Ui.dp(this, 12), Ui.dp(this, 20), Ui.dp(this, 12));
-        popup.setVisibility(View.GONE);
-        root.addView(popup, new FrameLayout.LayoutParams(Ui.WRAP, Ui.WRAP, Gravity.CENTER));
-
-        holdBadge = Ui.label(this, "2× »", 13, Ui.ACCENT, 0.1f);
-        holdBadge.setBackground(Ui.rect(this, 0xCC05080F, 24, 0x5900E5FF, 1));
-        holdBadge.setPadding(Ui.dp(this, 14), Ui.dp(this, 6), Ui.dp(this, 14), Ui.dp(this, 6));
-        holdBadge.setVisibility(View.GONE);
-        FrameLayout.LayoutParams hb = new FrameLayout.LayoutParams(Ui.WRAP, Ui.WRAP, Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-        hb.topMargin = Ui.dp(this, 24);
-        root.addView(holdBadge, hb);
-        updateRotIcon();
-    }
-
-    private ImageButton ctrl(LinearLayout row, String icon, View.OnClickListener l) {
-        ImageButton b = Ui.iconBtn(this, icon, 46, 0xFFFFFFFF);
-        b.setOnClickListener(l);
-        row.addView(b, Ui.lpw(0, Ui.dp(this, 46), 1));
-        return b;
-    }
-
-    private void updatePlayIcon() {
-        if (player == null) return;
-        boolean playing = player.isPlaying() || (player.getPlayWhenReady() && player.getPlaybackState() == Player.STATE_BUFFERING);
-        playBtn.setImageDrawable(new Icon(this, playing ? "pause" : "play", Ui.ACCENT));
-        if (!playing) showControls(false);
-    }
-
-    private void updateLove() {
+    private void onNewItem() {
         MediaInfo m = current();
-        boolean on = m != null && Store.isFav(this, m);
-        loveBtn.setImageDrawable(new Icon(this, on ? "heart_filled" : "heart", on ? Ui.ACCENT : 0xFFFFFFFF));
+        titleView.setText(m == null ? "" : m.title);
+        updateFav();
+        if (m != null) History.record(this, m);
     }
 
-    private void updateRotIcon() {
-        int o = Store.num(this, "video_orient", 0);
-        rotBtn.setImageDrawable(new Icon(this, o == 0 ? "rotate" : "lock", o == 0 ? 0xFFFFFFFF : Ui.ACCENT));
+    // ── When a video ends: next · go back · stop on the last frame ───────────
+
+    private void applyVideoEnd() {
+        // pause at the end of each video unless the next one should start by itself
+        if (player != null) player.setPauseAtEndOfMediaItems(Prefs.videoEnd(this) != 0);
     }
 
-    private final Runnable progress = new Runnable() {
-        @Override public void run() {
-            if (player != null && !scrubbing) {
-                long d = Math.max(0, player.getDuration()), p = player.getCurrentPosition();
-                posView.setText(Ui.time(p));
-                durView.setText(Ui.time(d));
-                seek.setProgress(d > 0 ? (int) (p * 1000 / d) : 0);
-                seek.setSecondaryProgress(d > 0 ? (int) (player.getBufferedPosition() * 1000 / d) : 0);
-            }
-            h.postDelayed(this, 500);
-        }
-    };
-
-    private final Runnable autoHide = () -> { if (player != null && player.isPlaying() && !scrubbing) hideControls(); };
-
-    private void showControls(boolean autoHideToo) {
-        if (inPip) return;
-        controlsShown = true;
-        topBar.setVisibility(View.VISIBLE);
-        bottomBar.setVisibility(View.VISIBLE);
-        h.removeCallbacks(autoHide);
-        if (autoHideToo) h.postDelayed(autoHide, 3500);
+    private void videoEnded() {
+        if (scrubbing) return;
+        int mode = Prefs.videoEnd(this);
+        if (mode == 1) { finish(); return; }
+        // stopped on the last frame (or the last video ended): offer replay
+        replayBtn.setVisibility(View.VISIBLE);
+        keepControls();
     }
 
-    private void touchControls() { showControls(true); }
-
-    private void hideControls() {
-        controlsShown = false;
-        topBar.setVisibility(View.GONE);
-        bottomBar.setVisibility(View.GONE);
-        immersive();
+    private boolean atEnd() {
+        if (player == null) return false;
+        if (player.getPlaybackState() == Player.STATE_ENDED) return true;
+        long d = player.getDuration();
+        return !player.getPlayWhenReady() && d > 0 && player.getCurrentPosition() >= d - 300;
     }
 
-    @SuppressWarnings("deprecation")
-    private void immersive() {
-        Window w = getWindow();
-        if (Build.VERSION.SDK_INT >= 30) {
-            w.setDecorFitsSystemWindows(false);
-            WindowInsetsController c = w.getInsetsController();
-            if (c != null) {
-                c.hide(WindowInsets.Type.systemBars());
-                c.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
-            }
-        } else {
-            w.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_FULLSCREEN
-                    | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
-        }
-        if (Build.VERSION.SDK_INT >= 28) {
-            WindowManager.LayoutParams lp = w.getAttributes();
-            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
-            w.setAttributes(lp);
-        }
-    }
-
-    @Override public void onWindowFocusChanged(boolean f) { super.onWindowFocusChanged(f); if (f) immersive(); }
-
-    private void pop(String s) {
-        popup.setText(s);
-        popup.setVisibility(View.VISIBLE);
-        h.removeCallbacks(hidePop);
-        h.postDelayed(hidePop, 900);
-    }
-
-    private final Runnable hidePop = () -> popup.setVisibility(View.GONE);
-
-    // ---------------------------------------------------------------- scrubbing on the main picture
-    private void startScrub() {
+    private void replay() {
         if (player == null) return;
-        scrubbing = true;
-        startPos = player.getCurrentPosition();
-        player.setSeekParameters(SeekParameters.CLOSEST_SYNC);
-        h.removeCallbacks(autoHide);
+        replayBtn.setVisibility(View.GONE);
+        player.seekTo(player.getCurrentMediaItemIndex(), 0);
+        player.play();
+        keepControls();
     }
 
-    /** Moves the actual video to the target so the main picture shows that frame. */
-    private void scrubTo(long target, long delta) {
-        long d = Math.max(0, player.getDuration());
-        target = Math.max(0, Math.min(d, target));
-        long now = System.currentTimeMillis();
-        if (now - lastScrubSeek > 90) {
-            player.seekTo(target);
-            lastScrubSeek = now;
-        }
-        posView.setText(Ui.time(target));
-        String sign = delta >= 0 ? "» +" : "« −";
-        popup.setText(sign + Ui.time(Math.abs(delta)) + "\n" + Ui.time(target) + " / " + Ui.time(d));
-        popup.setVisibility(View.VISIBLE);
-        h.removeCallbacks(hidePop);
-    }
+    // ── Gestures ─────────────────────────────────────────────────────────────
 
-    private void endScrub(long target) {
-        if (player == null) return;
-        player.setSeekParameters(SeekParameters.EXACT);
-        player.seekTo(Math.max(0, target));
-        scrubbing = false;
-        h.postDelayed(hidePop, 400);
-        touchControls();
-    }
+    @SuppressLint("ClickableViewAccessibility")
+    private void setupGestures() {
+        float dp = getResources().getDisplayMetrics().density;
+        GestureDetector taps = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
+            @Override public boolean onDown(MotionEvent e) { scrollMode = 0; volumeAcc = 0; seekTarget = -1; return true; }
 
-    // ---------------------------------------------------------------- gestures
-    private void setupGestures(View v) {
-        AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
-        gd = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
-            @Override public boolean onSingleTapConfirmed(@NonNull MotionEvent e) {
-                if (controlsShown) hideControls(); else touchControls();
+            @Override public boolean onSingleTapConfirmed(MotionEvent e) {
+                if (controls.getVisibility() == View.VISIBLE) hideControls.run(); else keepControls();
                 return true;
             }
-            @Override public boolean onDoubleTap(@NonNull MotionEvent e) {
-                if (player == null) return true;
-                boolean right = e.getX() > v.getWidth() / 2f;
-                player.seekTo(Math.max(0, player.getCurrentPosition() + (right ? 10_000 : -10_000)));
-                pop(right ? "» 10 s" : "« 10 s");
+
+            @Override public boolean onDoubleTap(MotionEvent e) {
+                boolean forward = e.getX() > playerView.getWidth() / 2f;
+                long dur = player.getDuration();
+                long pos = player.getCurrentPosition() + (forward ? 10_000 : -10_000);
+                if (dur > 0) pos = Math.min(pos, dur);
+                player.seekTo(Math.max(0, pos));
+                flash(forward ? getString(R.string.fwd_10) : getString(R.string.back_10));
                 return true;
             }
-            @Override public void onLongPress(@NonNull MotionEvent e) {
-                if (player == null || gesture != 0 || !player.isPlaying()) return;
-                heldSpeed = speed;
-                player.setPlaybackParameters(new PlaybackParameters(2f));
-                holdBadge.setVisibility(View.VISIBLE);
-                v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
-                hideControls();
-                gesture = 9;
-            }
-        });
-        sgd = new ScaleGestureDetector(this, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
-            @Override public boolean onScale(@NonNull ScaleGestureDetector d) {
-                if (d.getScaleFactor() > 1.08f && !zoomed) setZoom(true);
-                else if (d.getScaleFactor() < 0.92f && zoomed) setZoom(false);
-                return true;
-            }
-        });
-        v.setOnTouchListener((view, e) -> {
-            if (inPip) return true;
-            sgd.onTouchEvent(e);
-            if (e.getPointerCount() > 1) { gesture = 8; return true; }
-            gd.onTouchEvent(e);
-            switch (e.getActionMasked()) {
-                case MotionEvent.ACTION_DOWN:
-                    downX = e.getX(); downY = e.getY(); gesture = 0;
-                    WindowManager.LayoutParams lp = getWindow().getAttributes();
-                    startBright = lp.screenBrightness < 0 ? 0.5f : lp.screenBrightness;
-                    startVol = am.getStreamVolume(AudioManager.STREAM_MUSIC);
-                    startPos = player == null ? 0 : player.getCurrentPosition();
-                    break;
-                case MotionEvent.ACTION_MOVE: {
-                    float dx = e.getX() - downX, dy = e.getY() - downY;
-                    int slop = Ui.dp(this, 14);
-                    if (gesture == 0 && (Math.abs(dx) > slop || Math.abs(dy) > slop)) {
-                        if (Math.abs(dy) > Math.abs(dx)) gesture = downX < view.getWidth() / 2f ? 2 : 3;
-                        else { gesture = 1; startScrub(); }
+
+            @Override public void onLongPress(MotionEvent e) { if (scrollMode == 0) startHold(); }
+
+            @Override public boolean onScroll(MotionEvent e1, MotionEvent e2, float dx, float dy) {
+                if (e1 == null || scaling || holding) return false;
+                if (scrollMode == 0) {
+                    if (Math.abs(e2.getY() - e1.getY()) > Math.abs(e2.getX() - e1.getX()))
+                        scrollMode = e1.getX() < playerView.getWidth() / 2f ? 1 : 2;
+                    else {
+                        scrollMode = 3;
+                        seekStartPos = player.getCurrentPosition();
+                        startScrub();
                     }
-                    if (gesture == 1 && player != null) {
-                        long delta = (long) (dx / Ui.dp(this, 12) * 1000);
-                        scrubTo(startPos + delta, delta);
-                    } else if (gesture == 2) {
-                        float b = Math.max(0.02f, Math.min(1f, startBright - dy / view.getHeight()));
-                        WindowManager.LayoutParams p = getWindow().getAttributes();
-                        p.screenBrightness = b;
-                        getWindow().setAttributes(p);
-                        pop("Brightness " + Math.round(b * 100) + "%");
-                    } else if (gesture == 3) {
-                        int max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
-                        int vol = Math.round(Math.max(0, Math.min(max, startVol - dy / view.getHeight() * max * 1.2f)));
-                        am.setStreamVolume(AudioManager.STREAM_MUSIC, vol, 0);
-                        pop("Volume " + Math.round(vol * 100f / max) + "%");
-                    }
-                    break;
                 }
-                case MotionEvent.ACTION_UP:
-                case MotionEvent.ACTION_CANCEL:
-                    if (gesture == 1 && player != null) {
-                        long delta = (long) ((e.getX() - downX) / Ui.dp(this, 12) * 1000);
-                        endScrub(startPos + delta);
-                    } else if (gesture == 9 && player != null) {
-                        player.setPlaybackParameters(new PlaybackParameters(heldSpeed));
-                        holdBadge.setVisibility(View.GONE);
-                    }
-                    gesture = 0;
-                    break;
+                if (scrollMode == 3) {
+                    // fine seeking: about 1 second for every 12 dp the finger moves
+                    float moved = (e2.getX() - e1.getX()) / dp;
+                    long delta = Math.round(moved / 12f) * 1000L;
+                    long dur = player.getDuration();
+                    long target = Math.max(0, seekStartPos + delta);
+                    if (dur > 0) target = Math.min(target, dur);
+                    seekTarget = target;
+                    String sign = delta >= 0 ? "+" : "−";
+                    indicator.setText(sign + Ui.time(Math.abs(delta)) + " · " + Ui.time(target));
+                    indicator.setVisibility(View.VISIBLE);
+                    ui.removeCallbacks(hideIndicator);
+                    scrubTo(target);
+                    return true;
+                }
+                float delta = dy / Math.max(1, playerView.getHeight());   // finger up = positive
+                if (scrollMode == 1) changeBrightness(delta * 1.4f);
+                else if (scrollMode == 2) changeVolume(delta * 1.4f);
+                return true;
             }
+        });
+
+        ScaleGestureDetector pinch = new ScaleGestureDetector(this, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            @Override public boolean onScaleBegin(ScaleGestureDetector d) { scaleAcc = 1; return true; }
+            @Override public boolean onScale(ScaleGestureDetector d) { scaleAcc *= d.getScaleFactor(); return true; }
+            @Override public void onScaleEnd(ScaleGestureDetector d) {
+                if (scaleAcc > 1.08f) setZoom(true);
+                else if (scaleAcc < 0.92f) setZoom(false);
+            }
+        });
+
+        playerView.setOnTouchListener((v, ev) -> {
+            if (inPip) return false;
+            int act = ev.getActionMasked();
+            if (holding && (act == MotionEvent.ACTION_UP || act == MotionEvent.ACTION_CANCEL)) { endHold(); return true; }
+            if (holding) return true;
+            if (act == MotionEvent.ACTION_UP || act == MotionEvent.ACTION_CANCEL) {
+                if (scrollMode == 3) {
+                    endScrub(act == MotionEvent.ACTION_UP ? seekTarget : -1);
+                    seekTarget = -1;
+                    ui.postDelayed(hideIndicator, 600);
+                }
+            }
+            pinch.onTouchEvent(ev);
+            scaling = pinch.isInProgress() || ev.getPointerCount() > 1;
+            if (!scaling) taps.onTouchEvent(ev);
             return true;
         });
     }
 
-    private void setZoom(boolean fill) {
-        if (zoomed == fill) return;
-        zoomed = fill;
-        pv.setResizeMode(fill ? AspectRatioFrameLayout.RESIZE_MODE_ZOOM : AspectRatioFrameLayout.RESIZE_MODE_FIT);
-        pop(fill ? "Zoom to fill" : "Fit to screen");
-    }
+    // ── Live scrubbing (no small preview: the video itself shows the moment) ──
 
-    // ---------------------------------------------------------------- speed (used by the shared sheet)
-    public float speed() { return speed; }
-
-    public void setSpeed(float s) {
-        speed = s;
-        if (player != null) player.setPlaybackParameters(new PlaybackParameters(s));
-        speedBtn.setText(NowPlayingActivity.fmtSpeed(s).replace(".0×", "×"));
-        speedBtn.setTextColor(Math.abs(s - 1f) < 0.01f ? 0xFFFFFFFF : Ui.ACCENT);
-    }
-
-    // ---------------------------------------------------------------- menu + actions
-    private void menu() {
-        touchControls();
-        MediaInfo m = current();
-        if (m == null) return;
-        String[] ends = {"Play next video", "Go back", "Stop on last frame"};
-        List<String> o = new ArrayList<>();
-        o.add("Save this frame as image");
-        o.add("Background play (sound only)");
-        o.add("When this video ends: " + ends[endMode()]);
-        o.add(zoomed ? "Zoom: fit to screen" : "Zoom: fill screen");
-        o.add("Speed");
-        o.add("Add to playlist");
-        o.add("Share");
-        if (m.isOnline()) o.add("Download");
-        o.add("Details");
-        new AlertDialog.Builder(this).setItems(o.toArray(new String[0]), (d, w) -> {
-            String s = o.get(w);
-            if (s.startsWith("Save this frame")) saveFrame();
-            else if (s.startsWith("Background")) background();
-            else if (s.startsWith("When this video ends")) endDialog();
-            else if (s.startsWith("Zoom")) setZoom(!zoomed);
-            else if (s.equals("Speed")) NowPlayingActivity.speedSheet(this, false);
-            else if (s.equals("Add to playlist")) Actions.addToPlaylist(this, Collections.singletonList(m));
-            else if (s.equals("Share")) Media.share(this, Collections.singletonList(m));
-            else if (s.equals("Download")) Downloads.get(this, m.uri, m.title);
-            else Actions.details(this, m, null);
-        }).show();
-    }
-
-    private void endDialog() {
-        String[] ends = {"Play next video", "Go back", "Stop on last frame"};
-        new AlertDialog.Builder(this).setTitle("When a video ends").setSingleChoiceItems(ends, endMode(), (d, w) -> {
-            Store.put(this, "video_end", w);
-            applyEndMode();
-            d.dismiss();
-        }).show();
-    }
-
-    private void rotationDialog() {
-        touchControls();
-        String[] o = {"Auto rotate", "Lock portrait", "Lock landscape"};
-        new AlertDialog.Builder(this).setTitle("Video rotation").setSingleChoiceItems(o, Store.num(this, "video_orient", 0), (d, w) -> {
-            Store.put(this, "video_orient", w);
-            setRequestedOrientation(w == 1 ? ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-                    : w == 2 ? ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE : ActivityInfo.SCREEN_ORIENTATION_USER);
-            updateRotIcon();
-            d.dismiss();
-        }).show();
-    }
-
-    /** Hands the video list to the music service and keeps playing the sound. */
-    private void background() {
-        if (player == null) return;
-        int idx = player.getCurrentMediaItemIndex();
-        long p = player.getCurrentPosition();
-        float s = speed;
-        List<MediaInfo> l = new ArrayList<>(items);
+    private void startScrub() {
+        if (player == null || scrubbing) return;
+        scrubbing = true;
+        scrubFrom = player.getCurrentPosition();
+        playingBeforeScrub = player.getPlayWhenReady();
+        replayBtn.setVisibility(View.GONE);
+        player.setSeekParameters(SeekParameters.CLOSEST_SYNC);     // fast: nearest key frame
         player.pause();
-        List<MediaItem> mi = new ArrayList<>();
-        for (MediaInfo m : l) { m.kind = MediaInfo.VIDEO; mi.add(Media.item(m)); }
-        Media.get(this, c -> {
-            c.setMediaItems(mi, idx, p);
-            c.setPlaybackParameters(new PlaybackParameters(s));
-            c.prepare();
-            c.play();
-        });
-        startActivity(new Intent(this, MainActivity.class));
-        finish();
+        scrubTarget = scrubShown = -1;
     }
 
-    /** Saves the frame on screen as a JPEG in Pictures/NKT MP. */
+    /** Called for every finger move; seeks at most every 70 ms so the decoder keeps up. */
+    private void scrubTo(long pos) {
+        if (!scrubbing) startScrub();
+        scrubTarget = pos;
+        if (!draggingBar) indicator.setVisibility(View.VISIBLE);
+        else {
+            long d = pos - scrubFrom;
+            indicator.setText((d >= 0 ? "+" : "−") + Ui.time(Math.abs(d)) + " · " + Ui.time(pos));
+            indicator.setVisibility(View.VISIBLE);
+            ui.removeCallbacks(hideIndicator);
+        }
+        ui.removeCallbacks(scrubStep);
+        ui.post(scrubStep);
+    }
+
+    private long lastScrubSeek = 0;
+
+    private final Runnable scrubStep = new Runnable() {
+        @Override public void run() {
+            if (!scrubbing || player == null || scrubTarget < 0 || scrubTarget == scrubShown) return;
+            long now = android.os.SystemClock.uptimeMillis();
+            if (now - lastScrubSeek < 70) { ui.postDelayed(this, 70 - (now - lastScrubSeek)); return; }
+            lastScrubSeek = now;
+            scrubShown = scrubTarget;
+            player.seekTo(scrubTarget);
+        }
+    };
+
+    /** target < 0 = cancel (go back to where it was). */
+    private void endScrub(long target) {
+        if (!scrubbing || player == null) return;
+        scrubbing = false;
+        ui.removeCallbacks(scrubStep);
+        player.setSeekParameters(SeekParameters.EXACT);             // the exact moment on release
+        player.seekTo(target >= 0 ? target : scrubFrom);
+        if (playingBeforeScrub) player.play();
+        ui.postDelayed(hideIndicator, 600);
+    }
+
+    // ── Save this frame as an image ──────────────────────────────────────────
+
     private void saveFrame() {
         MediaInfo m = current();
         if (m == null || player == null) return;
-        long posUs = player.getCurrentPosition() * 1000L;
-        Ui.msg(this, "Saving this frame…");
+        final long pos = player.getCurrentPosition();
+        VideoSize vs = player.getVideoSize();
+        View surface = playerView.getVideoSurfaceView();
+        if (Build.VERSION.SDK_INT >= 24 && surface instanceof android.view.SurfaceView && vs.width > 0 && vs.height > 0) {
+            try {
+                Bitmap b = Bitmap.createBitmap(vs.width, vs.height, Bitmap.Config.ARGB_8888);
+                android.view.PixelCopy.request((android.view.SurfaceView) surface, b, result -> {
+                    if (result == android.view.PixelCopy.SUCCESS) storeFrame(b, m, pos);
+                    else frameFromFile(m, pos);
+                }, ui);
+                return;
+            } catch (Throwable ignored) { }
+        }
+        frameFromFile(m, pos);
+    }
+
+    private void frameFromFile(MediaInfo m, long pos) {
         new Thread(() -> {
+            Bitmap b = null;
             MediaMetadataRetriever r = new MediaMetadataRetriever();
             try {
-                Uri u = m.u();
-                if ("content".equals(u.getScheme())) r.setDataSource(this, u);
-                else if (m.isOnline()) r.setDataSource(m.uri, new java.util.HashMap<>());
-                else r.setDataSource(m.path.isEmpty() ? u.getPath() : m.path);
-                Bitmap b = r.getFrameAtTime(posUs, MediaMetadataRetriever.OPTION_CLOSEST);
-                if (b == null) throw new Exception("no frame");
-                String name = (m.title.replaceAll("[\\\\/:*?\"<>|]", "_") + " " + Ui.time(posUs / 1000).replace(':', '.')) + ".jpg";
-                saveJpeg(b, name);
-                runOnUiThread(() -> Ui.msg(this, "Frame saved in Pictures/NKT MP"));
-            } catch (Exception e) {
-                runOnUiThread(() -> Ui.msg(this, "Couldn't save this frame"));
-            } finally {
-                try { r.release(); } catch (Exception ignored) {}
-            }
+                String scheme = m.uri.getScheme();
+                if ("http".equals(scheme) || "https".equals(scheme)) r.setDataSource(m.uri.toString(), new HashMap<>());
+                else r.setDataSource(this, m.uri);
+                b = r.getFrameAtTime(pos * 1000L, MediaMetadataRetriever.OPTION_CLOSEST);
+            } catch (Throwable ignored) {
+            } finally { try { r.release(); } catch (Exception ignored) { } }
+            final Bitmap f = b;
+            ui.post(() -> { if (f != null) storeFrame(f, m, pos); else flash(getString(R.string.frame_failed)); });
         }).start();
     }
 
-    @SuppressWarnings("deprecation")
-    private void saveJpeg(Bitmap b, String name) throws Exception {
-        if (Build.VERSION.SDK_INT >= 29) {
-            ContentValues v = new ContentValues();
-            v.put(MediaStore.Images.Media.DISPLAY_NAME, name);
-            v.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
-            v.put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/NKT MP");
-            v.put(MediaStore.Images.Media.IS_PENDING, 1);
-            Uri u = getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, v);
-            if (u == null) throw new Exception("insert failed");
-            try (OutputStream o = getContentResolver().openOutputStream(u)) { b.compress(Bitmap.CompressFormat.JPEG, 95, o); }
-            v.clear();
-            v.put(MediaStore.Images.Media.IS_PENDING, 0);
-            getContentResolver().update(u, v, null, null);
-        } else {
-            File dir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "NKT MP");
-            //noinspection ResultOfMethodCallIgnored
-            dir.mkdirs();
-            File f = new File(dir, name);
-            try (FileOutputStream o = new FileOutputStream(f)) { b.compress(Bitmap.CompressFormat.JPEG, 95, o); }
-            MediaScannerConnection.scanFile(this, new String[]{f.getAbsolutePath()}, null, null);
-        }
+    /** Pictures/NKT Media Player/<video> 1m23s.jpg */
+    private void storeFrame(Bitmap b, MediaInfo m, long pos) {
+        new Thread(() -> {
+            Uri saved = null;
+            String name = (m.title.replaceAll("[\\\\/:*?\"<>|]", "_") + " " + Ui.time(pos).replace(":", "m") + "s.jpg");
+            try {
+                if (Build.VERSION.SDK_INT >= 29) {
+                    android.content.ContentValues v = new android.content.ContentValues();
+                    v.put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, name);
+                    v.put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
+                    v.put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, "Pictures/NKT Media Player");
+                    saved = getContentResolver().insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, v);
+                    if (saved != null) try (java.io.OutputStream out = getContentResolver().openOutputStream(saved)) {
+                        b.compress(Bitmap.CompressFormat.JPEG, 95, out);
+                    }
+                } else {
+                    @SuppressWarnings("deprecation")
+                    java.io.File dir = new java.io.File(android.os.Environment.getExternalStoragePublicDirectory(
+                            android.os.Environment.DIRECTORY_PICTURES), "NKT Media Player");
+                    //noinspection ResultOfMethodCallIgnored
+                    dir.mkdirs();
+                    java.io.File f = new java.io.File(dir, name);
+                    try (java.io.FileOutputStream out = new java.io.FileOutputStream(f)) { b.compress(Bitmap.CompressFormat.JPEG, 95, out); }
+                    android.media.MediaScannerConnection.scanFile(getApplicationContext(), new String[]{f.getAbsolutePath()}, null, null);
+                    saved = Uri.fromFile(f);
+                }
+            } catch (Throwable t) { saved = null; }
+            final Uri done = saved;
+            ui.post(() -> {
+                if (done == null) { flash(getString(R.string.frame_failed)); return; }
+                Ui.toast(this, getString(R.string.frame_saved), R.string.open, () -> {
+                    MediaInfo pic = MediaInfo.link(done, name, false);
+                    pic.image = true;
+                    List<MediaInfo> one = new ArrayList<>();
+                    one.add(pic);
+                    ViewerActivity.open(this, one, 0);
+                });
+            });
+        }).start();
     }
 
-    // ---------------------------------------------------------------- picture-in-picture
+    // ── Speed & hold for 2× ──────────────────────────────────────────────────
+
+    private void openSpeed() {
+        SpeedSheet.show(this, new SpeedSheet.Target() {
+            @Override public float speed() { return player == null ? 1f : player.getPlaybackParameters().speed; }
+            @Override public void setSpeed(float s) { setVideoSpeed(s); }
+        }, false);
+    }
+
+    /** Changes speed without changing the pitch of voices. */
+    private void setVideoSpeed(float s) {
+        if (player == null) return;
+        player.setPlaybackParameters(new PlaybackParameters(s));
+        speedBtn.setText(SpeedSheet.label(s));
+        speedBtn.setTextColor(Math.abs(s - 1f) < 0.01f ? 0xFFFFFFFF : getColor(R.color.accent));
+    }
+
+    private void startHold() {
+        if (player == null || scaling || !player.isPlaying()) return;
+        holding = true;
+        speedBeforeHold = player.getPlaybackParameters().speed;
+        player.setPlaybackParameters(new PlaybackParameters(2f));
+        holdBadge.setVisibility(View.VISIBLE);
+        hideControls.run();
+        playerView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+    }
+
+    private void endHold() {
+        holding = false;
+        holdBadge.setVisibility(View.GONE);
+        if (player != null) player.setPlaybackParameters(new PlaybackParameters(speedBeforeHold));
+    }
+
+    // ── Brightness, volume, zoom ─────────────────────────────────────────────
+
+    private void changeBrightness(float delta) {
+        WindowManager.LayoutParams lp = getWindow().getAttributes();
+        float b = lp.screenBrightness < 0 ? 0.5f : lp.screenBrightness;
+        b = Math.max(0.02f, Math.min(1f, b + delta));
+        lp.screenBrightness = b;
+        getWindow().setAttributes(lp);
+        flash(getString(R.string.brightness_pct, Math.round(b * 100)));
+    }
+
+    private void changeVolume(float delta) {
+        int max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+        volumeAcc += delta * max;
+        int cur = audio.getStreamVolume(AudioManager.STREAM_MUSIC);
+        if (Math.abs(volumeAcc) >= 1) {
+            int step = (int) volumeAcc;
+            volumeAcc -= step;
+            cur = Math.max(0, Math.min(max, cur + step));
+            audio.setStreamVolume(AudioManager.STREAM_MUSIC, cur, 0);
+        }
+        flash(getString(R.string.volume_pct, Math.round(cur * 100f / Math.max(1, max))));
+    }
+
+    private void setZoom(boolean z) {
+        zoomed = z;
+        playerView.setResizeMode(z ? AspectRatioFrameLayout.RESIZE_MODE_ZOOM : AspectRatioFrameLayout.RESIZE_MODE_FIT);
+        flash(getString(z ? R.string.zoom_fill : R.string.zoom_fit));
+    }
+
+    // ── Rotation: auto / portrait / landscape ────────────────────────────────
+
+    private void applyOrientation(int mode) {
+        setRequestedOrientation(mode == 1 ? ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                : mode == 2 ? ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE : ActivityInfo.SCREEN_ORIENTATION_USER);
+    }
+
+    private void updateRotateIcon() {
+        int mode = Prefs.videoOrientation(this);
+        rotateBtn.setImageResource(mode == 0 ? R.drawable.ic_screen_rotation : R.drawable.ic_lock);
+        rotateBtn.setColorFilter(mode == 0 ? 0xFFFFFFFF : getColor(R.color.accent));
+    }
+
+    private void chooseOrientation() {
+        String[] names = getResources().getStringArray(R.array.orientations);
+        Dialogs.builder(this)
+                .setTitle(R.string.video_rotation)
+                .setSingleChoiceItems(names, Prefs.videoOrientation(this), (d, w) -> {
+                    Prefs.setVideoOrientation(this, w);
+                    applyOrientation(w);
+                    updateRotateIcon();
+                    d.dismiss();
+                    flash(names[w]);
+                })
+                .setNegativeButton(R.string.cancel, null)
+                .show();
+    }
+
+    // ── Favourite, menu, background, picture-in-picture ──────────────────────
+
+    private void updateFav() {
+        MediaInfo m = current();
+        boolean fav = m != null && Prefs.isFavourite(this, m);
+        favBtn.setImageResource(fav ? R.drawable.ic_heart_filled : R.drawable.ic_heart);
+        favBtn.setColorFilter(fav ? getColor(R.color.accent) : 0xFFFFFFFF);
+    }
+
+    private void toggleFavourite() {
+        MediaInfo m = current();
+        if (m == null) return;
+        flash(getString(Prefs.toggleFavourite(this, m) ? R.string.fav_video_added : R.string.fav_video_removed));
+        updateFav();
+    }
+
+    private void moreMenu() {
+        MediaInfo m = current();
+        if (m == null) return;
+        String[] ends = getResources().getStringArray(R.array.video_end_choices);
+        List<String> opts = new ArrayList<>();
+        List<String> ids = new ArrayList<>();
+        opts.add(getString(R.string.save_frame)); ids.add("frame");
+        opts.add(getString(Prefs.karaoke(this) ? R.string.karaoke_menu_on : R.string.karaoke_menu_off)); ids.add("karaoke");
+        opts.add(getString(R.string.video_end_menu, ends[Prefs.videoEnd(this)])); ids.add("end");
+        opts.add(getString(R.string.background_play)); ids.add("bg");
+        if (!m.remote) { opts.add(getString(R.string.save_sound)); ids.add("sound"); }
+        opts.add(getString(zoomed ? R.string.zoom_fit_menu : R.string.zoom_fill_menu)); ids.add("zoom");
+        opts.add(getString(R.string.add_to_playlist)); ids.add("add");
+        opts.add(getString(R.string.share)); ids.add("share");
+        opts.add(getString(R.string.properties)); ids.add("props");
+        if (Downloads.isOnline(m)) { opts.add(getString(R.string.download)); ids.add("download"); }
+        Dialogs.builder(this)
+                .setTitle(m.title)
+                .setItems(opts.toArray(new String[0]), (d, w) -> {
+                    switch (ids.get(w)) {
+                        case "frame": saveFrame(); break;
+                        case "karaoke": {
+                            boolean on = !Prefs.karaoke(this);
+                            Prefs.setKaraoke(this, on);
+                            flash(getString(on ? R.string.karaoke_now_on : R.string.karaoke_now_off));
+                            break;
+                        }
+                        case "end":
+                            Dialogs.builder(this).setTitle(R.string.video_end)
+                                    .setSingleChoiceItems(ends, Prefs.videoEnd(this), (d2, w2) -> {
+                                        Prefs.setVideoEnd(this, w2);
+                                        applyVideoEnd();
+                                        d2.dismiss();
+                                        flash(ends[w2]);
+                                    }).setNegativeButton(R.string.cancel, null).show();
+                            break;
+                        case "bg": backgroundPlay(); break;
+                        case "sound": AudioExtract.save(this, m); break;
+                        case "zoom": setZoom(!zoomed); break;
+                        case "add": Dialogs.addToPlaylist(this, m); break;
+                        case "share": Share.send(this, m); break;
+                        case "props":
+                            FileOps.properties(this, m, deleter, gone -> removeCurrent(), null);
+                            break;
+                        case "download": Downloads.start(this, m.uri, m.title); break;
+                    }
+                })
+                .show();
+    }
+
+    /** After deleting the video that is playing: next one, or close. */
+    private void removeCurrent() {
+        int i = player.getCurrentMediaItemIndex();
+        if (i < 0 || i >= items.size()) return;
+        items.remove(i);
+        if (items.isEmpty()) { finish(); return; }
+        player.removeMediaItem(i);
+    }
+
+    @SuppressWarnings("deprecation")
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        deleter.onActivityResult(requestCode, resultCode);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(requestCode, permissions, results);
+        deleter.onRequestPermissionsResult(requestCode, results);
+    }
+
+    /** Hands the videos to the music player: sound keeps playing with the screen off; controls in the notification. */
+    private void backgroundPlay() {
+        final int index = player.getCurrentMediaItemIndex();
+        final long pos = player.getCurrentPosition();
+        final float speed = player.getPlaybackParameters().speed;
+        final List<MediaInfo> list = new ArrayList<>(items);
+        player.pause();
+        ListenableFuture<MediaController> f = Media.connect(getApplicationContext());
+        f.addListener(() -> {
+            try {
+                MediaController c = f.get();
+                c.setMediaItems(Media.items(list), index, pos);
+                c.setPlaybackParameters(new PlaybackParameters(speed));
+                c.prepare();
+                c.play();
+                new Handler(Looper.getMainLooper()).postDelayed(() -> MediaController.releaseFuture(f), 1500);
+            } catch (Exception e) {
+                Ui.toast(getApplicationContext(), getString(R.string.cant_play));
+            }
+            startActivity(new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT));
+            finish();
+        }, ui::post);
+    }
+
     private void enterPip() {
         if (Build.VERSION.SDK_INT < 26) return;
-        try { enterPictureInPictureMode(pipParams()); } catch (Exception ignored) {}
-    }
-
-    private PictureInPictureParams pipParams() {
-        Rational r = new Rational(16, 9);
-        if (player != null) {
+        try {
             VideoSize vs = player.getVideoSize();
-            if (vs.width > 0 && vs.height > 0) {
-                float a = (float) vs.width / vs.height;
-                a = Math.max(0.42f, Math.min(2.39f, a));
-                r = new Rational(Math.round(a * 1000), 1000);
-            }
+            Rational r = vs.width > 0 && vs.height > 0 ? new Rational(vs.width, vs.height) : new Rational(16, 9);
+            float f = r.floatValue();
+            if (f > 2.39f) r = new Rational(239, 100);
+            if (f < 0.42f) r = new Rational(42, 100);
+            hideControls.run();
+            enterPictureInPictureMode(new PictureInPictureParams.Builder().setAspectRatio(r).build());
+        } catch (Exception e) {
+            flash(getString(R.string.pip_unavailable));
         }
-        return new PictureInPictureParams.Builder().setAspectRatio(r).build();
-    }
-
-    private void updatePipParams() { try { setPictureInPictureParams(pipParams()); } catch (Exception ignored) {} }
-
-    @Override
-    public void onPictureInPictureModeChanged(boolean pip, Configuration cfg) {
-        super.onPictureInPictureModeChanged(pip, cfg);
-        inPip = pip;
-        if (pip) { hideControls(); popup.setVisibility(View.GONE); }
     }
 
     @Override
-    protected void onUserLeaveHint() {
-        super.onUserLeaveHint();
-        if (player != null && player.isPlaying() && Build.VERSION.SDK_INT >= 26 && Store.bool(this, "auto_pip", false)) enterPip();
+    public void onPictureInPictureModeChanged(boolean isInPip, Configuration newConfig) {
+        super.onPictureInPictureModeChanged(isInPip, newConfig);
+        inPip = isInPip;
+        if (isInPip) hideControls.run();
+        indicator.setVisibility(View.GONE);
     }
 
-    // ---------------------------------------------------------------- lifecycle
-    @Override protected void onStart() { super.onStart(); h.post(progress); }
+    // ── Our control layer ────────────────────────────────────────────────────
+
+    private final Runnable hideControls = () -> {
+        controls.setVisibility(View.GONE);
+        Ui.fullScreen(this);
+    };
+
+    /** Show the controls and hide them again after a few seconds of no touching (while playing). */
+    private void keepControls() {
+        if (inPip) return;
+        controls.setVisibility(View.VISIBLE);
+        ui.removeCallbacks(hideControls);
+        if (player != null && player.isPlaying()) ui.postDelayed(hideControls, 3500);
+    }
+
+    private final Runnable tick = new Runnable() {
+        @Override public void run() { updateControls(); ui.postDelayed(this, 500); }
+    };
+
+    private void updateControls() {
+        if (player == null) return;
+        boolean end = atEnd() && !scrubbing;
+        playBtn.setImageResource(player.isPlaying() ? R.drawable.ic_pause : end ? R.drawable.ic_repeat : R.drawable.ic_play);
+        if (!end && replayBtn.getVisibility() == View.VISIBLE) replayBtn.setVisibility(View.GONE);
+        if (draggingBar) return;
+        long dur = player.getDuration(), pos = player.getCurrentPosition();
+        posText.setText(Ui.time(pos));
+        durText.setText(dur > 0 ? Ui.time(dur) : "--:--");
+        seekBar.setProgress(dur > 0 ? (int) (pos * 1000 / dur) : 0);
+        seekBar.setSecondaryProgress(dur > 0 ? (int) (player.getBufferedPosition() * 1000 / dur) : 0);
+        boolean playing = player.isPlaying();
+        if (playing != wasPlaying) {               // started or paused: hide later / stay up
+            wasPlaying = playing;
+            ui.removeCallbacks(hideControls);
+            if (playing && controls.getVisibility() == View.VISIBLE) ui.postDelayed(hideControls, 3500);
+        }
+    }
+
+    private boolean wasPlaying = false;
+
+    private void flash(String text) {
+        indicator.setText(text);
+        indicator.setVisibility(View.VISIBLE);
+        ui.removeCallbacks(hideIndicator);
+        ui.postDelayed(hideIndicator, 900);
+    }
+
+    // ── Lifecycle ────────────────────────────────────────────────────────────
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) Ui.fullScreen(this);
+    }
 
     @Override
     protected void onStop() {
         super.onStop();
-        h.removeCallbacks(progress);
-        if (player != null) player.pause();
-        if (inPip) finish();
-    }
-
-    @Override
-    protected void onPause() {
-        super.onPause();
-        boolean pip = Build.VERSION.SDK_INT >= 24 && isInPictureInPictureMode();
-        if (!pip && player != null) player.pause();
+        if (holding) endHold();
+        if (player != null) player.pause();      // videos don't play in the background unless you choose Background play
     }
 
     @Override
     protected void onDestroy() {
-        h.removeCallbacksAndMessages(null);
+        ui.removeCallbacksAndMessages(null);
         if (player != null) { player.release(); player = null; }
         super.onDestroy();
     }
-
-    @Override
-    protected void onActivityResult(int req, int res, Intent data) {
-        super.onActivityResult(req, res, data);
-        Actions.onResult(this, req, res);
-    }
-
 }

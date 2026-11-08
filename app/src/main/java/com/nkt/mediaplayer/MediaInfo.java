@@ -4,121 +4,174 @@ import android.net.Uri;
 
 import org.json.JSONObject;
 
-import java.io.File;
-import java.util.Locale;
-
-/** One song, video or photo. */
+/** One song, video, photo or online link. */
 public class MediaInfo {
-    public static final int AUDIO = 0, VIDEO = 1, IMAGE = 2;
+    public final long id;            // MediaStore id, or -1 for links and hidden files
+    public final Uri uri;
+    public final String title;
+    public final String artist;
+    public final String album;
+    public final long albumId;
+    public final String folder;
+    public final long durationMs;
+    public final boolean video;
 
-    public long id, albumId, duration, size, date;
-    public int kind;
-    public String uri = "", title = "", artist = "", album = "", folder = "", path = "", name = "", mime = "", genre = "";
+    // Extra details (filled in where known)
+    public boolean image;            // a photo (gallery only)
+    public boolean hidden;           // found in a hidden / .nomedia folder
+    public long dateMs;              // taken or added
     public int year;
-    public boolean hidden;
+    public String genre = "";
+    public long size;
+    public int orientation;          // photos: rotation in degrees
+    public String path = "";         // file path when known
+    public String fileName = "";
+    public boolean other;            // any other file (Folders page, other devices): text, PDF, apps…
+    public boolean remote;           // on another device (Other devices)
 
-    public boolean isVideo() { return kind == VIDEO; }
-    public boolean isImage() { return kind == IMAGE; }
-    public boolean isAudio() { return kind == AUDIO; }
-    public boolean isOnline() { return uri.startsWith("http"); }
-    public Uri u() { return Uri.parse(uri); }
+    public MediaInfo(long id, Uri uri, String title, String artist, String album,
+                     long albumId, String folder, long durationMs, boolean video) {
+        this.id = id;
+        this.uri = uri;
+        this.title = title == null || title.isEmpty() ? "Unknown" : title;
+        this.artist = artist == null || artist.equals("<unknown>") ? "" : artist;
+        this.album = album == null ? "" : album;
+        this.albumId = albumId;
+        this.folder = folder == null || folder.isEmpty() ? "Other" : folder;
+        this.durationMs = durationMs;
+        this.video = video;
+    }
 
-    public String artistOrUnknown() { return artist == null || artist.isEmpty() || artist.equals("<unknown>") ? "Unknown artist" : artist; }
+    /** An online link or a file opened from another app. */
+    public static MediaInfo link(Uri uri, String title, boolean video) {
+        return new MediaInfo(-1, uri, title, "", "", -1, "Links", 0, video);
+    }
+
+    public String key() { return uri.toString(); }
 
     public String subtitle() {
+        String d = durationMs > 0 ? Ui.time(durationMs) : "";
         String pre = hidden ? "Hidden · " : "";
-        if (kind == AUDIO) return pre + artistOrUnknown() + " · " + Ui.time(duration);
-        if (kind == VIDEO) return pre + folder + " · " + Ui.time(duration);
-        return pre + folder;
+        if (other) return pre + folder;
+        if (image) return pre + folder;
+        if (video) return pre + folder + (d.isEmpty() ? "" : " · " + d);
+        if (artist.isEmpty()) return pre + d;
+        return pre + artist + (d.isEmpty() ? "" : " · " + d);
     }
 
     public JSONObject toJson() {
         JSONObject o = new JSONObject();
         try {
-            o.put("id", id).put("uri", uri).put("title", title).put("artist", artist).put("album", album)
-                    .put("albumId", albumId).put("folder", folder).put("dur", duration).put("kind", kind)
-                    .put("hidden", hidden).put("path", path).put("name", name).put("date", date).put("size", size)
-                    .put("mime", mime).put("genre", genre).put("year", year);
-        } catch (Exception ignored) {}
+            o.put("id", id);
+            o.put("uri", uri.toString());
+            o.put("title", title);
+            o.put("artist", artist);
+            o.put("album", album);
+            o.put("albumId", albumId);
+            o.put("folder", folder);
+            o.put("dur", durationMs);
+            o.put("video", video);
+            o.put("hidden", hidden);
+            o.put("path", path);
+            o.put("image", image);
+            o.put("name", fileName);
+            o.put("date", dateMs);
+            o.put("size", size);
+            if (year != 0) o.put("year", year);
+            if (!genre.isEmpty()) o.put("genre", genre);
+            if (orientation != 0) o.put("orient", orientation);
+            if (other) o.put("other", true);
+        } catch (Exception ignored) { }
         return o;
     }
 
     public static MediaInfo fromJson(JSONObject o) {
-        MediaInfo m = new MediaInfo();
-        m.id = o.optLong("id");
-        m.uri = o.optString("uri");
-        m.title = o.optString("title");
-        m.artist = o.optString("artist");
-        m.album = o.optString("album");
-        m.albumId = o.optLong("albumId");
-        m.folder = o.optString("folder");
-        m.duration = o.optLong("dur");
-        m.kind = o.has("kind") ? o.optInt("kind") : (o.optBoolean("image") ? IMAGE : o.optBoolean("video") ? VIDEO : AUDIO);
+        MediaInfo m = new MediaInfo(o.optLong("id", -1), Uri.parse(o.optString("uri")), o.optString("title"),
+                o.optString("artist"), o.optString("album"), o.optLong("albumId", -1),
+                o.optString("folder"), o.optLong("dur"), o.optBoolean("video"));
         m.hidden = o.optBoolean("hidden");
         m.path = o.optString("path");
-        m.name = o.optString("name");
-        m.date = o.optLong("date");
+        m.image = o.optBoolean("image");
+        m.fileName = o.optString("name");
+        m.dateMs = o.optLong("date");
         m.size = o.optLong("size");
-        m.mime = o.optString("mime");
-        m.genre = o.optString("genre");
         m.year = o.optInt("year");
+        m.genre = o.optString("genre");
+        m.orientation = o.optInt("orient");
+        m.other = o.optBoolean("other");
         return m;
     }
 
-    /** Build an item for a plain file (folders browser, hidden scan, shared files). */
-    public static MediaInfo fromFile(File f) {
-        MediaInfo m = new MediaInfo();
-        m.uri = Uri.fromFile(f).toString();
-        m.path = f.getAbsolutePath();
-        m.name = f.getName();
-        int dot = m.name.lastIndexOf('.');
-        m.title = dot > 0 ? m.name.substring(0, dot) : m.name;
-        File p = f.getParentFile();
-        m.folder = p != null ? p.getName() : "";
-        m.size = f.length();
-        m.date = f.lastModified();
-        m.kind = kindOf(m.name);
-        m.mime = mimeOf(m.name);
-        return m;
-    }
+    // ── Files found by browsing (Folders page) ──
 
-    public static final String[] AUDIO_EXT = {"mp3", "m4a", "aac", "flac", "ogg", "oga", "opus", "wav", "amr", "wma", "mka", "mid", "midi"};
-    public static final String[] VIDEO_EXT = {"mp4", "mkv", "webm", "3gp", "avi", "mov", "ts", "m4v", "flv", "wmv", "mpg", "mpeg"};
-    public static final String[] IMAGE_EXT = {"jpg", "jpeg", "png", "webp", "gif", "heic", "heif", "bmp"};
-    public static final String[] TEXT_EXT = {"txt", "md", "json", "xml", "csv", "log", "html", "htm", "css", "js", "java", "kt", "py",
-            "c", "cpp", "h", "ini", "conf", "cfg", "yml", "yaml", "srt", "lrc", "sh", "properties", "gradle", "ts", "tsx", "sql", "vtt"};
+    public static final int AUDIO = 0, VIDEO = 1, IMAGE = 2, TEXT = 3, PDF = 4, OTHER = 5;
+
+    private static final java.util.Set<String> AUDIO_EXT = new java.util.HashSet<>(java.util.Arrays.asList(
+            "mp3", "m4a", "aac", "flac", "ogg", "oga", "opus", "wav", "amr", "wma", "mka", "mid", "midi", "3ga"));
+    private static final java.util.Set<String> VIDEO_EXT = new java.util.HashSet<>(java.util.Arrays.asList(
+            "mp4", "mkv", "webm", "3gp", "avi", "mov", "ts", "m4v", "flv", "wmv", "mpg", "mpeg"));
+    private static final java.util.Set<String> IMAGE_EXT = new java.util.HashSet<>(java.util.Arrays.asList(
+            "jpg", "jpeg", "png", "webp", "gif", "heic", "heif", "bmp"));
+    private static final java.util.Set<String> TEXT_EXT = new java.util.HashSet<>(java.util.Arrays.asList(
+            "txt", "md", "log", "csv", "json", "xml", "html", "htm", "srt", "lrc", "ini", "cfg", "conf", "yml", "yaml",
+            "properties", "java", "kt", "py", "js", "css", "sh", "nfo", "vtt", "tsv", "sql"));
 
     public static String ext(String name) {
-        int d = name.lastIndexOf('.');
-        return d < 0 ? "" : name.substring(d + 1).toLowerCase(Locale.US);
+        int dot = name == null ? -1 : name.lastIndexOf('.');
+        return dot < 0 ? "" : name.substring(dot + 1).toLowerCase(java.util.Locale.ROOT);
     }
 
-    static boolean in(String e, String[] list) {
-        for (String s : list) if (s.equals(e)) return true;
-        return false;
-    }
-
-    /** -1 = not media. */
+    /** AUDIO, VIDEO, IMAGE, TEXT, PDF or OTHER, from the file name. */
     public static int kindOf(String name) {
         String e = ext(name);
-        if (in(e, AUDIO_EXT)) return AUDIO;
-        if (in(e, VIDEO_EXT) && !e.equals("ts")) return VIDEO;
-        if (e.equals("ts")) return VIDEO;
-        if (in(e, IMAGE_EXT)) return IMAGE;
-        return -1;
+        if (AUDIO_EXT.contains(e)) return AUDIO;
+        if (VIDEO_EXT.contains(e)) return VIDEO;
+        if (IMAGE_EXT.contains(e)) return IMAGE;
+        if (TEXT_EXT.contains(e)) return TEXT;
+        if ("pdf".equals(e)) return PDF;
+        return OTHER;
     }
 
-    public static boolean isText(String name) { return in(ext(name), TEXT_EXT) && !ext(name).equals("ts"); }
+    public int kind() {
+        if (image) return IMAGE;
+        if (video) return VIDEO;
+        if (other) { int k = kindOf(fileName.isEmpty() ? title : fileName); return k <= IMAGE ? OTHER : k; }
+        return AUDIO;
+    }
 
-    public static String mimeOf(String name) {
-        String e = ext(name);
-        String m = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(e);
-        if (m != null) return m;
-        if (e.equals("apk")) return "application/vnd.android.package-archive";
-        if (in(e, AUDIO_EXT)) return "audio/*";
-        if (in(e, VIDEO_EXT)) return "video/*";
-        if (in(e, IMAGE_EXT)) return "image/*";
-        if (isText(name)) return "text/plain";
-        return "*/*";
+    /** A file on this phone, typed by its name. */
+    public static MediaInfo fromFile(java.io.File f) {
+        String name = f.getName();
+        int k = kindOf(name);
+        String title = k <= IMAGE ? stripExt(name) : name;
+        java.io.File parent = f.getParentFile();
+        MediaInfo m = new MediaInfo(-1, Uri.fromFile(f), title, "", "", -1,
+                parent == null ? "" : parent.getName(), 0, k == VIDEO);
+        m.image = k == IMAGE;
+        m.other = k > IMAGE;
+        m.path = f.getAbsolutePath();
+        m.fileName = name;
+        m.size = f.length();
+        m.dateMs = f.lastModified();
+        m.hidden = name.startsWith(".");
+        return m;
+    }
+
+    /** A file on another device (Other devices); uri is ftp://host:port/path. */
+    public static MediaInfo remoteFile(Uri uri, String name, long size, long date) {
+        int k = kindOf(name);
+        MediaInfo m = new MediaInfo(-1, uri, k <= IMAGE ? stripExt(name) : name, "", "", -1, "", 0, k == VIDEO);
+        m.image = k == IMAGE;
+        m.other = k > IMAGE;
+        m.remote = true;
+        m.fileName = name;
+        m.size = size;
+        m.dateMs = date;
+        return m;
+    }
+
+    static String stripExt(String n) {
+        int dot = n.lastIndexOf('.');
+        return dot > 0 && n.length() - dot <= 6 ? n.substring(0, dot) : n;
     }
 }

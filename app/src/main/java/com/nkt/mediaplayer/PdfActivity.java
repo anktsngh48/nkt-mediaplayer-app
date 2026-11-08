@@ -1,17 +1,23 @@
 package com.nkt.mediaplayer;
 
 import android.app.Activity;
+import android.content.Context;
+import android.content.Intent;
+import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
-import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.ColorMatrix;
 import android.graphics.ColorMatrixColorFilter;
 import android.graphics.pdf.PdfRenderer;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.ParcelFileDescriptor;
+import android.text.InputType;
 import android.util.LruCache;
 import android.view.Gravity;
+import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
 import android.widget.FrameLayout;
@@ -19,7 +25,6 @@ import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -27,171 +32,253 @@ import java.io.File;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** Reads PDFs with Android's built-in renderer: pages scroll down, pinch a page to zoom, night mode. */
+/** PDF reader: pages one under another, pinch or double-tap a page to zoom, page bubble, go to page, night mode. */
 public class PdfActivity extends Activity {
-    private PdfRenderer renderer;
-    private ParcelFileDescriptor pfd;
+
+    public static void open(Context c, Uri uri) {
+        c.startActivity(new Intent(c, PdfActivity.class).setData(uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION));
+    }
+
+    private final Handler ui = new Handler(Looper.getMainLooper());
+    private final ExecutorService renderThread = Executors.newSingleThreadExecutor();   // PdfRenderer: one page at a time
+    private ParcelFileDescriptor fd;
+    private PdfRenderer pdf;
+    private int count = 0;
+    private float[] ratio;                      // height / width per page
     private RecyclerView list;
     private LinearLayoutManager lm;
-    private TextView pageBadge;
-    private boolean night;
-    private final ExecutorService one = Executors.newSingleThreadExecutor();
-    private final LruCache<Integer, Bitmap> cache = new LruCache<Integer, Bitmap>((int) (Runtime.getRuntime().maxMemory() / 6)) {
-        @Override protected int sizeOf(Integer k, Bitmap b) { return b.getByteCount(); }
-    };
-    private File file;
+    private TextView bubble, titleView;
+    private ImageButton nightBtn;
     private Uri uri;
+    private LruCache<Integer, Bitmap> pages;
 
     @Override
-    protected void onCreate(Bundle b) {
-        super.onCreate(b);
-        String p = getIntent().getStringExtra("path");
-        if (p != null) file = new File(p);
-        else uri = getIntent().getData();
-        try {
-            pfd = file != null ? ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
-                    : getContentResolver().openFileDescriptor(uri, "r");
-            renderer = new PdfRenderer(pfd);
-        } catch (Exception e) {
-            Ui.msg(this, "Couldn't open this PDF (it may be protected with a password)");
-            finish();
-            return;
-        }
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        uri = getIntent().getData();
+        if (uri == null) { finish(); return; }
+        int max = (int) Math.min(Runtime.getRuntime().maxMemory() / 6, 96L * 1024 * 1024);
+        pages = new LruCache<Integer, Bitmap>(max) {
+            @Override protected int sizeOf(Integer k, Bitmap b) { return b.getByteCount(); }
+        };
+        build();
+        openPdf();
+    }
+
+    private void build() {
+        int dp = Ui.dp(this, 1);
         FrameLayout root = new FrameLayout(this);
-        root.setBackgroundColor(Ui.BG);
-        LinearLayout col = Ui.col(this);
-        root.addView(col, new FrameLayout.LayoutParams(Ui.MATCH, Ui.MATCH));
-        LinearLayout top = Ui.row(this);
-        top.setPadding(Ui.dp(this, 12), 0, Ui.dp(this, 8), Ui.dp(this, 8));
-        ImageButton back = Ui.roundBtn(this, "back", 44, Ui.TEXT, true);
+        root.setBackgroundColor(0xFF0B0E14);
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout top = new LinearLayout(this);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        top.setPadding(4 * dp, 6 * dp, 6 * dp, 4 * dp);
+        top.setBackgroundColor(getColor(R.color.bg));
+        ImageButton back = button(R.drawable.ic_back, R.string.cd_back);
         back.setOnClickListener(v -> finish());
         top.addView(back);
-        LinearLayout tt = Ui.col(this);
-        tt.setPadding(Ui.dp(this, 10), 0, 0, 0);
-        String n = file != null ? file.getName() : Media.fromUri(this, uri, -1).name;
-        TextView name = Ui.single(Ui.text(this, n, 15, Ui.TEXT));
-        name.setTypeface(null, android.graphics.Typeface.BOLD);
-        tt.addView(name);
-        tt.addView(Ui.text(this, renderer.getPageCount() + " pages" + (file != null ? " · " + Ui.size(file.length()) : ""), 11, Ui.MUTED));
-        top.addView(tt, Ui.lpw(0, Ui.WRAP, 1));
-        ImageButton go = Ui.iconBtn(this, "search", 44, Ui.ACCENT);
-        go.setContentDescription("Go to page");
-        go.setOnClickListener(v -> goToPage());
-        ImageButton moon = Ui.iconBtn(this, "moon", 44, Ui.TEXT);
-        moon.setOnClickListener(v -> {
-            night = !night;
-            moon.setImageDrawable(new Icon(this, "moon", night ? Ui.ACCENT : Ui.TEXT));
-            list.getAdapter().notifyDataSetChanged();
-        });
-        ImageButton share = Ui.iconBtn(this, "share", 44, Ui.TEXT);
-        share.setOnClickListener(v -> { if (file != null) Media.shareFile(this, file); });
-        top.addView(go);
-        top.addView(moon);
-        top.addView(share);
+        titleView = new TextView(this);
+        titleView.setTextColor(getColor(R.color.text));
+        titleView.setTextSize(15);
+        titleView.setSingleLine(true);
+        titleView.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
+        titleView.setPadding(6 * dp, 0, 6 * dp, 0);
+        top.addView(titleView, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        nightBtn = button(R.drawable.ic_night, R.string.cd_night);
+        nightBtn.setOnClickListener(v -> { Prefs.setPdfNight(this, !Prefs.pdfNight(this)); applyNight(); });
+        top.addView(nightBtn);
+        ImageButton more = button(R.drawable.ic_open, R.string.open_with_caps);
+        more.setOnClickListener(v -> openWith());
+        top.addView(more);
         col.addView(top);
+
         list = new RecyclerView(this);
         lm = new LinearLayoutManager(this);
         list.setLayoutManager(lm);
-        list.setAdapter(new PageAdapter());
-        list.setPadding(Ui.dp(this, 12), 0, Ui.dp(this, 12), Ui.dp(this, 24));
+        list.setItemViewCacheSize(4);
+        list.setPadding(0, 6 * dp, 0, 40 * dp);
         list.setClipToPadding(false);
-        list.addOnScrollListener(new RecyclerView.OnScrollListener() {
-            @Override public void onScrolled(@NonNull RecyclerView rv, int dx, int dy) { updateBadge(); }
-        });
-        col.addView(list, Ui.lpw(Ui.MATCH, 0, 1));
-        pageBadge = Ui.label(this, "", 11, Ui.ACCENT, 0.05f);
-        pageBadge.setBackground(Ui.rect(this, 0xCC05080F, 14, 0x5900E5FF, 1));
-        pageBadge.setPadding(Ui.dp(this, 12), Ui.dp(this, 6), Ui.dp(this, 12), Ui.dp(this, 6));
-        FrameLayout.LayoutParams bp = new FrameLayout.LayoutParams(Ui.WRAP, Ui.WRAP, Gravity.BOTTOM | Gravity.END);
-        bp.setMargins(0, 0, Ui.dp(this, 20), Ui.dp(this, 28));
-        root.addView(pageBadge, bp);
+        col.addView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+        root.addView(col);
+
+        bubble = new TextView(this);
+        bubble.setBackgroundResource(R.drawable.bg_indicator);
+        bubble.setTextColor(getColor(R.color.accent));
+        bubble.setTextSize(13);
+        bubble.setPadding(14 * dp, 7 * dp, 14 * dp, 7 * dp);
+        bubble.setOnClickListener(v -> goToPage());
+        FrameLayout.LayoutParams bp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        bp.bottomMargin = 18 * dp;
+        root.addView(bubble, bp);
         setContentView(root);
-        Ui.edgeToEdge(this, root);
-        updateBadge();
+        Ui.padForSystemBars(root);
+
+        list.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override public void onScrolled(RecyclerView rv, int dx, int dy) { updateBubble(); }
+        });
+        applyNight();
     }
 
-    private void updateBadge() {
-        int p = Math.max(0, lm.findFirstVisibleItemPosition());
-        pageBadge.setText((p + 1) + " / " + renderer.getPageCount());
+    private ImageButton button(int icon, int desc) {
+        ImageButton b = new ImageButton(this);
+        b.setImageResource(icon);
+        b.setImageTintList(ColorStateList.valueOf(getColor(R.color.accent)));
+        b.setBackgroundResource(android.R.color.transparent);
+        b.setContentDescription(getString(desc));
+        int s = Ui.dp(this, 44);
+        b.setLayoutParams(new LinearLayout.LayoutParams(s, s));
+        return b;
+    }
+
+    private void openWith() {
+        MediaInfo m = MediaInfo.link(uri, titleView.getText().toString(), false);
+        m.other = true;
+        m.fileName = titleView.getText().toString();
+        FileOps.openWith(this, m);
+    }
+
+    private void openPdf() {
+        String name = "file".equals(uri.getScheme()) && uri.getLastPathSegment() != null ? uri.getLastPathSegment() : Ui.displayName(this, uri) + ".pdf";
+        titleView.setText(name);
+        renderThread.execute(() -> {
+            try {
+                ParcelFileDescriptor f = "file".equals(uri.getScheme())
+                        ? ParcelFileDescriptor.open(new File(uri.getPath()), ParcelFileDescriptor.MODE_READ_ONLY)
+                        : getContentResolver().openFileDescriptor(uri, "r");
+                if (f == null) throw new Exception("no file");
+                PdfRenderer r = new PdfRenderer(f);
+                int n = r.getPageCount();
+                float[] rs = new float[n];
+                for (int i = 0; i < n; i++) {
+                    try (PdfRenderer.Page p = r.openPage(i)) { rs[i] = p.getHeight() / (float) Math.max(1, p.getWidth()); }
+                }
+                ui.post(() -> {
+                    fd = f;
+                    pdf = r;
+                    count = n;
+                    ratio = rs;
+                    list.setAdapter(new Pages());
+                    int last = Prefs.pdfPage(this, uri.toString());
+                    if (last > 0 && last < n) lm.scrollToPositionWithOffset(last, 0);
+                    updateBubble();
+                });
+            } catch (Throwable t) {
+                ui.post(() -> { Ui.toast(this, R.string.pdf_locked); openWith(); finish(); });
+            }
+        });
+    }
+
+    private int currentPage() {
+        int p = lm.findFirstVisibleItemPosition();
+        return Math.max(0, p);
+    }
+
+    private void updateBubble() {
+        if (count == 0) return;
+        bubble.setText(getString(R.string.pdf_page, currentPage() + 1, count));
     }
 
     private void goToPage() {
-        EditText e = new EditText(this);
-        e.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
-        e.setTextColor(Ui.TEXT);
-        e.setHint("1 – " + renderer.getPageCount());
-        LinearLayout box = Ui.col(this);
-        box.setPadding(Ui.dp(this, 20), Ui.dp(this, 8), Ui.dp(this, 20), 0);
-        box.addView(e);
-        new android.app.AlertDialog.Builder(this).setTitle("Go to page").setView(box).setPositiveButton("Go", (d, w) -> {
-            try {
-                int p = Integer.parseInt(e.getText().toString()) - 1;
-                lm.scrollToPositionWithOffset(Math.max(0, Math.min(renderer.getPageCount() - 1, p)), 0);
-            } catch (Exception ignored) {}
-        }).setNegativeButton("Cancel", null).show();
+        if (count == 0) return;
+        EditText input = new EditText(this);
+        input.setInputType(InputType.TYPE_CLASS_NUMBER);
+        input.setHint("1 – " + count);
+        FrameLayout box = new FrameLayout(this);
+        int pad = Ui.dp(this, 20);
+        box.setPadding(pad, pad / 2, pad, 0);
+        box.addView(input);
+        Dialogs.builder(this)
+                .setTitle(R.string.go_to_page)
+                .setView(box)
+                .setPositiveButton(android.R.string.ok, (d, w) -> {
+                    try {
+                        int p = Integer.parseInt(input.getText().toString().trim()) - 1;
+                        lm.scrollToPositionWithOffset(Math.max(0, Math.min(count - 1, p)), 0);
+                        ui.post(this::updateBubble);
+                    } catch (Exception ignored) { }
+                })
+                .setNegativeButton(R.string.cancel, null)
+                .show();
     }
 
-    private Bitmap render(int i, int width) {
-        Bitmap c = cache.get(i);
-        if (c != null && c.getWidth() == width) return c;
-        synchronized (this) {
-            PdfRenderer.Page page = renderer.openPage(i);
-            int h = (int) ((float) width * page.getHeight() / page.getWidth());
-            Bitmap b = Bitmap.createBitmap(width, h, Bitmap.Config.ARGB_8888);
-            new Canvas(b).drawColor(Color.WHITE);
-            page.render(b, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY);
-            page.close();
-            cache.put(i, b);
-            return b;
+    private ColorMatrixColorFilter nightFilter() {
+        // invert brightness, keep colours readable
+        ColorMatrix m = new ColorMatrix(new float[]{
+                -1, 0, 0, 0, 255,
+                0, -1, 0, 0, 255,
+                0, 0, -1, 0, 255,
+                0, 0, 0, 1, 0});
+        return new ColorMatrixColorFilter(m);
+    }
+
+    private void applyNight() {
+        boolean night = Prefs.pdfNight(this);
+        nightBtn.setImageTintList(ColorStateList.valueOf(getColor(night ? R.color.accent : R.color.muted)));
+        if (list.getAdapter() != null) list.getAdapter().notifyDataSetChanged();
+    }
+
+    private class Pages extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+        @Override public int getItemCount() { return count; }
+
+        @Override
+        public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+            ZoomImageView z = new ZoomImageView(parent.getContext());
+            RecyclerView.LayoutParams lp = new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 100);
+            int m = Ui.dp(PdfActivity.this, 5);
+            lp.setMargins(m, m, m, m);
+            z.setLayoutParams(lp);
+            z.setBackgroundColor(Color.WHITE);
+            return new RecyclerView.ViewHolder(z) { };
         }
+
+        @Override
+        public void onBindViewHolder(RecyclerView.ViewHolder h, int position) {
+            ZoomImageView z = (ZoomImageView) h.itemView;
+            int width = list.getWidth() > 0 ? list.getWidth() - Ui.dp(PdfActivity.this, 10) : getResources().getDisplayMetrics().widthPixels;
+            ViewGroup.LayoutParams lp = z.getLayoutParams();
+            lp.height = Math.round(width * ratio[position]);
+            z.setLayoutParams(lp);
+            boolean night = Prefs.pdfNight(PdfActivity.this);
+            z.setColorFilter(night ? nightFilter() : null);
+            z.setBackgroundColor(night ? Color.BLACK : Color.WHITE);
+            z.setTag(R.id.thumb_key, position);
+            Bitmap b = pages.get(position);
+            if (b != null) { z.setImageBitmap(b); return; }
+            z.setImageDrawable(null);
+            final int target = Math.min(2400, Math.round(width * 1.6f));    // sharp when zoomed a little
+            renderThread.execute(() -> {
+                if (pdf == null) return;
+                Bitmap out;
+                try (PdfRenderer.Page p = pdf.openPage(position)) {
+                    int w = target, hgt = Math.round(target * ratio[position]);
+                    out = Bitmap.createBitmap(w, hgt, Bitmap.Config.ARGB_8888);
+                    out.eraseColor(Color.WHITE);
+                    p.render(out, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY);
+                } catch (Throwable t) { return; }
+                pages.put(position, out);
+                ui.post(() -> { if (Integer.valueOf(position).equals(z.getTag(R.id.thumb_key))) z.setImageBitmap(out); });
+            });
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (count > 0) Prefs.setPdfPage(this, uri.toString(), currentPage());
     }
 
     @Override
     protected void onDestroy() {
-        one.shutdownNow();
-        try { if (renderer != null) renderer.close(); } catch (Exception ignored) {}
-        try { if (pfd != null) pfd.close(); } catch (Exception ignored) {}
+        final PdfRenderer r = pdf;
+        final ParcelFileDescriptor f = fd;
+        pdf = null;
+        renderThread.execute(() -> {
+            try { if (r != null) r.close(); } catch (Throwable ignored) { }
+            try { if (f != null) f.close(); } catch (Throwable ignored) { }
+        });
+        renderThread.shutdown();
         super.onDestroy();
-    }
-
-    final class PageAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
-        @Override public int getItemCount() { return renderer.getPageCount(); }
-
-        @NonNull @Override
-        public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup p, int t) {
-            ZoomImageView z = new ZoomImageView(PdfActivity.this);
-            z.setBackgroundColor(0xFF1A2232);
-            RecyclerView.LayoutParams lp = new RecyclerView.LayoutParams(Ui.MATCH, Ui.WRAP);
-            lp.topMargin = Ui.dp(PdfActivity.this, 10);
-            z.setLayoutParams(lp);
-            return new RecyclerView.ViewHolder(z) {};
-        }
-
-        @Override
-        public void onBindViewHolder(@NonNull RecyclerView.ViewHolder vh, int pos) {
-            ZoomImageView z = (ZoomImageView) vh.itemView;
-            int width = getResources().getDisplayMetrics().widthPixels - Ui.dp(PdfActivity.this, 24);
-            PdfRenderer.Page pg;
-            int h;
-            synchronized (PdfActivity.this) {
-                pg = renderer.openPage(pos);
-                h = (int) ((float) width * pg.getHeight() / pg.getWidth());
-                pg.close();
-            }
-            z.getLayoutParams().height = h;
-            z.setImageDrawable(null);
-            z.setTag(pos);
-            if (night) {
-                ColorMatrix m = new ColorMatrix(new float[]{-1, 0, 0, 0, 255, 0, -1, 0, 0, 255, 0, 0, -1, 0, 255, 0, 0, 0, 1, 0});
-                z.setColorFilter(new ColorMatrixColorFilter(m));
-            } else z.clearColorFilter();
-            int renderW = Math.min(width * 2, 2400);
-            one.execute(() -> {
-                try {
-                    Bitmap b = render(pos, renderW);
-                    z.post(() -> { if (Integer.valueOf(pos).equals(z.getTag())) z.setImageBitmap(b); });
-                } catch (Exception ignored) {}
-            });
-        }
     }
 }

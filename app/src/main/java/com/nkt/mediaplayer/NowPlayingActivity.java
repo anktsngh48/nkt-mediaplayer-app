@@ -1,29 +1,30 @@
 package com.nkt.mediaplayer;
 
 import android.app.Activity;
-import android.app.AlertDialog;
-import android.app.Dialog;
-import android.content.ClipData;
 import android.content.Intent;
-import android.graphics.Typeface;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.view.Gravity;
+import android.annotation.SuppressLint;
+import android.app.Dialog;
+import android.view.LayoutInflater;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.FrameLayout;
 import android.widget.ImageButton;
-import android.widget.ImageView;
+import android.widget.EditText;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
+import android.content.ClipData;
+import android.widget.ImageView;
 import android.widget.SeekBar;
-import android.widget.Switch;
 import android.widget.TextView;
 
-import androidx.annotation.NonNull;
+import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
+import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.PlaybackParameters;
 import androidx.media3.common.Player;
 import androidx.media3.session.MediaController;
@@ -31,489 +32,621 @@ import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Locale;
+import com.google.common.util.concurrent.ListenableFuture;
 
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Music screen: art, seek bar, play/pause, previous/next, shuffle, repeat,
+ * plus MX-style options: equalizer, sleep timer, speed, lyrics, queue, favourite, ⋮ menu.
+ */
 public class NowPlayingActivity extends Activity {
+
+    private final Handler ui = new Handler(Looper.getMainLooper());
+    private ListenableFuture<MediaController> future;
+    private MediaController controller;
+
     private ImageView art;
-    private TextView title, artist, pos, dur, sleepChip, upNext, speedLabel;
+    private TextView title, artist, tCur, tDur, sleepChip, upNext, optFav, optSpeed;
     private SeekBar seek;
     private ImageButton play, shuffle, repeat;
-    private ImageView loveIcon;
-    private TextView watchVideo;
-    private MediaController c;
-    private boolean dragging;
-    private String shownUri = "";
-    private final Handler h = new Handler(Looper.getMainLooper());
+    private boolean dragging = false;
+    private String artFor = null;
+    private List<Uri> openedUris;      // files opened or shared from another app
+
+    private final Runnable tick = new Runnable() {
+        @Override public void run() {
+            updateProgress();
+            updateSleep();
+            updateLyricLine();
+            ui.postDelayed(this, lyricsOpen() ? 200 : 500);
+        }
+    };
 
     @Override
-    protected void onCreate(Bundle b) {
-        super.onCreate(b);
-        ScrollView sv = new ScrollView(this);
-        sv.setFillViewport(true);
-        LinearLayout col = Ui.col(this);
-        col.setPadding(Ui.dp(this, 24), Ui.dp(this, 8), Ui.dp(this, 24), Ui.dp(this, 20));
-        sv.addView(col);
-        sv.setBackgroundColor(Ui.BG);
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_now_playing);
+        Ui.padForSystemBars(findViewById(R.id.root));
 
-        LinearLayout top = Ui.row(this);
-        ImageButton back = Ui.roundBtn(this, "back", 44, Ui.TEXT, true);
-        back.setOnClickListener(v -> finish());
-        top.addView(back);
-        TextView np = Ui.label(this, "Now playing", 11, Ui.ACCENT, 0.22f);
-        np.setGravity(Gravity.CENTER);
-        top.addView(np, Ui.lpw(0, Ui.WRAP, 1));
-        ImageButton more = Ui.roundBtn(this, "more", 44, Ui.TEXT, true);
-        more.setOnClickListener(v -> menu());
-        top.addView(more);
-        col.addView(top);
-
-        sleepChip = Ui.text(this, "", 13, Ui.SUCCESS);
-        sleepChip.setBackground(Ui.rect(this, 0x1200E5A0, 18, 0x7300E5A0, 1));
-        sleepChip.setPadding(Ui.dp(this, 14), Ui.dp(this, 7), Ui.dp(this, 14), Ui.dp(this, 7));
-        sleepChip.setOnClickListener(v -> timerSheet());
-        LinearLayout.LayoutParams sp = Ui.lpm(this, Ui.WRAP, Ui.WRAP, 0, 12, 0, 0);
-        sp.gravity = Gravity.CENTER_HORIZONTAL;
-        col.addView(sleepChip, sp);
-
-        FrameLayout stage = new FrameLayout(this);
-        art = new ImageView(this);
-        art.setBackground(Ui.rect(this, 0x2200E5FF, 18, Ui.BORDER, 1));
+        art = findViewById(R.id.np_art);
         art.setClipToOutline(true);
-        art.setElevation(Ui.dp(this, 12));
-        int side = Math.min(Ui.dp(this, 280), getResources().getDisplayMetrics().widthPixels - Ui.dp(this, 64));
-        stage.addView(art, new FrameLayout.LayoutParams(side, side, Gravity.CENTER));
-        col.addView(stage, Ui.lpm(this, Ui.MATCH, side + Ui.dp(this, 20), 0, 8, 0, 0));
+        title = findViewById(R.id.np_title);
+        artist = findViewById(R.id.np_artist);
+        tCur = findViewById(R.id.np_cur);
+        tDur = findViewById(R.id.np_dur);
+        seek = findViewById(R.id.np_seek);
+        play = findViewById(R.id.np_play);
+        shuffle = findViewById(R.id.np_shuffle);
+        repeat = findViewById(R.id.np_repeat);
+        ((TextView) findViewById(R.id.np_label)).setTypeface(Ui.orbitron(this));
+        sleepChip = findViewById(R.id.np_sleep);
+        upNext = findViewById(R.id.np_upnext_title);
+        optFav = findViewById(R.id.opt_fav);
+        optSpeed = findViewById(R.id.opt_speed);
+        ((TextView) findViewById(R.id.np_upnext_label)).setTypeface(Ui.orbitron(this));
 
-        title = Ui.text(this, "", 20, Ui.TEXT);
-        title.setTypeface(null, Typeface.BOLD);
-        title.setMaxLines(2);
-        col.addView(title, Ui.lpm(this, Ui.MATCH, Ui.WRAP, 0, 12, 0, 0));
-        artist = Ui.single(Ui.text(this, "", 14, Ui.MUTED));
-        col.addView(artist, Ui.lpm(this, Ui.MATCH, Ui.WRAP, 0, 4, 0, 0));
+        findViewById(R.id.np_back).setOnClickListener(v -> finish());
+        play.setOnClickListener(v -> {
+            if (controller == null) return;
+            if (controller.isPlaying()) controller.pause();
+            else {
+                if (controller.getPlaybackState() == Player.STATE_ENDED) controller.seekTo(0, 0);
+                controller.play();
+            }
+        });
+        findViewById(R.id.np_prev).setOnClickListener(v -> { if (controller != null) controller.seekToPrevious(); });
+        findViewById(R.id.np_next).setOnClickListener(v -> { if (controller != null) controller.seekToNext(); });
+        shuffle.setOnClickListener(v -> {
+            if (controller != null) controller.setShuffleModeEnabled(!controller.getShuffleModeEnabled());
+        });
+        repeat.setOnClickListener(v -> {
+            if (controller == null) return;
+            int m = controller.getRepeatMode();
+            controller.setRepeatMode(m == Player.REPEAT_MODE_OFF ? Player.REPEAT_MODE_ALL
+                    : m == Player.REPEAT_MODE_ALL ? Player.REPEAT_MODE_ONE : Player.REPEAT_MODE_OFF);
+        });
+        findViewById(R.id.np_more).setOnClickListener(v -> moreMenu());
+        findViewById(R.id.opt_eq).setOnClickListener(v -> startActivity(new Intent(this, EqualizerActivity.class)));
+        findViewById(R.id.opt_timer).setOnClickListener(v -> openSpeedSheet());
+        optSpeed.setOnClickListener(v -> openSpeedSheet());
+        findViewById(R.id.opt_queue).setOnClickListener(v -> openQueue());
+        findViewById(R.id.np_upnext).setOnClickListener(v -> openQueue());
+        optFav.setOnClickListener(v -> toggleFavourite());
+        findViewById(R.id.opt_lyrics).setOnClickListener(v -> toggleLyrics());
+        findViewById(R.id.opt_karaoke).setOnClickListener(v -> toggleKaraoke());
+        findViewById(R.id.opt_karaoke).setOnLongClickListener(v -> { startActivity(new Intent(this, EqualizerActivity.class)); return true; });
+        showKaraoke();
+        findViewById(R.id.np_watch).setOnClickListener(v -> watchVideo());
+        setupLyrics();
+        sleepChip.setOnClickListener(v -> openSpeedSheet());
 
-        seek = new SeekBar(this);
-        Ui.styleSeek(seek);
         seek.setMax(1000);
         seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            public void onProgressChanged(SeekBar s, int p, boolean user) { if (user && c != null) pos.setText(Ui.time(c.getDuration() * p / 1000)); }
-            public void onStartTrackingTouch(SeekBar s) { dragging = true; }
-            public void onStopTrackingTouch(SeekBar s) { dragging = false; if (c != null) c.seekTo(c.getDuration() * s.getProgress() / 1000); }
+            @Override public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
+                if (fromUser && controller != null && controller.getDuration() > 0)
+                    tCur.setText(Ui.time(controller.getDuration() * p / 1000));
+            }
+            @Override public void onStartTrackingTouch(SeekBar s) { dragging = true; }
+            @Override public void onStopTrackingTouch(SeekBar s) {
+                dragging = false;
+                if (controller != null && controller.getDuration() > 0)
+                    controller.seekTo(controller.getDuration() * s.getProgress() / 1000);
+            }
         });
-        col.addView(seek, Ui.lpm(this, Ui.MATCH, Ui.WRAP, -16, 14, -16, 0));
-        LinearLayout times = Ui.row(this);
-        pos = Ui.text(this, "0:00", 12, Ui.MUTED);
-        dur = Ui.text(this, "0:00", 12, Ui.MUTED);
-        times.addView(pos, Ui.lpw(0, Ui.WRAP, 1));
-        times.addView(dur);
-        col.addView(times);
 
-        LinearLayout ctr = Ui.row(this);
-        ctr.setGravity(Gravity.CENTER);
-        shuffle = Ui.iconBtn(this, "shuffle", 44, Ui.MUTED);
-        shuffle.setOnClickListener(v -> { if (c != null) c.setShuffleModeEnabled(!c.getShuffleModeEnabled()); });
-        ImageButton prev = Ui.roundBtn(this, "prev", 56, Ui.TEXT, true);
-        prev.setOnClickListener(v -> { if (c != null) c.seekToPrevious(); });
-        play = new ImageButton(this);
-        play.setBackground(Ui.pressable(playBg(0x26), playBg(0x4D)));
-        play.setImageDrawable(new Icon(this, "pause", Ui.ACCENT));
-        int pp = Ui.dp(this, 22);
-        play.setPadding(pp, pp, pp, pp);
-        play.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        play.setOnClickListener(v -> { if (c != null) { if (c.isPlaying()) c.pause(); else c.play(); } });
-        ImageButton next = Ui.roundBtn(this, "next", 56, Ui.TEXT, true);
-        next.setOnClickListener(v -> { if (c != null) c.seekToNext(); });
-        repeat = Ui.iconBtn(this, "repeat", 44, Ui.MUTED);
-        repeat.setOnClickListener(v -> {
-            if (c == null) return;
-            int m = c.getRepeatMode();
-            c.setRepeatMode(m == Player.REPEAT_MODE_OFF ? Player.REPEAT_MODE_ALL : m == Player.REPEAT_MODE_ALL ? Player.REPEAT_MODE_ONE : Player.REPEAT_MODE_OFF);
-        });
-        ctr.addView(shuffle);
-        ctr.addView(Ui.space(this, -1, 1));
-        ctr.addView(prev);
-        ctr.addView(Ui.space(this, 14, 1));
-        ctr.addView(play, Ui.lp(Ui.dp(this, 76), Ui.dp(this, 76)));
-        ctr.addView(Ui.space(this, 14, 1));
-        ctr.addView(next);
-        ctr.addView(Ui.space(this, -1, 1));
-        ctr.addView(repeat);
-        col.addView(ctr, Ui.lpm(this, Ui.MATCH, Ui.WRAP, 0, 10, 0, 0));
-
-        watchVideo = Ui.pill(this, "WATCH VIDEO", false, Ui.ACCENT);
-        watchVideo.setOnClickListener(v -> watch());
-        LinearLayout.LayoutParams wp = Ui.lpm(this, Ui.WRAP, Ui.dp(this, 46), 0, 12, 0, 0);
-        wp.gravity = Gravity.CENTER_HORIZONTAL;
-        col.addView(watchVideo, wp);
-
-        LinearLayout opts = Ui.row(this);
-        opts.setBackground(Ui.rect(this, Ui.CARD, 16, Ui.BORDER, 1));
-        opts.addView(option("eq", "EQ", v -> startActivity(new Intent(this, EqualizerActivity.class))), Ui.lpw(0, Ui.dp(this, 58), 1));
-        opts.addView(option("timer", "TIMER", v -> timerSheet()), Ui.lpw(0, Ui.dp(this, 58), 1));
-        View sOpt = option("speed", "1×", v -> timerSheet());
-        speedLabel = (TextView) ((LinearLayout) sOpt).getChildAt(1);
-        opts.addView(sOpt, Ui.lpw(0, Ui.dp(this, 58), 1));
-        opts.addView(option("queue", "QUEUE", v -> queueSheet()), Ui.lpw(0, Ui.dp(this, 58), 1));
-        View love = option("heart", "LOVE", v -> {
-            MediaInfo m = current();
-            if (m == null) return;
-            boolean on = Store.toggleFav(this, m);
-            Ui.msg(this, on ? "Added to " + Store.favName(m) : "Removed from " + Store.favName(m));
-            updateLove();
-        });
-        loveIcon = (ImageView) ((LinearLayout) love).getChildAt(0);
-        opts.addView(love, Ui.lpw(0, Ui.dp(this, 58), 1));
-        col.addView(opts, Ui.lpm(this, Ui.MATCH, Ui.WRAP, 0, 18, 0, 0));
-
-        upNext = Ui.single(Ui.text(this, "", 13, Ui.TEXT));
-        upNext.setBackground(Ui.rect(this, 0x0F00E5FF, 14, Ui.BORDER, 1));
-        upNext.setPadding(Ui.dp(this, 14), 0, Ui.dp(this, 14), 0);
-        upNext.setGravity(Gravity.CENTER_VERTICAL);
-        upNext.setOnClickListener(v -> queueSheet());
-        col.addView(upNext, Ui.lpm(this, Ui.MATCH, Ui.dp(this, 58), 0, 10, 0, 0));
-
-        setContentView(sv);
-        Ui.edgeToEdge(this, sv);
         handleIntent(getIntent());
     }
 
-    private android.graphics.drawable.GradientDrawable playBg(int alpha) {
-        android.graphics.drawable.GradientDrawable g = new android.graphics.drawable.GradientDrawable(
-                android.graphics.drawable.GradientDrawable.Orientation.BL_TR, new int[]{(alpha << 24) | 0x00E5FF, (alpha << 24) | 0x7B61FF});
-        g.setShape(android.graphics.drawable.GradientDrawable.OVAL);
-        g.setStroke(Ui.dp(this, 2), 0x8000E5FF);
-        return g;
-    }
-
-    private View option(String icon, String label, View.OnClickListener l) {
-        LinearLayout o = Ui.col(this);
-        o.setGravity(Gravity.CENTER);
-        ImageView i = new ImageView(this);
-        i.setImageDrawable(new Icon(this, icon, Ui.ACCENT));
-        o.addView(i, Ui.lp(Ui.dp(this, 20), Ui.dp(this, 20)));
-        TextView t = Ui.label(this, label, 8.5f, Ui.MUTED, 0.08f);
-        t.setPadding(0, Ui.dp(this, 5), 0, 0);
-        o.addView(t);
-        o.setOnClickListener(l);
-        o.setBackground(Ui.pressable(Ui.rect(this, 0, 12, 0, 0), Ui.rect(this, 0x1400E5FF, 12, 0, 0)));
-        return o;
-    }
-
     @Override
-    protected void onNewIntent(Intent i) {
-        super.onNewIntent(i);
-        handleIntent(i);
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        handleIntent(intent);
     }
 
-    /** "Open with" from another app: one file or several replace the queue. */
+    /** "Open with" / "Share" from another app: one or several audio files. */
     private void handleIntent(Intent i) {
         if (i == null || !Intent.ACTION_VIEW.equals(i.getAction()) || i.getData() == null) return;
-        List<MediaInfo> l = new ArrayList<>();
-        ClipData cd = i.getClipData();
-        if (cd != null && cd.getItemCount() > 1) {
-            for (int k = 0; k < cd.getItemCount(); k++) if (cd.getItemAt(k).getUri() != null) l.add(Media.fromUri(this, cd.getItemAt(k).getUri(), MediaInfo.AUDIO));
-        } else {
-            Uri u = i.getData();
-            l.add(Media.fromUri(this, u, MediaInfo.AUDIO));
-        }
-        Media.playSongs(this, l, 0, false);
-        setIntent(new Intent());
+        openedUris = new ArrayList<>();
+        ClipData clip = i.getClipData();
+        if (clip != null && clip.getItemCount() > 1) {
+            for (int k = 0; k < clip.getItemCount(); k++) if (clip.getItemAt(k).getUri() != null) openedUris.add(clip.getItemAt(k).getUri());
+        } else openedUris.add(i.getData());
+        if (controller != null) playOpened();
     }
+
+    private void playOpened() {
+        if (openedUris == null || openedUris.isEmpty() || controller == null) return;
+        List<MediaInfo> list = new ArrayList<>();
+        for (Uri u : openedUris) list.add(MediaInfo.link(u, Ui.displayName(this, u), false));
+        openedUris = null;
+        controller.setMediaItems(Media.items(list), 0, 0);
+        controller.prepare();
+        controller.play();
+    }
+
+    private final Player.Listener listener = new Player.Listener() {
+        @Override public void onEvents(Player player, Player.Events events) { updateAll(); }
+    };
 
     @Override
     protected void onStart() {
         super.onStart();
-        Media.get(this, ctrl -> {
-            c = ctrl;
-            c.addListener(listener);
-            refresh();
-        });
-        h.post(tick);
+        future = Media.connect(this);
+        future.addListener(() -> {
+            try {
+                controller = future.get();
+                controller.addListener(listener);
+                playOpened();
+                updateAll();
+                ui.post(tick);
+            } catch (Exception ignored) { }
+        }, ui::post);
     }
 
     @Override
     protected void onStop() {
+        ui.removeCallbacks(tick);
+        if (controller != null) controller.removeListener(listener);
+        controller = null;
+        MediaController.releaseFuture(future);
         super.onStop();
-        h.removeCallbacks(tick);
-        if (c != null) c.removeListener(listener);
     }
 
-    private final Player.Listener listener = new Player.Listener() {
-        @Override public void onEvents(@NonNull Player p, @NonNull Player.Events e) { refresh(); }
-    };
+    private void updateAll() {
+        if (controller == null) return;
+        MediaMetadata md = controller.getMediaMetadata();
+        title.setText(md.title == null ? getString(R.string.nothing_playing) : md.title);
+        artist.setText(md.artist == null ? "" : md.artist);
+        play.setImageResource(controller.isPlaying() ? R.drawable.ic_pause : R.drawable.ic_play);
 
-    private final Runnable tick = new Runnable() {
-        @Override public void run() {
-            if (c != null && !dragging) {
-                long d = Math.max(0, c.getDuration());
-                long p = c.getCurrentPosition();
-                pos.setText(Ui.time(p));
-                dur.setText(Ui.time(d));
-                seek.setProgress(d > 0 ? (int) (p * 1000 / d) : 0);
-                seek.setSecondaryProgress(d > 0 ? (int) (c.getBufferedPosition() * 1000 / d) : 0);
+        int on = getColor(R.color.accent), off = getColor(R.color.muted);
+        shuffle.setColorFilter(controller.getShuffleModeEnabled() ? on : off);
+        int rm = controller.getRepeatMode();
+        repeat.setImageResource(rm == Player.REPEAT_MODE_ONE ? R.drawable.ic_repeat_one : R.drawable.ic_repeat);
+        repeat.setColorFilter(rm == Player.REPEAT_MODE_OFF ? off : on);
+
+        updateArt(md);
+        updateProgress();
+        updateFavourite();
+        updateUpNext();
+        optSpeed.setText(SpeedSheet.label(controller.getPlaybackParameters().speed));
+        findViewById(R.id.np_watch).setVisibility(Media.isVideo(md) ? View.VISIBLE : View.GONE);
+        if (lyricsOpen()) loadLyricsIfNeeded();
+        if (queueAdapter != null) queueAdapter.reload();
+    }
+
+    private void updateArt(MediaMetadata md) {
+        String id = controller.getCurrentMediaItem() == null ? null : controller.getCurrentMediaItem().mediaId;
+        Bitmap b = null;
+        if (md.artworkData != null) {
+            try { b = BitmapFactory.decodeByteArray(md.artworkData, 0, md.artworkData.length); } catch (Exception ignored) { }
+        }
+        if (b != null) { Thumbs.showBitmap(art, b); artFor = id; return; }
+        if (id == null) { Thumbs.showPlaceholder(art, R.drawable.ic_music); artFor = null; return; }
+        if (id.equals(artFor)) return;            // already showing (or fetching) this song's art
+        artFor = id;
+        Thumbs.showPlaceholder(art, R.drawable.ic_music);
+        MediaInfo m = Media.current(controller);
+        if (m == null) return;
+        final String want = id;
+        Thumbs.big(this, m, bmp -> { if (bmp != null && want.equals(artFor)) Thumbs.showBitmap(art, bmp); });
+    }
+
+    private void updateProgress() {
+        if (controller == null || dragging) return;
+        long dur = controller.getDuration(), pos = controller.getCurrentPosition();
+        tCur.setText(Ui.time(pos));
+        tDur.setText(dur > 0 ? Ui.time(dur) : "--:--");
+        seek.setProgress(dur > 0 ? (int) (pos * 1000 / dur) : 0);
+    }
+
+    // ── Options ──────────────────────────────────────────────────────────────
+
+    private void openSpeedSheet() {
+        if (controller == null) return;
+        SpeedSheet.show(this, new SpeedSheet.Target() {
+            @Override public float speed() { return controller == null ? 1f : controller.getPlaybackParameters().speed; }
+            @Override public void setSpeed(float sp) {
+                // keep the karaoke key while changing speed
+                if (controller != null) controller.setPlaybackParameters(new PlaybackParameters(sp, controller.getPlaybackParameters().pitch));
+                optSpeed.setText(SpeedSheet.label(sp));
             }
-            updateSleep();
-            h.postDelayed(this, 500);
-        }
-    };
-
-    private MediaInfo current() { return c == null ? null : Media.info(c.getCurrentMediaItem()); }
-
-    private void refresh() {
-        if (c == null) return;
-        MediaInfo m = current();
-        if (m == null) {
-            title.setText("Nothing playing");
-            artist.setText("Pick a song from the library");
-            return;
-        }
-        title.setText(m.title.isEmpty() ? m.name : m.title);
-        artist.setText(m.isVideo() ? "Video" : m.artistOrUnknown());
-        if (!m.uri.equals(shownUri)) {
-            shownUri = m.uri;
-            Thumbs.load(art, m, Ui.dp(this, 560), m.isVideo() ? "video" : "music");
-        }
-        play.setImageDrawable(new Icon(this, c.isPlaying() ? "pause" : "play", Ui.ACCENT));
-        ((Icon) shuffle.getDrawable()).setColor(c.getShuffleModeEnabled() ? Ui.ACCENT : Ui.MUTED);
-        int rm = c.getRepeatMode();
-        repeat.setImageDrawable(new Icon(this, rm == Player.REPEAT_MODE_ONE ? "repeat_one" : "repeat", rm == Player.REPEAT_MODE_OFF ? Ui.MUTED : Ui.ACCENT));
-        watchVideo.setVisibility(m.isVideo() ? View.VISIBLE : View.GONE);
-        float sp = c.getPlaybackParameters().speed;
-        speedLabel.setText(fmtSpeed(sp));
-        speedLabel.setTextColor(sp == 1f ? Ui.MUTED : Ui.ACCENT);
-        int ni = c.getNextMediaItemIndex();
-        if (ni >= 0 && ni < c.getMediaItemCount()) {
-            MediaInfo n = Media.info(c.getMediaItemAt(ni));
-            upNext.setText("UP NEXT   " + n.title + "  ·  " + (n.isVideo() ? "Video" : n.artistOrUnknown()));
-        } else upNext.setText("UP NEXT   End of queue");
-        updateLove();
-    }
-
-    private void updateLove() {
-        MediaInfo m = current();
-        boolean on = m != null && Store.isFav(this, m);
-        loveIcon.setImageDrawable(new Icon(this, on ? "heart_filled" : "heart", Ui.ACCENT));
+        }, true);
     }
 
     private void updateSleep() {
-        PlaybackService s = PlaybackService.instance;
-        if (s != null && s.timerEndOfSong()) { sleepChip.setText("⏱  Stops after this song"); sleepChip.setVisibility(View.VISIBLE); }
-        else if (s != null && s.timerLeftMs() > 0) { sleepChip.setText("⏱  Stops in " + Ui.time(s.timerLeftMs())); sleepChip.setVisibility(View.VISIBLE); }
-        else sleepChip.setVisibility(View.GONE);
+        PlaybackService svc = PlaybackService.instance;
+        if (svc == null) { sleepChip.setVisibility(View.GONE); return; }
+        long ms = svc.sleepLeftMs();
+        if (svc.sleepIsEndOfSong()) {
+            sleepChip.setText(R.string.stops_end_of_song);
+            sleepChip.setVisibility(View.VISIBLE);
+        } else if (ms > 0) {
+            sleepChip.setText(getString(R.string.stops_in, Ui.time(ms)));
+            sleepChip.setVisibility(View.VISIBLE);
+        } else sleepChip.setVisibility(View.GONE);
     }
 
-    static String fmtSpeed(float s) {
-        String t = String.format(Locale.US, "%.2f", s);
-        while (t.endsWith("0") && t.contains(".") && !t.endsWith(".0")) t = t.substring(0, t.length() - 1);
-        return t + "×";
+    private void updateFavourite() {
+        MediaInfo m = Media.current(controller);
+        boolean fav = m != null && Prefs.isFavourite(this, m);
+        optFav.setCompoundDrawablesRelativeWithIntrinsicBounds(0, fav ? R.drawable.ic_heart_filled : R.drawable.ic_heart, 0, 0);
+        optFav.setCompoundDrawableTintList(android.content.res.ColorStateList.valueOf(getColor(fav ? R.color.accent : R.color.text)));
+        optFav.setTextColor(getColor(fav ? R.color.accent : R.color.muted));
     }
 
-    private void watch() {
-        if (c == null) return;
-        List<MediaInfo> l = new ArrayList<>();
-        for (int i = 0; i < c.getMediaItemCount(); i++) l.add(Media.info(c.getMediaItemAt(i)));
-        int idx = c.getCurrentMediaItemIndex();
-        long p = c.getCurrentPosition();
-        c.pause();
-        Media.handoff = l;
-        startActivity(new Intent(this, PlayerActivity.class).putExtra("index", idx).putExtra("position", p));
-    }
-
-    private void menu() {
-        MediaInfo m = current();
+    private void toggleFavourite() {
+        MediaInfo m = Media.current(controller);
         if (m == null) return;
-        List<String> o = new ArrayList<>();
-        o.add("Add to playlist");
-        o.add("Share");
-        if (m.isOnline()) o.add("Download");
-        o.add("Details");
-        new AlertDialog.Builder(this).setItems(o.toArray(new String[0]), (d, w) -> {
-            switch (o.get(w)) {
-                case "Add to playlist": Actions.addToPlaylist(this, Collections.singletonList(m)); break;
-                case "Share": Media.share(this, Collections.singletonList(m)); break;
-                case "Download": Downloads.get(this, m.uri, m.title); break;
-                default: Actions.details(this, m, null);
-            }
-        }).show();
+        boolean now = Prefs.toggleFavourite(this, m);
+        Ui.toast(this, now ? getString(R.string.fav_added_to, Prefs.favouritesFor(m)) : getString(R.string.fav_removed_from, Prefs.favouritesFor(m)));
+        updateFavourite();
     }
 
-    @Override
-    protected void onActivityResult(int req, int res, Intent data) {
-        super.onActivityResult(req, res, data);
-        Actions.onResult(this, req, res);
+    private void updateUpNext() {
+        int next = controller.getNextMediaItemIndex();
+        if (next == C.INDEX_UNSET || next >= controller.getMediaItemCount()) {
+            upNext.setText(R.string.end_of_queue);
+            upNext.setTextColor(getColor(R.color.muted));
+            return;
+        }
+        MediaMetadata md = controller.getMediaItemAt(next).mediaMetadata;
+        String t = md.title == null ? getString(R.string.unknown) : md.title.toString();
+        if (md.artist != null) t += "  ·  " + md.artist;
+        upNext.setText(t);
+        upNext.setTextColor(getColor(R.color.text));
     }
 
-    // ---------------- sleep timer + speed sheet ----------------
-    private void timerSheet() { speedSheet(this, true); }
+    private void moreMenu() {
+        MediaInfo m = Media.current(controller);
+        if (m == null) return;
+        List<String> opts = new ArrayList<>();
+        List<String> ids = new ArrayList<>();
+        opts.add(getString(R.string.add_to_playlist)); ids.add("add");
+        if (!m.video) {
+            opts.add(getString(R.string.edit_info)); ids.add("edit");
+            opts.add(getString(R.string.set_as_ringtone)); ids.add("ringtone");
+        }
+        opts.add(getString(R.string.share)); ids.add("share");
+        if (Downloads.isOnline(m)) { opts.add(getString(R.string.download)); ids.add("download"); }
+        opts.add(getString(R.string.details)); ids.add("details");
+        Dialogs.builder(this)
+                .setTitle(m.title)
+                .setItems(opts.toArray(new String[0]), (d, w) -> {
+                    switch (ids.get(w)) {
+                        case "add": Dialogs.addToPlaylist(this, m); break;
+                        case "edit": MetaEditActivity.open(this, m); break;
+                        case "ringtone": Ringtones.set(this, m); break;
+                        case "share": Share.send(this, m); break;
+                        case "download": Downloads.start(this, m.uri, m.title); break;
+                        case "details": Dialogs.details(this, m); break;
+                    }
+                })
+                .show();
+    }
 
-    /** Shared with the video player (which shows only the speed part). */
-    static void speedSheet(Activity a, boolean withTimer) {
-        LinearLayout box = Ui.col(a);
-        Dialog[] d = new Dialog[1];
-        MediaController mc = Media.now();
-        if (withTimer) {
-            box.addView(Ui.label(a, "Sleep timer", 10, Ui.MUTED, 0.18f));
-            String[] names = {"Off", "15 min", "30 min", "45 min", "1 hour", "End of song"};
-            int[] mins = {0, 15, 30, 45, 60, -1};
-            LinearLayout r1 = Ui.row(a), r2 = Ui.row(a);
-            for (int i = 0; i < names.length; i++) {
-                final int m = mins[i];
-                PlaybackService s = PlaybackService.instance;
-                boolean on = s != null && (m == -1 ? s.timerEndOfSong() : m == 0 ? s.timerLeftMs() == 0 && !s.timerEndOfSong() : false);
-                TextView t = Ui.chip(a, names[i], on);
-                t.setOnClickListener(v -> {
-                    PlaybackService sv = PlaybackService.instance;
-                    if (sv != null) sv.setTimer(m);
-                    Ui.msg(a, m == 0 ? "Sleep timer off" : m == -1 ? "Stops after this song" : "Stops in " + names[mins.length == 0 ? 0 : indexOf(mins, m)]);
-                    d[0].dismiss();
-                });
-                (i < 3 ? r1 : r2).addView(t, Ui.lpm(a, 0, Ui.dp(a, 40), 0, 8, i % 3 == 2 ? 0 : 8, 0));
-                ((LinearLayout.LayoutParams) t.getLayoutParams()).weight = 1;
-            }
-            box.addView(r1);
-            box.addView(r2);
-        }
-        TextView sl = Ui.label(a, "Speed", 10, Ui.MUTED, 0.18f);
-        sl.setPadding(0, withTimer ? Ui.dp(a, 22) : 0, 0, 0);
-        box.addView(sl);
-        float cur = a instanceof PlayerActivity ? ((PlayerActivity) a).speed() : mc != null ? mc.getPlaybackParameters().speed : 1f;
-        TextView val = Ui.text(a, fmtSpeed(cur), 18, Ui.ACCENT);
-        val.setTypeface(null, Typeface.BOLD);
-        box.addView(val);
-        SeekBar s = new SeekBar(a);
-        Ui.styleSeek(s);
-        s.setMax(35);
-        s.setProgress(Math.round((cur - 0.25f) / 0.05f));
-        s.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            public void onProgressChanged(SeekBar sb, int p, boolean u) {
-                float sp = 0.25f + p * 0.05f;
-                val.setText(fmtSpeed(sp));
-                if (u) setSpeed(a, sp);
-            }
-            public void onStartTrackingTouch(SeekBar sb) {}
-            public void onStopTrackingTouch(SeekBar sb) {}
-        });
-        box.addView(s, Ui.lpm(a, Ui.MATCH, Ui.WRAP, -16, 8, -16, 0));
-        LinearLayout chips = Ui.row(a);
-        float[] presets = {0.75f, 1f, 1.25f, 1.5f, 2f};
-        for (int i = 0; i < presets.length; i++) {
-            float p = presets[i];
-            TextView t = Ui.chip(a, fmtSpeed(p), Math.abs(p - cur) < 0.01f);
-            t.setOnClickListener(v -> { setSpeed(a, p); s.setProgress(Math.round((p - 0.25f) / 0.05f)); d[0].dismiss(); });
-            chips.addView(t, Ui.lpm(a, 0, Ui.dp(a, 40), 0, 10, i == presets.length - 1 ? 0 : 6, 0));
-            ((LinearLayout.LayoutParams) t.getLayoutParams()).weight = 1;
-        }
-        box.addView(chips);
-        if (withTimer) {
-            Switch sw = Ui.toggle(a, Store.bool(a, "skip_silence", false));
-            sw.setOnCheckedChangeListener((x, on) -> {
-                Store.put(a, "skip_silence", on);
-                if (PlaybackService.instance != null) PlaybackService.instance.setSkipSilence(on);
+    /** A video sent to background play: open it again in the video player at the same spot. */
+    private void watchVideo() {
+        if (controller == null) return;
+        List<MediaInfo> list = new ArrayList<>();
+        for (int i = 0; i < controller.getMediaItemCount(); i++) list.add(Media.info(controller.getMediaItemAt(i), 0));
+        int index = controller.getCurrentMediaItemIndex();
+        long pos = controller.getCurrentPosition();
+        controller.stop();
+        controller.clearMediaItems();
+        PlayerActivity.open(this, list, index, pos);
+        finish();
+    }
+
+    // ── Karaoke: one tap; lyrics open big while singing ─────────────────────
+
+    private void toggleKaraoke() {
+        boolean on = !Prefs.karaoke(this);
+        Prefs.setKaraoke(this, on);
+        Ui.toast(this, on ? R.string.karaoke_now_on : R.string.karaoke_now_off);
+        showKaraoke();
+        if (on && Prefs.karaokeLyrics(this) && !lyricsOpen()) toggleLyrics();
+        if (lyrAdapter != null) lyrAdapter.notifyDataSetChanged();
+    }
+
+    private void showKaraoke() {
+        TextView opt = findViewById(R.id.opt_karaoke);
+        boolean on = Prefs.karaoke(this);
+        int c = getColor(on ? R.color.accent : R.color.text);
+        opt.setTextColor(getColor(on ? R.color.accent : R.color.muted));
+        opt.setCompoundDrawableTintList(android.content.res.ColorStateList.valueOf(c));
+    }
+
+    private boolean karaokeStyle() { return Prefs.karaoke(this) && Prefs.karaokeLyrics(this); }
+
+    // ── Lyrics ───────────────────────────────────────────────────────────────
+
+    private View lyricsPanel;
+    private RecyclerView lyrList;
+    private TextView lyrStatus, lyrSync;
+    private LyricAdapter lyrAdapter;
+    private Lyrics.Result lyr;
+    private String lyrFor;
+    private long lyrTouched = 0;
+    private int lyrCurrent = -1;
+
+    private boolean lyricsOpen() { return lyricsPanel != null && lyricsPanel.getVisibility() == View.VISIBLE; }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private void setupLyrics() {
+        lyricsPanel = findViewById(R.id.np_lyrics);
+        lyrList = findViewById(R.id.lyr_list);
+        lyrStatus = findViewById(R.id.lyr_status);
+        lyrSync = findViewById(R.id.lyr_sync);
+        lyrList.setLayoutManager(new LinearLayoutManager(this));
+        lyrAdapter = new LyricAdapter();
+        lyrList.setAdapter(lyrAdapter);
+        lyrList.setOnTouchListener((v, e) -> { lyrTouched = System.currentTimeMillis(); return false; });
+        findViewById(R.id.lyr_close).setOnClickListener(v -> toggleLyrics());
+        findViewById(R.id.lyr_minus).setOnClickListener(v -> nudge(-500));
+        findViewById(R.id.lyr_plus).setOnClickListener(v -> nudge(500));
+        findViewById(R.id.lyr_search).setOnClickListener(v -> searchAgain());
+        if (Prefs.sp(this).getBoolean("lyrics_open", false)) lyricsPanel.setVisibility(View.VISIBLE);
+        art.setVisibility(lyricsOpen() ? View.INVISIBLE : View.VISIBLE);
+    }
+
+    private void toggleLyrics() {
+        boolean open = !lyricsOpen();
+        lyricsPanel.setVisibility(open ? View.VISIBLE : View.GONE);
+        art.setVisibility(open ? View.INVISIBLE : View.VISIBLE);
+        Prefs.sp(this).edit().putBoolean("lyrics_open", open).apply();
+        TextView opt = findViewById(R.id.opt_lyrics);
+        opt.setTextColor(getColor(open ? R.color.accent : R.color.muted));
+        if (open) loadLyricsIfNeeded();
+    }
+
+    private void loadLyricsIfNeeded() {
+        MediaInfo m = Media.current(controller);
+        if (m == null || m.key().equals(lyrFor)) return;
+        lyrFor = m.key();
+        MediaMetadata md = controller.getMediaMetadata();
+        String t = md.title == null ? m.title : md.title.toString();
+        String a = md.artist == null ? "" : md.artist.toString();
+        String al = md.albumTitle == null ? "" : md.albumTitle.toString();
+        long dur = controller.getDuration() > 0 ? controller.getDuration() : 0;
+        fetchLyrics(m, t, a, al, dur, false);
+    }
+
+    private void fetchLyrics(MediaInfo m, String t, String a, String al, long dur, boolean onlineOnly) {
+        lyr = null;
+        lyrCurrent = -1;
+        lyrAdapter.notifyDataSetChanged();
+        lyrStatus.setText(R.string.lyr_looking);
+        lyrStatus.setVisibility(View.VISIBLE);
+        showSync(m);
+        final String want = m.key();
+        new Thread(() -> {
+            if (onlineOnly) Lyrics.forget(this, m);
+            Lyrics.Result r = onlineOnly ? Lyrics.online(this, m, t, a, al, dur) : Lyrics.find(this, m, t, a, al, dur);
+            ui.post(() -> {
+                if (!want.equals(lyrFor)) return;
+                lyr = r;
+                lyrCurrent = -1;
+                lyrAdapter.notifyDataSetChanged();
+                lyrList.scrollToPosition(0);
+                if (r.instrumental) { lyrStatus.setText(R.string.lyr_instrumental); lyrStatus.setVisibility(View.VISIBLE); }
+                else if (r.lines.isEmpty()) { lyrStatus.setText(R.string.lyr_none); lyrStatus.setVisibility(View.VISIBLE); }
+                else lyrStatus.setVisibility(View.GONE);
+                showSync(m);
             });
-            LinearLayout r = Ui.infoRow(a, "Skip silence", "Jumps over quiet gaps in songs", sw);
-            ((LinearLayout.LayoutParams) r.getLayoutParams()).topMargin = Ui.dp(a, 20);
-            box.addView(r);
+        }).start();
+    }
+
+    private void showSync(MediaInfo m) {
+        if (lyr != null && !lyr.lines.isEmpty() && !lyr.synced) { lyrSync.setText(R.string.lyr_plain); return; }
+        long off = Lyrics.offset(this, m);
+        lyrSync.setText(getString(R.string.lyr_sync, (off >= 0 ? "+" : "−") + String.format(java.util.Locale.US, "%.1f", Math.abs(off) / 1000f)));
+    }
+
+    private void nudge(long ms) {
+        MediaInfo m = Media.current(controller);
+        if (m == null) return;
+        Lyrics.setOffset(this, m, Lyrics.offset(this, m) + ms);
+        showSync(m);
+        lyrCurrent = -1;
+        updateLyricLine();
+    }
+
+    private void searchAgain() {
+        MediaInfo m = Media.current(controller);
+        if (m == null) return;
+        MediaMetadata md = controller.getMediaMetadata();
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        int pad = Ui.dp(this, 20);
+        box.setPadding(pad, pad / 2, pad, 0);
+        EditText t = new EditText(this);
+        t.setHint(R.string.f_title);
+        t.setSingleLine(true);
+        t.setText(Lyrics.cleanTitle(md.title == null ? m.title : md.title.toString()));
+        EditText a = new EditText(this);
+        a.setHint(R.string.f_artist);
+        a.setSingleLine(true);
+        a.setText(md.artist == null ? "" : md.artist);
+        box.addView(t);
+        box.addView(a);
+        Dialogs.builder(this)
+                .setTitle(R.string.lyr_search_again)
+                .setMessage(R.string.lyr_search_help)
+                .setView(box)
+                .setPositiveButton(R.string.search, (d, w) -> {
+                    lyrFor = m.key();
+                    fetchLyrics(m, t.getText().toString(), a.getText().toString(), "",
+                            controller == null ? 0 : Math.max(0, controller.getDuration()), true);
+                })
+                .setNegativeButton(R.string.cancel, null)
+                .show();
+    }
+
+    /** Highlights the line being sung and keeps it in view. */
+    private void updateLyricLine() {
+        if (!lyricsOpen() || controller == null || lyr == null || !lyr.synced || lyr.lines.isEmpty()) return;
+        MediaInfo m = Media.current(controller);
+        long pos = controller.getCurrentPosition() + (m == null ? 0 : Lyrics.offset(this, m));
+        int idx = -1;
+        for (int i = 0; i < lyr.lines.size(); i++) { if (lyr.lines.get(i).ms <= pos) idx = i; else break; }
+        if (idx == lyrCurrent) return;
+        int old = lyrCurrent;
+        lyrCurrent = idx;
+        if (old >= 0) lyrAdapter.notifyItemChanged(old);
+        if (idx >= 0) lyrAdapter.notifyItemChanged(idx);
+        if (idx >= 0 && System.currentTimeMillis() - lyrTouched > 4000) {
+            LinearLayoutManager lm = (LinearLayoutManager) lyrList.getLayoutManager();
+            androidx.recyclerview.widget.LinearSmoothScroller s = new androidx.recyclerview.widget.LinearSmoothScroller(this) {
+                @Override public int calculateDtToFit(int viewStart, int viewEnd, int boxStart, int boxEnd, int pref) {
+                    return (boxStart + (boxEnd - boxStart) / 3) - (viewStart + (viewEnd - viewStart) / 2);
+                }
+            };
+            s.setTargetPosition(idx);
+            if (lm != null) lm.startSmoothScroll(s);
         }
-        d[0] = Ui.sheet(a, box);
-        d[0].show();
     }
 
-    static int indexOf(int[] a, int v) { for (int i = 0; i < a.length; i++) if (a[i] == v) return i; return 0; }
+    private class LyricAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+        @Override public int getItemCount() { return lyr == null ? 0 : lyr.lines.size(); }
 
-    static void setSpeed(Activity a, float sp) {
-        if (a instanceof PlayerActivity) { ((PlayerActivity) a).setSpeed(sp); return; }
-        MediaController mc = Media.now();
-        if (mc != null) mc.setPlaybackParameters(new PlaybackParameters(sp));
+        @Override public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int type) {
+            return new RecyclerView.ViewHolder(LayoutInflater.from(parent.getContext()).inflate(R.layout.lyric_line, parent, false)) { };
+        }
+
+        @Override public void onBindViewHolder(RecyclerView.ViewHolder h, int position) {
+            Lyrics.Line l = lyr.lines.get(position);
+            TextView t = (TextView) h.itemView;
+            t.setText(l.text.isEmpty() ? "♪" : l.text);
+            boolean now = position == lyrCurrent;
+            boolean plain = !lyr.synced;
+            boolean big = karaokeStyle() && !plain;
+            t.setTextColor(getColor(now && big ? R.color.accent : plain || now ? R.color.text : R.color.muted));
+            t.setTextSize(now ? (big ? 27 : 20) : 17);
+            t.setAlpha(plain || now || lyrCurrent < 0 ? 1f : position < lyrCurrent ? 0.45f : 0.75f);
+            t.setTypeface(null, now ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
+            t.setOnClickListener(v -> {
+                if (!lyr.synced || controller == null || l.ms < 0) return;
+                MediaInfo m = Media.current(controller);
+                controller.seekTo(Math.max(0, l.ms - (m == null ? 0 : Lyrics.offset(NowPlayingActivity.this, m))));
+                lyrTouched = 0;
+            });
+        }
     }
 
-    // ---------------- queue sheet ----------------
-    private void queueSheet() {
-        if (c == null) return;
-        LinearLayout box = Ui.col(this);
-        LinearLayout head = Ui.row(this);
-        head.addView(Ui.label(this, "Queue", 13, Ui.TEXT, 0.2f), Ui.lpw(0, Ui.WRAP, 1));
-        TextView save = Ui.chip(this, "Save", false), clear = Ui.chip(this, "Clear", false);
-        head.addView(save, Ui.lpm(this, Ui.WRAP, Ui.dp(this, 36), 0, 0, 8, 0));
-        head.addView(clear, Ui.lp(Ui.WRAP, Ui.dp(this, 36)));
-        box.addView(head);
-        TextView hint = Ui.text(this, "Drag ≡ to reorder · swipe or ✕ to remove · tap to play", 12, Ui.MUTED);
-        hint.setPadding(0, Ui.dp(this, 8), 0, Ui.dp(this, 8));
-        box.addView(hint);
-        RecyclerView rv = new RecyclerView(this);
-        rv.setLayoutManager(new LinearLayoutManager(this));
-        QueueAdapter qa = new QueueAdapter();
-        rv.setAdapter(qa);
-        int hgt = (int) (getResources().getDisplayMetrics().heightPixels * 0.55);
-        box.addView(rv, Ui.lp(Ui.MATCH, hgt));
-        ItemTouchHelper th = new ItemTouchHelper(new ItemTouchHelper.SimpleCallback(ItemTouchHelper.UP | ItemTouchHelper.DOWN,
-                ItemTouchHelper.LEFT | ItemTouchHelper.RIGHT) {
-            @Override public boolean onMove(@NonNull RecyclerView r, @NonNull RecyclerView.ViewHolder a, @NonNull RecyclerView.ViewHolder b) {
-                int from = a.getAdapterPosition(), to = b.getAdapterPosition();
-                c.moveMediaItem(from, to);
-                qa.notifyItemMoved(from, to);
+    // ── Queue ────────────────────────────────────────────────────────────────
+
+    private QueueAdapter queueAdapter;
+
+    private void openQueue() {
+        if (controller == null) return;
+        View v = getLayoutInflater().inflate(R.layout.sheet_queue, null);
+        ((TextView) v.findViewById(R.id.q_title)).setTypeface(Ui.orbitron(this));
+        RecyclerView list = v.findViewById(R.id.q_list);
+        list.setLayoutManager(new LinearLayoutManager(this));
+        queueAdapter = new QueueAdapter();
+        list.setAdapter(queueAdapter);
+        ItemTouchHelper drag = new ItemTouchHelper(new ItemTouchHelper.SimpleCallback(
+                ItemTouchHelper.UP | ItemTouchHelper.DOWN, ItemTouchHelper.START | ItemTouchHelper.END) {
+            @Override public boolean onMove(RecyclerView rv, RecyclerView.ViewHolder a, RecyclerView.ViewHolder b) {
+                int from = a.getBindingAdapterPosition(), to = b.getBindingAdapterPosition();
+                if (from < 0 || to < 0 || controller == null) return false;
+                queueAdapter.moving = true;
+                controller.moveMediaItem(from, to);
+                queueAdapter.notifyItemMoved(from, to);
                 return true;
             }
-            @Override public void onSwiped(@NonNull RecyclerView.ViewHolder vh, int dir) {
-                int p = vh.getAdapterPosition();
-                c.removeMediaItem(p);
-                qa.notifyItemRemoved(p);
+            @Override public void onSwiped(RecyclerView.ViewHolder vh, int dir) {
+                int p = vh.getBindingAdapterPosition();
+                if (p >= 0 && controller != null) controller.removeMediaItem(p);
             }
+            @Override public void clearView(RecyclerView rv, RecyclerView.ViewHolder vh) {
+                super.clearView(rv, vh);
+                queueAdapter.moving = false;
+                queueAdapter.reload();
+            }
+            @Override public boolean isLongPressDragEnabled() { return false; }
         });
-        th.attachToRecyclerView(rv);
-        qa.helper = th;
-        Dialog d = Ui.sheet(this, box);
-        save.setOnClickListener(v -> Actions.newPlaylist(this, n -> {
-            List<MediaInfo> l = new ArrayList<>();
-            for (int i = 0; i < c.getMediaItemCount(); i++) l.add(Media.info(c.getMediaItemAt(i)));
-            Store.addTo(this, n, l);
-            Ui.msg(this, "Saved as " + n);
-        }));
-        clear.setOnClickListener(v -> {
-            int cur = c.getCurrentMediaItemIndex();
-            if (cur + 1 < c.getMediaItemCount()) c.removeMediaItems(cur + 1, c.getMediaItemCount());
-            if (cur > 0) c.removeMediaItems(0, cur);
-            qa.notifyDataSetChanged();
+        drag.attachToRecyclerView(list);
+        queueAdapter.drag = drag;
+        int cur = controller.getCurrentMediaItemIndex();
+        if (cur > 1) list.scrollToPosition(cur - 1);
+
+        Dialog d = SpeedSheet.bottom(this, v);
+        d.setOnDismissListener(x -> queueAdapter = null);
+        v.findViewById(R.id.q_clear).setOnClickListener(x -> {
+            if (controller == null) return;
+            int now = controller.getCurrentMediaItemIndex();
+            int count = controller.getMediaItemCount();
+            if (now + 1 < count) controller.removeMediaItems(now + 1, count);   // keep the song that's playing
+            if (now > 0) controller.removeMediaItems(0, now);
+            Ui.toast(this, R.string.queue_cleared);
         });
-        d.show();
-        rv.scrollToPosition(Math.max(0, c.getCurrentMediaItemIndex()));
+        v.findViewById(R.id.q_save).setOnClickListener(x -> {
+            if (controller == null) return;
+            final List<MediaInfo> all = new ArrayList<>();
+            for (int i = 0; i < controller.getMediaItemCount(); i++) all.add(Media.info(controller.getMediaItemAt(i), 0));
+            Dialogs.newPlaylist(this, name -> {
+                for (MediaInfo m : all) Playlists.add(this, name, m);
+                Ui.toast(this, getString(R.string.added_to, name));
+            });
+        });
     }
 
-    final class QueueAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
-        ItemTouchHelper helper;
+    private class QueueAdapter extends RecyclerView.Adapter<QueueAdapter.VH> {
+        ItemTouchHelper drag;
+        boolean moving = false;
+        private final List<MediaItem> items = new ArrayList<>();
 
-        @Override public int getItemCount() { return c == null ? 0 : c.getMediaItemCount(); }
+        QueueAdapter() { reload(); }
 
-        @NonNull @Override
-        public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup p, int t) {
-            LinearLayout r = Ui.row(NowPlayingActivity.this);
-            r.setPadding(0, Ui.dp(NowPlayingActivity.this, 4), 0, Ui.dp(NowPlayingActivity.this, 4));
-            r.setLayoutParams(new RecyclerView.LayoutParams(Ui.MATCH, Ui.dp(NowPlayingActivity.this, 58)));
-            return new RecyclerView.ViewHolder(r) {};
+        void reload() {
+            if (moving || controller == null) return;
+            items.clear();
+            for (int i = 0; i < controller.getMediaItemCount(); i++) items.add(controller.getMediaItemAt(i));
+            notifyDataSetChanged();
         }
 
-        @Override
-        public void onBindViewHolder(@NonNull RecyclerView.ViewHolder vh, int pos) {
-            LinearLayout r = (LinearLayout) vh.itemView;
-            r.removeAllViews();
-            MediaInfo m = Media.info(c.getMediaItemAt(pos));
-            boolean cur = pos == c.getCurrentMediaItemIndex();
-            ImageView drag = new ImageView(NowPlayingActivity.this);
-            drag.setImageDrawable(new Icon(NowPlayingActivity.this, "menu", Ui.MUTED));
-            drag.setPadding(Ui.dp(NowPlayingActivity.this, 10), Ui.dp(NowPlayingActivity.this, 10), Ui.dp(NowPlayingActivity.this, 10), Ui.dp(NowPlayingActivity.this, 10));
-            drag.setOnTouchListener((v, e) -> { if (e.getActionMasked() == android.view.MotionEvent.ACTION_DOWN && helper != null) helper.startDrag(vh); return false; });
-            r.addView(drag, Ui.lp(Ui.dp(NowPlayingActivity.this, 44), Ui.dp(NowPlayingActivity.this, 44)));
-            LinearLayout t = Ui.col(NowPlayingActivity.this);
-            TextView tt = Ui.single(Ui.text(NowPlayingActivity.this, m.title, 14, cur ? Ui.ACCENT : Ui.TEXT));
-            TextView st = Ui.single(Ui.text(NowPlayingActivity.this, cur ? "Playing now" : m.isVideo() ? "Video" : m.artistOrUnknown(), 12, Ui.MUTED));
-            t.addView(tt);
-            t.addView(st);
-            r.addView(t, Ui.lpw(0, Ui.WRAP, 1));
-            ImageButton x = Ui.iconBtn(NowPlayingActivity.this, "close", 44, Ui.MUTED);
-            x.setOnClickListener(v -> { int p = vh.getAdapterPosition(); if (p >= 0) { c.removeMediaItem(p); notifyItemRemoved(p); } });
-            r.addView(x);
-            r.setOnClickListener(v -> { int p = vh.getAdapterPosition(); if (p >= 0) { c.seekTo(p, 0); c.play(); notifyDataSetChanged(); } });
+        @Override public int getItemCount() { return items.size(); }
+
+        @Override public VH onCreateViewHolder(ViewGroup parent, int type) {
+            return new VH(LayoutInflater.from(parent.getContext()).inflate(R.layout.queue_item, parent, false));
+        }
+
+        @SuppressLint("ClickableViewAccessibility")
+        @Override public void onBindViewHolder(VH h, int position) {
+            MediaMetadata md = items.get(position).mediaMetadata;
+            boolean now = controller != null && position == controller.getCurrentMediaItemIndex();
+            h.title.setText(md.title == null ? getString(R.string.unknown) : md.title);
+            h.title.setTextColor(getColor(now ? R.color.accent : R.color.text));
+            h.sub.setText(now ? getString(R.string.playing_now) : (md.artist == null ? "" : md.artist));
+            h.itemView.setSelected(now);
+            h.itemView.setOnClickListener(v -> {
+                int p = h.getBindingAdapterPosition();
+                if (p >= 0 && controller != null) { controller.seekTo(p, 0); controller.play(); }
+            });
+            h.remove.setOnClickListener(v -> {
+                int p = h.getBindingAdapterPosition();
+                if (p >= 0 && controller != null) controller.removeMediaItem(p);
+            });
+            h.handle.setOnTouchListener((v, e) -> {
+                if (e.getActionMasked() == MotionEvent.ACTION_DOWN && drag != null) drag.startDrag(h);
+                return false;
+            });
+        }
+
+        class VH extends RecyclerView.ViewHolder {
+            final TextView title, sub;
+            final View handle, remove;
+            VH(View v) {
+                super(v);
+                title = v.findViewById(R.id.qi_title);
+                sub = v.findViewById(R.id.qi_sub);
+                handle = v.findViewById(R.id.qi_drag);
+                remove = v.findViewById(R.id.qi_remove);
+            }
         }
     }
 }

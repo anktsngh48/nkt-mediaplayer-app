@@ -122,6 +122,77 @@ public final class Prefs {
     public static int videoOrientation(Context c) { return sp(c).getInt("video_orient", 0); }
     public static void setVideoOrientation(Context c, int v) { sp(c).edit().putInt("video_orient", v).apply(); }
 
+
+    // ── Start page (chosen with ⌂ in the ☰ menu) ──
+    public static String startPage(Context c) { return sp(c).getString("start_page", "songs"); }
+    public static void setStartPage(Context c, String v) { sp(c).edit().putString("start_page", v).apply(); }
+
+    // ── View per page: list, grid, squares (songs), folders (videos) ──
+    public static String view(Context c, String page, String def) {
+        SharedPreferences p = sp(c);
+        if (!p.contains("view_" + page)) {
+            // older builds kept two switches; read them once
+            if ("songs".equals(page) && p.getBoolean("squares", false)) return "squares";
+            if ("videos".equals(page) && p.getBoolean("videos_grid", false)) return "grid";
+        }
+        return p.getString("view_" + page, def);
+    }
+    public static void setView(Context c, String page, String v) { sp(c).edit().putString("view_" + page, v).apply(); }
+
+    /** Tiles per row in a grid (pinch to change). */
+    public static int cols(Context c, String page, int def) { return sp(c).getInt(page + "_cols", def); }
+    public static void setCols(Context c, String page, int v) { sp(c).edit().putInt(page + "_cols", v).apply(); }
+
+    // ── Folders page: hide only what is switched on here ──
+    public static boolean hideDot(Context c) { return sp(c).getBoolean("hide_dot", false); }
+    public static boolean hideNomedia(Context c) { return sp(c).getBoolean("hide_nomedia", false); }
+    public static boolean hideThumbDirs(Context c) { return sp(c).getBoolean("hide_thumbdirs", false); }
+    public static void setBool(Context c, String k, boolean v) { sp(c).edit().putBoolean(k, v).apply(); }
+    public static boolean foldersFirst(Context c, String page) { return sp(c).getBoolean("folders_first_" + page, true); }
+    public static void setFoldersFirst(Context c, String page, boolean v) { sp(c).edit().putBoolean("folders_first_" + page, v).apply(); }
+
+    // ── When a video ends: 0 play next, 1 go back, 2 stop on the last frame ──
+    public static int videoEnd(Context c) {
+        SharedPreferences p = sp(c);
+        if (!p.contains("video_end")) return p.getBoolean("video_autonext", true) ? 0 : 2;
+        String v = p.getString("video_end", "next");
+        return "back".equals(v) ? 1 : "stop".equals(v) ? 2 : 0;
+    }
+    public static void setVideoEnd(Context c, int v) {
+        sp(c).edit().putString("video_end", v == 1 ? "back" : v == 2 ? "stop" : "next").apply();
+    }
+
+    // ── Karaoke: strength 0 light, 1 normal, 2 strong; key in semitones per song ──
+    public static boolean karaoke(Context c) { return sp(c).getBoolean("karaoke", false); }
+    public static void setKaraoke(Context c, boolean v) { sp(c).edit().putBoolean("karaoke", v).apply(); KaraokeProcessor.enabled = v; }
+    public static int karaokeStrength(Context c) {
+        String v = sp(c).getString("karaoke_strength", "normal");
+        return "light".equals(v) ? 0 : "strong".equals(v) ? 2 : 1;
+    }
+    public static void setKaraokeStrength(Context c, int v) {
+        sp(c).edit().putString("karaoke_strength", v == 0 ? "light" : v == 2 ? "strong" : "normal").apply();
+        KaraokeProcessor.strength = v;
+    }
+    public static boolean karaokeLyrics(Context c) { return sp(c).getBoolean("karaoke_lyrics", true); }
+    public static int key(Context c, String mediaId) { return mediaId == null ? 0 : sp(c).getInt("key_" + Lyrics.idOf(mediaId), 0); }
+    public static void setKey(Context c, String mediaId, int semis) {
+        if (mediaId == null) return;
+        if (semis == 0) sp(c).edit().remove("key_" + Lyrics.idOf(mediaId)).apply();
+        else sp(c).edit().putInt("key_" + Lyrics.idOf(mediaId), semis).apply();
+    }
+    /** Pitch multiplier for a key change in semitones. */
+    public static float pitchFor(int semis) { return (float) Math.pow(2, semis / 12.0); }
+
+    // ── Text editor & PDF reader ──
+    public static int editorSize(Context c) { return sp(c).getInt("editor_size", 14); }
+    public static void setEditorSize(Context c, int v) { sp(c).edit().putInt("editor_size", v).apply(); }
+    public static boolean editorWrap(Context c) { return sp(c).getBoolean("editor_wrap", true); }
+    public static void setEditorWrap(Context c, boolean v) { sp(c).edit().putBoolean("editor_wrap", v).apply(); }
+    public static int pdfPage(Context c, String key) { return sp(c).getInt("pdf_page_" + Lyrics.idOf(key), 0); }
+    public static void setPdfPage(Context c, String key, int page) { sp(c).edit().putInt("pdf_page_" + Lyrics.idOf(key), page).apply(); }
+    public static boolean pdfNight(Context c) { return sp(c).getBoolean("pdf_night", false); }
+    public static void setPdfNight(Context c, boolean v) { sp(c).edit().putBoolean("pdf_night", v).apply(); }
+
     // ── helpers ──
     public static List<String> keys(JSONObject o) {
         List<String> l = new ArrayList<>();

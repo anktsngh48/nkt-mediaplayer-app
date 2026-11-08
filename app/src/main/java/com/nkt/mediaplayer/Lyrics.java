@@ -90,14 +90,17 @@ public final class Lyrics {
 
     // ── Saved copies & sync offset ──
 
-    private static String id(MediaInfo m) {
+    private static String id(MediaInfo m) { return idOf(m.key()); }
+
+    /** Short stable id for a file or link (first 10 bytes of SHA-1, hex). */
+    public static String idOf(String key) {
         try {
             MessageDigest d = MessageDigest.getInstance("SHA-1");
-            byte[] h = d.digest(m.key().getBytes(StandardCharsets.UTF_8));
+            byte[] h = d.digest(key.getBytes(StandardCharsets.UTF_8));
             StringBuilder b = new StringBuilder();
             for (int i = 0; i < 10; i++) b.append(String.format(Locale.US, "%02x", h[i]));
             return b.toString();
-        } catch (Exception e) { return String.valueOf(m.key().hashCode()); }
+        } catch (Exception e) { return String.valueOf(key.hashCode()); }
     }
 
     private static File cacheFile(Context c, MediaInfo m) {

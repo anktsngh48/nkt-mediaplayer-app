@@ -6,25 +6,43 @@ import android.content.Context;
 import android.net.Uri;
 import android.os.Environment;
 
-/** Downloads a link with Android's download manager into Download/NKT MP. */
+/** Saves an online link (AWS/S3, any direct file link) to Download/NKT Media Player using Android's downloader. */
 public final class Downloads {
-    private Downloads() {}
 
-    public static void get(Activity a, String url, String title) {
+    private Downloads() { }
+
+    public static boolean isOnline(MediaInfo m) {
+        if (m == null || m.uri.getScheme() == null) return false;
+        String s = m.uri.getScheme();
+        return ("http".equals(s) || "https".equals(s)) && !YouTube.isYouTube(m.uri.toString());
+    }
+
+    public static void start(Activity a, Uri link, String fallbackName) {
         try {
-            String name = Uri.parse(url).getLastPathSegment();
-            if (name == null || name.isEmpty()) name = title;
-            name = name.replaceAll("[\\\\/:*?\"<>|]", "_");
-            if (name.length() > 100) name = name.substring(name.length() - 100);
-            if (!name.contains(".")) name = name + ".mp4";
-            DownloadManager.Request r = new DownloadManager.Request(Uri.parse(url))
+            String name = fileName(link, fallbackName);
+            DownloadManager.Request r = new DownloadManager.Request(link)
                     .setTitle(name)
+                    .setDescription(a.getString(R.string.app_name))
                     .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                    .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "NKT MP/" + name);
-            ((DownloadManager) a.getSystemService(Context.DOWNLOAD_SERVICE)).enqueue(r);
-            Ui.msg(a, "Downloading " + name + " — see the notification");
+                    .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "NKT Media Player/" + name);
+            DownloadManager dm = (DownloadManager) a.getSystemService(Context.DOWNLOAD_SERVICE);
+            dm.enqueue(r);
+            Ui.toast(a, a.getString(R.string.download_started, name));
         } catch (Exception e) {
-            Ui.msg(a, "Couldn't start the download");
+            Ui.toast(a, R.string.download_failed);
         }
+    }
+
+    /** The file name from the link (without ?query), or the title. */
+    static String fileName(Uri link, String fallback) {
+        String last = link.getLastPathSegment();
+        String n = last == null ? "" : last.replaceAll("[\\\\/:*?\"<>|]", "_").trim();
+        if (n.isEmpty() || !n.contains(".")) {
+            String f = fallback == null || fallback.trim().isEmpty() ? "download" : fallback.replaceAll("[\\\\/:*?\"<>|]", "_").trim();
+            n = n.isEmpty() ? f : n;
+            if (!n.contains(".")) n = n + ".mp4";
+        }
+        if (n.length() > 100) n = n.substring(n.length() - 100);
+        return n;
     }
 }

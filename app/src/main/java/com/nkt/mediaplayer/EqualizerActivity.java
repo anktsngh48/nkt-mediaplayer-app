@@ -1,18 +1,19 @@
 package com.nkt.mediaplayer;
 
 import android.app.Activity;
-import android.media.audiofx.Equalizer;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.view.Gravity;
-import android.widget.ImageButton;
-import android.widget.ImageView;
+import android.view.View;
+import android.view.ViewGroup;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.Switch;
 import android.widget.TextView;
+
+import androidx.media3.session.MediaController;
+
+import com.google.common.util.concurrent.ListenableFuture;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -21,242 +22,372 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-/** Phone equalizer, bass, surround, loudness, plus NKT MP's own karaoke (vocal removal). */
+/** Equalizer: on/off, karaoke, presets, bands, bass boost, surround, loudness. Saved and re-applied every time. */
 public class EqualizerActivity extends Activity {
-    private LinearLayout body;
-    private Switch onSw;
-    private TextView karStatus;
-    private final Handler h = new Handler(Looper.getMainLooper());
+
+    private final Handler ui = new Handler(Looper.getMainLooper());
+    private ListenableFuture<MediaController> future;
+    private JSONObject s;
     private final List<SeekBar> bandBars = new ArrayList<>();
-    private final List<TextView> bandVals = new ArrayList<>();
-    private LinearLayout presetRow;
+    private final List<TextView> bandValues = new ArrayList<>();
+    private final List<TextView> presetChips = new ArrayList<>();
+    private int[] range = {-1500, 1500};
+    private boolean built = false;
 
     @Override
-    protected void onCreate(Bundle b) {
-        super.onCreate(b);
-        ScrollView sv = new ScrollView(this);
-        sv.setBackgroundColor(Ui.BG);
-        LinearLayout col = Ui.col(this);
-        col.setPadding(Ui.dp(this, 16), Ui.dp(this, 8), Ui.dp(this, 16), Ui.dp(this, 24));
-        sv.addView(col);
-        LinearLayout top = Ui.row(this);
-        ImageButton back = Ui.roundBtn(this, "back", 44, Ui.TEXT, true);
-        back.setOnClickListener(v -> finish());
-        top.addView(back);
-        TextView t = Ui.label(this, "Equalizer", 13, Ui.TEXT, 0.2f);
-        t.setPadding(Ui.dp(this, 12), 0, 0, 0);
-        top.addView(t, Ui.lpw(0, Ui.WRAP, 1));
-        onSw = Ui.toggle(this, AudioFx.state(this).optBoolean("on", false));
-        onSw.setOnCheckedChangeListener((x, on) -> edit(o -> o.put("on", on)));
-        top.addView(onSw);
-        col.addView(top);
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_equalizer);
+        Ui.padForSystemBars(findViewById(R.id.root));
+        ((TextView) findViewById(R.id.eq_title)).setTypeface(Ui.orbitron(this));
+        findViewById(R.id.eq_back).setOnClickListener(v -> finish());
+        s = Prefs.eq(this);
 
-        // karaoke card
-        LinearLayout kc = Ui.col(this);
-        kc.setBackground(Ui.rect(this, Ui.CARD, 16, Ui.BORDER, 1));
-        kc.setPadding(Ui.dp(this, 14), Ui.dp(this, 14), Ui.dp(this, 14), Ui.dp(this, 14));
-        LinearLayout kr = Ui.row(this);
-        ImageView mic = new ImageView(this);
-        mic.setImageDrawable(new Icon(this, "mic_off", Ui.ACCENT));
-        mic.setBackground(Ui.rect(this, 0x1F00E5FF, 12, 0, 0));
-        int mp = Ui.dp(this, 10);
-        mic.setPadding(mp, mp, mp, mp);
-        kr.addView(mic, Ui.lp(Ui.dp(this, 40), Ui.dp(this, 40)));
-        LinearLayout kt = Ui.col(this);
-        kt.setPadding(Ui.dp(this, 12), 0, Ui.dp(this, 8), 0);
-        TextView kn = Ui.text(this, "Karaoke", 15, Ui.TEXT);
-        kn.setTypeface(null, android.graphics.Typeface.BOLD);
-        kt.addView(kn);
-        kt.addView(Ui.text(this, "Removes the main vocals (works best on studio songs)", 12, Ui.MUTED));
-        kr.addView(kt, Ui.lpw(0, Ui.WRAP, 1));
-        Switch ks = Ui.toggle(this, Store.bool(this, "karaoke", false));
-        ks.setOnCheckedChangeListener((x, on) -> { Store.put(this, "karaoke", on); KaraokeProcessor.enabled = on; });
-        kr.addView(ks);
-        kc.addView(kr);
-        karStatus = Ui.text(this, "", 12, Ui.MUTED);
-        karStatus.setPadding(Ui.dp(this, 52), Ui.dp(this, 10), 0, 0);
-        kc.addView(karStatus);
-        LinearLayout str = Ui.row(this);
-        str.setPadding(Ui.dp(this, 52), Ui.dp(this, 10), 0, 0);
-        TextView sl = Ui.label(this, "Strength", 9, Ui.MUTED, 0.16f);
-        str.addView(sl, Ui.lp(Ui.dp(this, 76), Ui.WRAP));
-        String[] names = {"Light", "Normal", "Strong"};
-        float[] vals = {0.6f, 0.85f, 1f};
-        List<TextView> chips = new ArrayList<>();
+        Switch on = findViewById(R.id.eq_on);
+        on.setChecked(s.optBoolean("on", false));
+        on.setOnCheckedChangeListener((b, v) -> { put("on", v); save(); });
+
+        Switch karaoke = findViewById(R.id.eq_karaoke);
+        karaoke.setChecked(Prefs.karaoke(this));
+        karaoke.setOnCheckedChangeListener((b, v) -> {
+            Prefs.setKaraoke(this, v);
+            karaokeStatus();
+        });
+        findViewById(R.id.eq_karaoke_row).setOnClickListener(v -> karaoke.toggle());
+        buildKaraokeMore();
+
+        findViewById(R.id.eq_reset).setOnClickListener(v -> {
+            s = new JSONObject();
+            put("on", ((Switch) findViewById(R.id.eq_on)).isChecked());
+            put("preset", -1);
+            JSONArray zero = new JSONArray();
+            for (int i = 0; i < bandBars.size(); i++) zero.put(0);
+            put("bands", zero);
+            save();
+            built = false;
+            build();
+        });
+    }
+
+    // ── Karaoke: strength, key of this song, lyrics while singing ────────────
+
+    private android.widget.TextView keyValue;
+    private final android.widget.TextView[] strengthSegs = new android.widget.TextView[3];
+
+    private void buildKaraokeMore() {
+        android.widget.LinearLayout box = findViewById(R.id.eq_karaoke_more);
+        box.removeAllViews();
+        int dp = Ui.dp(this, 1);
+        box.addView(caption(R.string.strength_caps));
+        android.widget.LinearLayout seg = new android.widget.LinearLayout(this);
+        seg.setBackgroundResource(R.drawable.bg_segment_box);
+        seg.setPadding(2 * dp, 2 * dp, 2 * dp, 2 * dp);
+        String[] names = getResources().getStringArray(R.array.karaoke_strengths);
         for (int i = 0; i < 3; i++) {
-            float v = vals[i];
-            TextView c = Ui.chip(this, names[i], Math.abs(KaraokeProcessor.strength - v) < 0.01f);
-            chips.add(c);
-            c.setOnClickListener(x -> {
-                KaraokeProcessor.strength = v;
-                Store.prefs(this).edit().putFloat("karaoke_strength", v).apply();
-                for (int k = 0; k < 3; k++) Ui.setChip(this, chips.get(k), Math.abs(vals[k] - v) < 0.01f);
-            });
-            str.addView(c, Ui.lpm(this, 0, Ui.dp(this, 34), 0, 0, 6, 0));
-            ((LinearLayout.LayoutParams) c.getLayoutParams()).weight = 1;
+            final int lvl = i;
+            android.widget.TextView t = new android.widget.TextView(this);
+            t.setText(names[i].toUpperCase(java.util.Locale.ROOT));
+            t.setTypeface(Ui.orbitron(this));
+            t.setTextSize(10);
+            t.setLetterSpacing(0.1f);
+            t.setGravity(android.view.Gravity.CENTER);
+            t.setBackgroundResource(R.drawable.bg_segment);
+            t.setPadding(0, 9 * dp, 0, 9 * dp);
+            t.setOnClickListener(v -> { Prefs.setKaraokeStrength(this, lvl); showStrength(); karaokeStatus(); });
+            strengthSegs[i] = t;
+            seg.addView(t, new android.widget.LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         }
-        kc.addView(str);
-        col.addView(kc, Ui.lpm(this, Ui.MATCH, Ui.WRAP, 0, 16, 0, 0));
+        box.addView(seg);
+        showStrength();
 
-        body = Ui.col(this);
-        col.addView(body);
-        setContentView(sv);
-        Ui.edgeToEdge(this, sv);
-        // make sure the music service (and its effects) exist
-        Media.get(this, c -> h.post(this::buildEq));
-        buildEq();
+        box.addView(caption(R.string.key_caps));
+        android.widget.LinearLayout keyRow = new android.widget.LinearLayout(this);
+        keyRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        keyRow.addView(keyButton(R.drawable.ic_minus, R.string.cd_key_down, () -> changeKey(-1)));
+        keyValue = new android.widget.TextView(this);
+        keyValue.setTextColor(getColor(R.color.text));
+        keyValue.setTextSize(15);
+        keyValue.setGravity(android.view.Gravity.CENTER);
+        keyRow.addView(keyValue, new android.widget.LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        keyRow.addView(keyButton(R.drawable.ic_plus, R.string.cd_key_up, () -> changeKey(1)));
+        keyRow.addView(keyButton(R.drawable.ic_refresh, R.string.cd_key_reset, () -> changeKey(0)));
+        box.addView(keyRow);
+        showKey();
+
+        android.widget.LinearLayout lyr = new android.widget.LinearLayout(this);
+        lyr.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        lyr.setPadding(0, 10 * dp, 0, 0);
+        android.widget.LinearLayout texts = new android.widget.LinearLayout(this);
+        texts.setOrientation(android.widget.LinearLayout.VERTICAL);
+        android.widget.TextView t1 = new android.widget.TextView(this);
+        t1.setText(R.string.karaoke_lyrics);
+        t1.setTextColor(getColor(R.color.text));
+        t1.setTextSize(14);
+        android.widget.TextView t2 = new android.widget.TextView(this);
+        t2.setText(R.string.karaoke_lyrics_sub);
+        t2.setTextColor(getColor(R.color.muted));
+        t2.setTextSize(12);
+        texts.addView(t1);
+        texts.addView(t2);
+        lyr.addView(texts, new android.widget.LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        Switch sw = new Switch(this);
+        sw.setChecked(Prefs.karaokeLyrics(this));
+        sw.setThumbTintList(android.content.res.ColorStateList.valueOf(getColor(R.color.accent)));
+        sw.setOnCheckedChangeListener((b, on) -> Prefs.setBool(this, "karaoke_lyrics", on));
+        lyr.addView(sw);
+        lyr.setOnClickListener(v -> sw.toggle());
+        box.addView(lyr);
     }
 
-    interface Edit { void apply(JSONObject o) throws Exception; }
-
-    private void edit(Edit e) {
-        JSONObject o = AudioFx.state(this);
-        try { e.apply(o); } catch (Exception ignored) {}
-        AudioFx.save(this, o);
+    private android.widget.TextView caption(int text) {
+        android.widget.TextView t = new android.widget.TextView(this);
+        t.setText(text);
+        t.setTypeface(Ui.orbitron(this));
+        t.setTextSize(9.5f);
+        t.setLetterSpacing(0.14f);
+        t.setTextColor(getColor(R.color.muted));
+        int dp = Ui.dp(this, 1);
+        t.setPadding(0, 8 * dp, 0, 6 * dp);
+        return t;
     }
 
-    private void buildEq() {
-        body.removeAllViews();
-        bandBars.clear();
-        bandVals.clear();
-        Equalizer eq = AudioFx.eq;
-        if (eq == null) {
-            TextView t = Ui.text(this, PlaybackService.instance == null ? "Play a song once to set up the equalizer." :
-                    "This phone doesn't offer an equalizer to apps. Karaoke still works.", 14, Ui.MUTED);
-            t.setPadding(Ui.dp(this, 4), Ui.dp(this, 20), 0, 0);
-            body.addView(t);
-            return;
+    private android.widget.ImageButton keyButton(int icon, int desc, Runnable r) {
+        android.widget.ImageButton b = new android.widget.ImageButton(this);
+        b.setImageResource(icon);
+        b.setImageTintList(android.content.res.ColorStateList.valueOf(getColor(R.color.accent)));
+        b.setBackgroundResource(R.drawable.bg_round_btn);
+        b.setContentDescription(getString(desc));
+        b.setOnClickListener(v -> r.run());
+        int s = Ui.dp(this, 40);
+        android.widget.LinearLayout.LayoutParams lp = new android.widget.LinearLayout.LayoutParams(s, s);
+        lp.setMarginStart(Ui.dp(this, 6));
+        b.setLayoutParams(lp);
+        return b;
+    }
+
+    private void showStrength() {
+        int cur = Prefs.karaokeStrength(this);
+        for (int i = 0; i < 3; i++) {
+            strengthSegs[i].setSelected(i == cur);
+            strengthSegs[i].setTextColor(getColor(i == cur ? R.color.accent : R.color.muted));
         }
-        JSONObject st = AudioFx.state(this);
-        body.addView(Ui.section(this, "Presets"));
-        presetRow = Ui.row(this);
-        body.addView(Ui.chipRow(this, presetRow));
-        int cur = st.optInt("preset", -1);
-        List<String> pn = new ArrayList<>();
-        pn.add("Custom");
-        try { for (short i = 0; i < eq.getNumberOfPresets(); i++) pn.add(eq.getPresetName(i)); } catch (Throwable ignored) {}
-        for (int i = 0; i < pn.size(); i++) {
-            final int p = i - 1;
-            TextView c = Ui.chip(this, pn.get(i), p == cur);
-            c.setOnClickListener(v -> {
-                edit(o -> { o.put("preset", p); o.put("on", true); });
-                onSw.setChecked(true);
-                if (p >= 0) {
-                    JSONArray arr = new JSONArray();
-                    try { for (short k = 0; k < eq.getNumberOfBands(); k++) arr.put(eq.getBandLevel(k)); } catch (Throwable ignored) {}
-                    edit(o -> o.put("bands", arr));
-                }
-                buildEq();
-            });
-            presetRow.addView(c, Ui.lpm(this, Ui.WRAP, Ui.dp(this, 36), 0, 0, 8, 0));
-        }
-        body.addView(Ui.section(this, "Bands"));
-        short[] range;
-        try { range = eq.getBandLevelRange(); } catch (Throwable t) { range = new short[]{-1500, 1500}; }
-        final short min = range[0], max = range[1];
-        JSONArray bands = st.optJSONArray("bands");
-        short n;
-        try { n = eq.getNumberOfBands(); } catch (Throwable t) { n = 0; }
-        for (short i = 0; i < n; i++) {
-            final short band = i;
-            LinearLayout r = Ui.row(this);
-            int hz;
-            try { hz = eq.getCenterFreq(band) / 1000; } catch (Throwable t) { hz = 0; }
-            TextView lab = Ui.text(this, hz >= 1000 ? (hz / 1000) + "k Hz" : hz + " Hz", 12, Ui.MUTED);
-            r.addView(lab, Ui.lp(Ui.dp(this, 60), Ui.WRAP));
-            SeekBar s = new SeekBar(this);
-            Ui.styleSeek(s);
-            s.setMax(max - min);
-            int lvl;
-            try { lvl = bands != null && band < bands.length() ? bands.optInt(band) : eq.getBandLevel(band); } catch (Throwable t) { lvl = 0; }
-            s.setProgress(lvl - min);
-            TextView val = Ui.text(this, db(lvl), 12, Ui.ACCENT);
-            val.setGravity(Gravity.END);
-            s.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-                public void onProgressChanged(SeekBar sb, int p, boolean u) {
-                    val.setText(db(p + min));
-                    if (!u) return;
-                    try { eq.setBandLevel(band, (short) (p + min)); } catch (Throwable ignored) {}
-                }
-                public void onStartTrackingTouch(SeekBar sb) {}
-                public void onStopTrackingTouch(SeekBar sb) {
-                    edit(o -> {
-                        JSONArray a = new JSONArray();
-                        for (SeekBar x : bandBars) a.put(x.getProgress() + min);
-                        o.put("bands", a);
-                        o.put("preset", -1);
-                        o.put("on", true);
-                    });
-                    onSw.setChecked(true);
-                    refreshPresetChips();
-                }
-            });
-            bandBars.add(s);
-            bandVals.add(val);
-            r.addView(s, Ui.lpw(0, Ui.WRAP, 1));
-            r.addView(val, Ui.lp(Ui.dp(this, 56), Ui.WRAP));
-            body.addView(r, Ui.lp(Ui.MATCH, Ui.dp(this, 42)));
-        }
-        body.addView(Ui.section(this, "Effects"));
-        effect("Bass", "bass", AudioFx.bass != null);
-        effect("Surround", "virt", AudioFx.virt != null);
-        effect("Loudness", "loud", AudioFx.loud != null);
-        TextView reset = Ui.pill(this, "RESET", false, Ui.ACCENT);
-        reset.setOnClickListener(v -> {
-            edit(o -> {
-                JSONArray a = new JSONArray();
-                for (int i = 0; i < bandBars.size(); i++) a.put(0);
-                o.put("bands", a); o.put("preset", -1); o.put("bass", 0); o.put("virt", 0); o.put("loud", 0);
-            });
-            buildEq();
-        });
-        LinearLayout.LayoutParams rp = Ui.lpm(this, Ui.WRAP, Ui.dp(this, 46), 0, 24, 0, 0);
-        rp.gravity = Gravity.CENTER_HORIZONTAL;
-        body.addView(reset, rp);
     }
 
-    private void refreshPresetChips() {
-        if (presetRow == null) return;
-        for (int i = 0; i < presetRow.getChildCount(); i++) Ui.setChip(this, (TextView) presetRow.getChildAt(i), i == 0);
+    private String currentSong() {
+        PlaybackService svc = PlaybackService.instance;
+        return svc == null ? null : svc.currentMediaId();
     }
 
-    private void effect(String name, String key, boolean available) {
-        if (!available) return;
-        LinearLayout r = Ui.row(this);
-        r.addView(Ui.text(this, name, 13, Ui.TEXT), Ui.lp(Ui.dp(this, 80), Ui.WRAP));
-        SeekBar s = new SeekBar(this);
-        Ui.styleSeek(s);
-        s.setMax(1000);
-        s.setProgress(AudioFx.state(this).optInt(key, 0));
-        TextView val = Ui.text(this, (s.getProgress() / 10) + "%", 12, Ui.ACCENT);
-        val.setGravity(Gravity.END);
-        s.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            public void onProgressChanged(SeekBar sb, int p, boolean u) { val.setText((p / 10) + "%"); }
-            public void onStartTrackingTouch(SeekBar sb) {}
-            public void onStopTrackingTouch(SeekBar sb) {
-                edit(o -> { o.put(key, sb.getProgress()); if (sb.getProgress() > 0) o.put("on", true); });
-                if (sb.getProgress() > 0) onSw.setChecked(true);
-            }
-        });
-        r.addView(s, Ui.lpw(0, Ui.WRAP, 1));
-        r.addView(val, Ui.lp(Ui.dp(this, 48), Ui.WRAP));
-        body.addView(r, Ui.lp(Ui.MATCH, Ui.dp(this, 42)));
+    private static String keyText(int semis) { return semis == 0 ? "0" : (semis > 0 ? "+" : "−") + Math.abs(semis); }
+
+    private void showKey() {
+        String id = currentSong();
+        keyValue.setText(getString(R.string.key_value, keyText(Prefs.key(this, id))));
+        keyValue.setAlpha(id == null ? 0.5f : 1f);
     }
 
-    static String db(int mb) {
-        float d = mb / 100f;
-        return (d > 0 ? "+" : "") + String.format(Locale.US, d == Math.round(d) ? "%.0f" : "%.1f", d) + " dB";
+    /** d = -1 down, +1 up, 0 reset. The key is kept for this song only. */
+    private void changeKey(int d) {
+        String id = currentSong();
+        if (id == null) { Ui.toast(this, R.string.nothing_playing); return; }
+        int k = d == 0 ? 0 : Math.max(-6, Math.min(6, Prefs.key(this, id) + d));
+        Prefs.setKey(this, id, k);
+        if (PlaybackService.instance != null) PlaybackService.instance.applyKey();
+        showKey();
+        karaokeStatus();
     }
 
-    private final Runnable status = new Runnable() {
-        @Override public void run() {
-            String s = KaraokeProcessor.status();
-            karStatus.setText(s);
-            karStatus.setTextColor(s.startsWith("●") ? Ui.SUCCESS : s.startsWith("This song") ? Ui.ACCENT : Ui.MUTED);
-            h.postDelayed(this, 1000);
-        }
+    @Override
+    protected void onStart() {
+        super.onStart();
+        // Connecting starts the background player, which owns the effects.
+        future = Media.connect(this);
+        future.addListener(this::build, ui::post);
+    }
+
+    @Override
+    protected void onStop() {
+        MediaController.releaseFuture(future);
+        super.onStop();
+    }
+
+    private final Runnable statusTick = new Runnable() {
+        @Override public void run() { karaokeStatus(); if (keyValue != null) showKey(); ui.postDelayed(this, 1000); }
     };
 
-    @Override protected void onResume() { super.onResume(); h.post(status); }
-    @Override protected void onPause() { super.onPause(); h.removeCallbacks(status); }
+    @Override
+    protected void onResume() { super.onResume(); ui.post(statusTick); }
+
+    @Override
+    protected void onPause() { ui.removeCallbacks(statusTick); super.onPause(); }
+
+    /** Tells you whether karaoke is working on the current song. */
+    private void karaokeStatus() {
+        TextView t = findViewById(R.id.eq_karaoke_status);
+        if (!KaraokeProcessor.enabled) { t.setVisibility(View.GONE); return; }
+        boolean playing = System.currentTimeMillis() - KaraokeProcessor.lastAudioMs < 2500;
+        t.setVisibility(View.VISIBLE);
+        if (KaraokeProcessor.status == 2) {
+            t.setText(R.string.karaoke_mono);
+            t.setTextColor(getColor(R.color.accent));
+        } else if (playing) {
+            String id = currentSong();
+            t.setText(getString(R.string.karaoke_working_detail,
+                    getResources().getStringArray(R.array.karaoke_strengths)[Prefs.karaokeStrength(this)],
+                    getString(R.string.key_value, keyText(Prefs.key(this, id)))));
+            t.setTextColor(getColor(R.color.success));
+        } else {
+            t.setText(R.string.karaoke_waiting);
+            t.setTextColor(getColor(R.color.muted));
+        }
+    }
+
+    private void put(String k, Object v) { try { s.put(k, v); } catch (Exception ignored) { } }
+
+    private void save() {
+        Prefs.setEq(this, s);
+        AudioFx.apply(this);
+    }
+
+    private void build() {
+        if (built) return;
+        if (!AudioFx.available()) {
+            findViewById(R.id.eq_missing).setVisibility(View.VISIBLE);
+            findViewById(R.id.eq_body).setVisibility(View.GONE);
+            return;
+        }
+        built = true;
+        range = AudioFx.range();
+
+        // presets
+        LinearLayout presets = findViewById(R.id.eq_presets);
+        presets.removeAllViews();
+        presetChips.clear();
+        String[] names = AudioFx.presets();
+        addPresetChip(presets, getString(R.string.custom), -1);
+        for (int i = 0; i < names.length; i++) addPresetChip(presets, names[i], i);
+        markPreset();
+
+        // bands
+        LinearLayout bands = findViewById(R.id.eq_bands);
+        bands.removeAllViews();
+        bandBars.clear();
+        bandValues.clear();
+        int n = AudioFx.bandCount();
+        for (int b = 0; b < n; b++) {
+            final int band = b;
+            View row = getLayoutInflater().inflate(R.layout.eq_slider, bands, false);
+            ((TextView) row.findViewById(R.id.es_label)).setText(AudioFx.bandLabel(b) + " Hz");
+            SeekBar bar = row.findViewById(R.id.es_bar);
+            TextView val = row.findViewById(R.id.es_value);
+            bar.setMax(range[1] - range[0]);
+            int lvl = AudioFx.bandLevel(b);
+            bar.setProgress(lvl - range[0]);
+            val.setText(db(lvl));
+            bar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                @Override public void onProgressChanged(SeekBar sb, int p, boolean fromUser) {
+                    if (!fromUser) return;
+                    val.setText(db(p + range[0]));
+                }
+                @Override public void onStartTrackingTouch(SeekBar sb) { }
+                @Override public void onStopTrackingTouch(SeekBar sb) {
+                    JSONArray arr = new JSONArray();
+                    for (int i = 0; i < bandBars.size(); i++)
+                        arr.put(i == band ? sb.getProgress() + range[0] : bandBars.get(i).getProgress() + range[0]);
+                    put("bands", arr);
+                    put("preset", -1);
+                    turnOn();
+                    save();
+                    markPreset();
+                }
+            });
+            bandBars.add(bar);
+            bandValues.add(val);
+            bands.addView(row);
+        }
+
+        // effects
+        LinearLayout fx = findViewById(R.id.eq_effects);
+        fx.removeAllViews();
+        addEffect(fx, getString(R.string.bass_boost), "bass", 1000);
+        addEffect(fx, getString(R.string.surround), "virt", 1000);
+        addEffect(fx, getString(R.string.loudness), "loud", 1000);
+    }
+
+    private void addPresetChip(LinearLayout box, String name, int index) {
+        TextView chip = new TextView(this);
+        chip.setText(name);
+        chip.setTextColor(getColor(R.color.text));
+        chip.setTextSize(13);
+        chip.setGravity(android.view.Gravity.CENTER);
+        chip.setBackgroundResource(R.drawable.bg_chip);
+        int pad = dp(16);
+        chip.setPadding(pad, 0, pad, 0);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(38));
+        lp.setMarginEnd(dp(8));
+        chip.setTag(index);
+        chip.setOnClickListener(v -> {
+            put("preset", index);
+            turnOn();
+            save();
+            markPreset();
+            // show the preset's band levels on the sliders
+            JSONArray arr = new JSONArray();
+            for (int i = 0; i < bandBars.size(); i++) {
+                int lvl = AudioFx.bandLevel(i);
+                bandBars.get(i).setProgress(lvl - range[0]);
+                bandValues.get(i).setText(db(lvl));
+                arr.put(lvl);
+            }
+            put("bands", arr);
+            Prefs.setEq(this, s);
+        });
+        box.addView(chip, lp);
+        presetChips.add(chip);
+    }
+
+    private void markPreset() {
+        int p = s.optInt("preset", -1);
+        for (TextView c : presetChips) {
+            boolean on = (int) c.getTag() == p;
+            c.setSelected(on);
+            c.setTextColor(getColor(on ? R.color.accent : R.color.text));
+        }
+    }
+
+    private void addEffect(LinearLayout box, String label, String key, int max) {
+        View row = getLayoutInflater().inflate(R.layout.eq_slider, box, false);
+        ((TextView) row.findViewById(R.id.es_label)).setText(label);
+        SeekBar bar = row.findViewById(R.id.es_bar);
+        TextView val = row.findViewById(R.id.es_value);
+        bar.setMax(max);
+        int v0 = s.optInt(key, 0);
+        bar.setProgress(v0);
+        val.setText(pct(v0, max));
+        bar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar sb, int p, boolean fromUser) { val.setText(pct(p, max)); }
+            @Override public void onStartTrackingTouch(SeekBar sb) { }
+            @Override public void onStopTrackingTouch(SeekBar sb) {
+                put(key, sb.getProgress());
+                if (sb.getProgress() > 0) turnOn();
+                save();
+            }
+        });
+        box.addView(row);
+    }
+
+    private void turnOn() {
+        Switch on = findViewById(R.id.eq_on);
+        if (!on.isChecked()) on.setChecked(true);     // listener saves "on"
+        put("on", true);
+    }
+
+    private static String db(int mB) {
+        float d = mB / 100f;
+        return (d > 0 ? "+" : "") + String.format(Locale.US, "%.0f dB", d);
+    }
+
+    private static String pct(int v, int max) { return Math.round(v * 100f / max) + "%"; }
+
+    private int dp(int v) { return (int) (v * getResources().getDisplayMetrics().density); }
 }

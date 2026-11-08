@@ -8,171 +8,264 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 /**
- * Removes the lead vocal from 16-bit stereo audio by taking out what is identical in both channels,
- * in the frequency range of the human voice only, so bass and drums stay.
- * Always delays audio by the same fixed amount, so switching on or off never skips.
+ * Karaoke: removes the lead vocal by working on the song frequency by frequency (short-time Fourier transform).
+ * In each small slice of time and pitch, sound that is the same in the left and right channels (the centre of
+ * the mix, where the lead singer sits) is taken out; sound spread to the sides is kept. Bass and drums under
+ * ~150 Hz and the very top are left alone, so the music stays full.
+ *
+ * Mono songs can't be separated: then it passes the sound through and reports it.
+ * Latency is fixed at N samples whether karaoke is on or off, so switching never jumps.
+ *
+ * Works on 16-bit and float sound, stereo and surround. In surround (5.1, 7.1) the centre speaker carries the
+ * voice, so it is turned down too; the other speakers pass through, delayed to stay in step.
+ * Strength: Light keeps more of the music, Strong takes out more of the voice (and holds the cut a little longer).
  */
-public class KaraokeProcessor extends BaseAudioProcessor {
-    public static volatile boolean enabled;
-    public static volatile float strength = 0.85f;
-    public static volatile long lastAudioMs;
-    public static volatile boolean lastWasMono;
+@androidx.annotation.OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)
+public final class KaraokeProcessor extends BaseAudioProcessor {
 
-    private static final int N = 2048, HOP = 512, D = N - HOP;
-    private final float[] win = new float[N];
-    private final float[] inL = new float[N], inR = new float[N];   // last N input samples
-    private final float[] olaL = new float[N], olaR = new float[N]; // overlap-add accumulator
-    private final float[] delL = new float[D], delR = new float[D]; // plain delay line
+    /** Switched from the Equalizer screen, the music player or the video player. */
+    public static volatile boolean enabled = false;
+
+    /** 0 light, 1 normal, 2 strong. */
+    public static volatile int strength = 1;
+
+    private static final float[] THRESHOLD = {0.70f, 0.55f, 0.40f};
+    private static final float[] MAX_CUT = {0.70f, 0.95f, 1.00f};
+
+    /** For the Equalizer screen: 0 = nothing playing yet, 1 = stereo (working), 2 = mono song. */
+    public static volatile int status = 0;
+    public static volatile long lastAudioMs = 0;
+
+    private static final int N = 2048, HOP = N / 4;
+
+    private boolean active;
+    private boolean floatPcm;
+    private int channels = 2, centre = -1;
+    private int sampleRate = 44100;
+
+    // other speakers in surround: a delay line of N samples each
+    private float[][] delay = new float[0][];
+    private int delayAt = 0;
+    private float centreGain = 1f;
+    private final float[] hold = new float[N / 2 + 1];
+
+    // analysis history (last N samples), overlap-add output, and the block being played out
+    private final float[] histL = new float[N], histR = new float[N];
+    private final float[] accL = new float[N], accR = new float[N];
+    private final float[] readyL = new float[HOP], readyR = new float[HOP];
+    private int filled = 0;
+
+    // FFT work buffers
     private final float[] re = new float[N], im = new float[N];
-    private final float[] bandW = new float[N / 2 + 1];
-    private int fill, delPos, ring, offHops = 100, warm;
-    private float gain;
-    private boolean stereo16;
-    private final float[] outL = new float[HOP], outR = new float[HOP];
+    private final float[] win = new float[N];
+    private final float[] cosT = new float[N / 2], sinT = new float[N / 2];
+    private final int[] rev = new int[N];
+    private float[] bandWeight = new float[N / 2 + 1];
+
+    private float gain = 0f;            // 0 = normal sound, 1 = full karaoke (moves gently)
+    private int wetFrames = 0;          // frames processed since the effect was last fully off
+    private boolean wet = false;
+    private int zeroFrames = 0;
 
     public KaraokeProcessor() {
-        for (int i = 0; i < N; i++) win[i] = (float) Math.sqrt(0.5 - 0.5 * Math.cos(2 * Math.PI * i / N));
+        for (int i = 0; i < N; i++) win[i] = (float) Math.sqrt(0.5 - 0.5 * Math.cos(2 * Math.PI * i / N));   // √Hann
+        for (int i = 0; i < N / 2; i++) {
+            cosT[i] = (float) Math.cos(-2 * Math.PI * i / N);
+            sinT[i] = (float) Math.sin(-2 * Math.PI * i / N);
+        }
+        int bits = Integer.numberOfTrailingZeros(N);
+        for (int i = 0; i < N; i++) rev[i] = Integer.reverse(i) >>> (32 - bits);
     }
 
     @Override
-    protected AudioFormat onConfigure(AudioFormat f) throws UnhandledAudioFormatException {
-        stereo16 = f.encoding == C.ENCODING_PCM_16BIT && f.channelCount == 2;
-        lastWasMono = f.channelCount == 1;
-        if (!stereo16) return AudioFormat.NOT_SET;
+    protected AudioFormat onConfigure(AudioFormat in) throws UnhandledAudioFormatException {
+        if (in.encoding != C.ENCODING_PCM_16BIT && in.encoding != C.ENCODING_PCM_FLOAT) {
+            active = false;
+            return AudioProcessor.AudioFormat.NOT_SET;
+        }
+        if (in.channelCount < 2) {
+            status = 2;                              // mono: nothing to separate
+            active = false;
+            return AudioProcessor.AudioFormat.NOT_SET;
+        }
+        status = 1;
+        active = true;
+        floatPcm = in.encoding == C.ENCODING_PCM_FLOAT;
+        channels = in.channelCount;
+        // standard orders: 3.0/4.0 = L R C …, 5.1/7.1 = L R C LFE …
+        centre = channels >= 3 && channels != 4 ? 2 : -1;
+        delay = new float[Math.max(0, channels - 2)][N];
+        delayAt = 0;
+        sampleRate = in.sampleRate;
+        bandWeight = new float[N / 2 + 1];
         for (int k = 0; k <= N / 2; k++) {
-            float hz = (float) k * f.sampleRate / N, w;
+            float hz = k * (float) sampleRate / N;
+            float w;
             if (hz < 120) w = 0;
             else if (hz < 220) w = (hz - 120) / 100f;
-            else if (hz <= 8000) w = 1;
+            else if (hz < 8000) w = 1;
             else if (hz < 14000) w = 1 - 0.6f * (hz - 8000) / 6000f;
             else w = 0.4f;
-            bandW[k] = w;
+            bandWeight[k] = w;
         }
-        return f;
+        return in;
     }
 
     @Override
-    public void queueInput(ByteBuffer in) {
-        int frames = in.remaining() / 4;
-        if (frames == 0) return;
+    public void queueInput(ByteBuffer input) {
+        int remaining = input.remaining();
+        if (remaining == 0) return;
         lastAudioMs = System.currentTimeMillis();
-        in.order(ByteOrder.nativeOrder());
-        int hops = (fill + frames) / HOP;
-        ByteBuffer out = replaceOutputBuffer(hops * HOP * 4);
+        ByteBuffer out = replaceOutputBuffer(remaining);
+        input.order(ByteOrder.nativeOrder());
         out.order(ByteOrder.nativeOrder());
-        for (int i = 0; i < frames; i++) {
-            float l = in.getShort() / 32768f, r = in.getShort() / 32768f;
-            inL[ring] = l;
-            inR[ring] = r;
-            ring = (ring + 1) % N;
-            // plain delay line, D = N - HOP samples late (lines up with the overlap-add output)
-            outL[fill] = delL[delPos];
-            outR[fill] = delR[delPos];
-            delL[delPos] = l;
-            delR[delPos] = r;
-            delPos = (delPos + 1) % D;
-            fill++;
-            if (fill == HOP) {
-                processHop();
-                for (int k = 0; k < HOP; k++) {
-                    out.putShort(clip(outL[k]));
-                    out.putShort(clip(outR[k]));
-                }
-                fill = 0;
+        int frameBytes = channels * (floatPcm ? 4 : 2);
+        while (input.remaining() >= frameBytes) {
+            float l = read(input), r = read(input);
+            histL[N - HOP + filled] = l;
+            histR[N - HOP + filled] = r;
+            write(out, readyL[filled]);
+            write(out, readyR[filled]);
+            for (int c = 2; c < channels; c++) {
+                float[] d = delay[c - 2];
+                float v = d[delayAt];
+                d[delayAt] = read(input);
+                write(out, c == centre ? v * centreGain : v);
             }
+            if (channels > 2) delayAt = (delayAt + 1) % N;
+            filled++;
+            if (filled == HOP) { frame(); filled = 0; }
         }
+        input.position(input.limit());
         out.flip();
     }
 
-    private void processHop() {
-        float target = enabled ? strength : 0f;
-        if (gain < target) gain = Math.min(target, gain + 0.08f);
-        else if (gain > target) gain = Math.max(target, gain - 0.08f);
-        if (gain <= 0f && !enabled) {
-            offHops++;
-            if (offHops > 5) { warm = 0; return; } // passthrough via delay line
+    private float read(ByteBuffer b) { return floatPcm ? b.getFloat() : b.getShort() / 32768f; }
+
+    private void write(ByteBuffer b, float v) {
+        if (floatPcm) b.putFloat(v); else b.putShort(clip(v));
+    }
+
+    /** One hop: produces the next HOP output samples (exactly N samples behind the input). */
+    private void frame() {
+        float target = enabled ? 1f : 0f;
+        boolean needWet = enabled || gain > 0f || wet;
+
+        if (needWet) {
+            if (!wet) {                      // starting up: overlap-add must fill before it is used
+                wet = true;
+                wetFrames = 0;
+                java.util.Arrays.fill(accL, 0);
+                java.util.Arrays.fill(accR, 0);
+            }
+            float g = wetFrames >= 3 ? gain : 0f;
+            process(g);
+            centreGain = 1f - 0.92f * g * MAX_CUT[Math.max(0, Math.min(2, strength))];
+            wetFrames++;
+            if (wetFrames > 3) gain = gain < target ? Math.min(target, gain + 0.08f) : Math.max(target, gain - 0.08f);
+        }
+
+        if (wet && wetFrames > 3) {
+            // the overlap-add result for the oldest HOP samples is complete
+            for (int i = 0; i < HOP; i++) { readyL[i] = accL[i] * 0.5f; readyR[i] = accR[i] * 0.5f; }
         } else {
-            offHops = 0;
+            for (int i = 0; i < HOP; i++) { readyL[i] = histL[i]; readyR[i] = histR[i]; }
         }
-        // Analysis: window last N samples, one complex FFT holding L (real) and R (imag).
-        for (int i = 0; i < N; i++) {
-            int p = (ring + i) % N; // oldest sample first
-            re[i] = inL[p] * win[i];
-            im[i] = inR[p] * win[i];
+        if (wet) {
+            System.arraycopy(accL, HOP, accL, 0, N - HOP);
+            System.arraycopy(accR, HOP, accR, 0, N - HOP);
+            java.util.Arrays.fill(accL, N - HOP, N, 0);
+            java.util.Arrays.fill(accR, N - HOP, N, 0);
+            zeroFrames = !enabled && gain <= 0f ? zeroFrames + 1 : 0;
+            if (zeroFrames >= 5) { wet = false; zeroFrames = 0; }      // fully back to normal: rest the CPU
         }
+        System.arraycopy(histL, HOP, histL, 0, N - HOP);
+        System.arraycopy(histR, HOP, histR, 0, N - HOP);
+    }
+
+    /** Window, FFT both channels at once (L real, R imaginary), remove the centre, inverse FFT, overlap-add. */
+    private void process(float g) {
+        for (int i = 0; i < N; i++) { re[i] = histL[i] * win[i]; im[i] = histR[i] * win[i]; }
         fft(re, im, false);
-        for (int k = 1; k < N / 2; k++) {
-            int j = N - k;
-            float zr = re[k], zi = im[k], wr = re[j], wi = im[j];
-            float lr = (zr + wr) / 2f, li = (zi - wi) / 2f;   // L_k
-            float rr = (zi + wi) / 2f, ri = (wr - zr) / 2f;   // R_k
-            float dot = lr * rr + li * ri, en = lr * lr + li * li + rr * rr + ri * ri;
-            float sim = en > 1e-12f ? 2f * dot / en : 0f;
-            float t = Math.max(0f, Math.min(1f, (sim - 0.55f) / 0.40f));
-            float f = t * t * (3 - 2 * t);
-            float a = gain * bandW[k] * f;
-            float cr = (lr + rr) / 2f, ci = (li + ri) / 2f;
-            lr -= a * cr; li -= a * ci; rr -= a * cr; ri -= a * ci;
-            // back to Z_k = L + iR and Z_{N-k} = conj(L) + i conj(R)
-            re[k] = lr - ri; im[k] = li + rr;
-            re[j] = lr + ri; im[j] = -li + rr;
+        int st = Math.max(0, Math.min(2, strength));
+        float thr = THRESHOLD[st], range = 0.95f - thr, cut = MAX_CUT[st];
+        boolean holdOn = st == 2;
+        if (g > 0f) {
+            for (int k = 1; k < N / 2; k++) {
+                int nk = N - k;
+                // separate the two real spectra
+                float lr = (re[k] + re[nk]) * 0.5f, li = (im[k] - im[nk]) * 0.5f;
+                float rr = (im[k] + im[nk]) * 0.5f, ri = (re[nk] - re[k]) * 0.5f;
+                float pl = lr * lr + li * li, pr = rr * rr + ri * ri;
+                float cross = lr * rr + li * ri;                     // Re(L · conj R)
+                float sim = 2f * cross / (pl + pr + 1e-12f);        // 1 = same in both channels
+                float f = (sim - thr) / range;
+                if (f > 1) f = 1;
+                if (f < 0) f = 0;
+                f = f * f * (3 - 2 * f);                             // smooth step
+                if (holdOn) { f = Math.max(f, hold[k] * 0.8f); hold[k] = f; }
+                if (f <= 0) continue;
+                float a = g * cut * bandWeight[k] * f;
+                float cr = (lr + rr) * 0.5f * a, ci = (li + ri) * 0.5f * a;
+                lr -= cr; li -= ci; rr -= cr; ri -= ci;
+                // back into the combined spectrum: Z = L + iR, and its mirror
+                re[k] = lr - ri; im[k] = li + rr;
+                re[nk] = lr + ri; im[nk] = -li + rr;
+            }
         }
         fft(re, im, true);
-        // Overlap-add with synthesis window, scale 0.5 (sqrt-Hann² at 75% overlap sums to 2).
-        System.arraycopy(olaL, HOP, olaL, 0, N - HOP);
-        System.arraycopy(olaR, HOP, olaR, 0, N - HOP);
-        for (int i = N - HOP; i < N; i++) { olaL[i] = 0; olaR[i] = 0; }
-        for (int i = 0; i < N; i++) { olaL[i] += re[i] * win[i] * 0.5f; olaR[i] += im[i] * win[i] * 0.5f; }
-        if (warm < 3) { warm++; return; } // keep delayed passthrough until the accumulator is full
-        // The first HOP samples of the accumulator are complete and line up with the N-sample delay.
-        for (int k = 0; k < HOP; k++) { outL[k] = olaL[k]; outR[k] = olaR[k]; }
+        for (int i = 0; i < N; i++) {
+            accL[i] += re[i] * win[i];
+            accR[i] += im[i] * win[i];
+        }
+    }
+
+    private void fft(float[] xr, float[] xi, boolean inverse) {
+        for (int i = 0; i < N; i++) {
+            int j = rev[i];
+            if (j > i) {
+                float t = xr[i]; xr[i] = xr[j]; xr[j] = t;
+                t = xi[i]; xi[i] = xi[j]; xi[j] = t;
+            }
+        }
+        for (int size = 2; size <= N; size <<= 1) {
+            int half = size >> 1, step = N / size;
+            for (int start = 0; start < N; start += size) {
+                for (int k = 0; k < half; k++) {
+                    float wr = cosT[k * step], wi = inverse ? -sinT[k * step] : sinT[k * step];
+                    int a = start + k, b = a + half;
+                    float tr = xr[b] * wr - xi[b] * wi, ti = xr[b] * wi + xi[b] * wr;
+                    xr[b] = xr[a] - tr; xi[b] = xi[a] - ti;
+                    xr[a] += tr; xi[a] += ti;
+                }
+            }
+        }
+        if (inverse) for (int i = 0; i < N; i++) { xr[i] /= N; xi[i] /= N; }
     }
 
     private static short clip(float v) {
-        int s = Math.round(v * 32767f);
-        return (short) Math.max(-32768, Math.min(32767, s));
+        float s = v * 32768f;
+        if (s > 32767f) return 32767;
+        if (s < -32768f) return -32768;
+        return (short) Math.round(s);
     }
 
     @Override
     protected void onFlush() {
-        java.util.Arrays.fill(inL, 0); java.util.Arrays.fill(inR, 0);
-        java.util.Arrays.fill(olaL, 0); java.util.Arrays.fill(olaR, 0);
-        java.util.Arrays.fill(delL, 0); java.util.Arrays.fill(delR, 0);
-        fill = 0; delPos = 0; ring = 0; warm = 0;
+        java.util.Arrays.fill(histL, 0); java.util.Arrays.fill(histR, 0);
+        java.util.Arrays.fill(accL, 0); java.util.Arrays.fill(accR, 0);
+        java.util.Arrays.fill(readyL, 0); java.util.Arrays.fill(readyR, 0);
+        filled = 0;
+        wet = false;
+        gain = enabled ? 1f : 0f;
+        for (float[] d : delay) java.util.Arrays.fill(d, 0);
+        java.util.Arrays.fill(hold, 0);
+        delayAt = 0;
     }
 
     @Override
-    protected void onReset() { onFlush(); gain = 0; offHops = 100; }
-
-    /** In-place radix-2 FFT. */
-    static void fft(float[] re, float[] im, boolean inverse) {
-        int n = re.length;
-        for (int i = 1, j = 0; i < n; i++) {
-            int bit = n >> 1;
-            for (; (j & bit) != 0; bit >>= 1) j ^= bit;
-            j ^= bit;
-            if (i < j) { float t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; }
-        }
-        for (int len = 2; len <= n; len <<= 1) {
-            double ang = 2 * Math.PI / len * (inverse ? 1 : -1);
-            float wr = (float) Math.cos(ang), wi = (float) Math.sin(ang);
-            for (int i = 0; i < n; i += len) {
-                float cr = 1, ci = 0;
-                for (int k = 0; k < len / 2; k++) {
-                    int a = i + k, b = i + k + len / 2;
-                    float xr = re[b] * cr - im[b] * ci, xi = re[b] * ci + im[b] * cr;
-                    re[b] = re[a] - xr; im[b] = im[a] - xi;
-                    re[a] += xr; im[a] += xi;
-                    float t = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = t;
-                }
-            }
-        }
-        if (inverse) for (int i = 0; i < n; i++) { re[i] /= n; im[i] /= n; }
-    }
-
-    public static String status() {
-        if (lastWasMono) return "This song is mono (one channel), so the voice can't be separated";
-        if (System.currentTimeMillis() - lastAudioMs < 2500) return enabled ? "● Removing vocals on this song" : "Ready";
-        return "Play a song to hear it";
+    protected void onReset() {
+        onFlush();
+        active = false;
     }
 }
