@@ -1,76 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/frame"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg">
+
+<LinearLayout
     android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/bg"
     android:orientation="vertical">
-
-    <!-- Header -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingStart="18dp"
-        android:paddingTop="14dp"
-        android:paddingEnd="8dp"
-        android:paddingBottom="6dp">
-
-        <TextView
-            android:id="@+id/header_title"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:letterSpacing="0.08"
-            android:maxLines="1"
-            android:text="@string/header"
-            android:textColor="@color/accent"
-            android:textSize="19sp" />
-
-        <ImageButton
-            android:id="@+id/btn_share_pc"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
-            android:layout_marginEnd="6dp"
-            android:background="@drawable/bg_round_btn"
-            android:contentDescription="@string/nkt_share"
-            android:src="@drawable/ic_pc"
-            android:tint="@color/accent" />
-
-        <ImageButton
-            android:id="@+id/btn_link"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
-            android:background="@drawable/bg_round_btn"
-            android:contentDescription="@string/cd_link"
-            android:src="@drawable/ic_link"
-            android:tint="@color/accent" />
-    </LinearLayout>
-
-    <!-- Tabs (scroll sideways) -->
-    <HorizontalScrollView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:scrollbars="none">
-
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:paddingStart="12dp"
-            android:paddingTop="6dp"
-            android:paddingEnd="12dp"
-            android:paddingBottom="6dp">
-
-            <TextView android:id="@+id/tab_songs" style="@style/NKTTab" android:text="@string/tab_songs" />
-            <TextView android:id="@+id/tab_videos" style="@style/NKTTab" android:text="@string/tab_videos" />
-            <TextView android:id="@+id/tab_gallery" style="@style/NKTTab" android:text="@string/tab_gallery" />
-            <TextView android:id="@+id/tab_folders" style="@style/NKTTab" android:text="@string/tab_folders" />
-            <TextView android:id="@+id/tab_playlists" style="@style/NKTTab" android:text="@string/tab_playlists" />
-            <TextView android:id="@+id/tab_settings" style="@style/NKTTab" android:text="@string/tab_settings" />
-        </LinearLayout>
-    </HorizontalScrollView>
 
     <!-- List area -->
     <FrameLayout
@@ -88,7 +27,7 @@
             android:paddingBottom="12dp"
             android:scrollbars="none" />
 
-        <!-- Search + per-tab bar: slides away when you scroll down, comes back when you scroll up -->
+        <!-- Everything above the files: slides away when you scroll down, comes back when you scroll up -->
         <LinearLayout
             android:id="@+id/collapse"
             android:layout_width="match_parent"
@@ -97,14 +36,79 @@
             android:background="@color/bg"
             android:clickable="true"
             android:elevation="4dp"
-            android:orientation="vertical"
-            android:paddingTop="4dp">
+            android:orientation="vertical">
+
+            <!-- ☰ · NKT MEDIA PLAYER / page · PC · link -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="6dp"
+                android:paddingTop="8dp"
+                android:paddingEnd="8dp"
+                android:paddingBottom="6dp">
+
+                <ImageButton
+                    android:id="@+id/btn_menu"
+                    style="@style/NKTBarButton"
+                    android:contentDescription="@string/cd_menu"
+                    android:src="@drawable/ic_menu" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/header_title"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:letterSpacing="0.08"
+                        android:maxLines="1"
+                        android:text="@string/header"
+                        android:textColor="@color/accent"
+                        android:textSize="15sp" />
+
+                    <TextView
+                        android:id="@+id/page_label"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:letterSpacing="0.16"
+                        android:maxLines="1"
+                        android:textColor="@color/muted"
+                        android:textSize="9.5sp" />
+                </LinearLayout>
+
+                <ImageButton
+                    android:id="@+id/btn_share_pc"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:layout_marginEnd="6dp"
+                    android:background="@drawable/bg_round_btn"
+                    android:contentDescription="@string/nkt_share"
+                    android:src="@drawable/ic_pc"
+                    android:tint="@color/accent" />
+
+                <ImageButton
+                    android:id="@+id/btn_link"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:background="@drawable/bg_round_btn"
+                    android:contentDescription="@string/cd_link"
+                    android:src="@drawable/ic_link"
+                    android:tint="@color/accent" />
+            </LinearLayout>
 
             <EditText
                 android:id="@+id/search"
                 android:layout_width="match_parent"
                 android:layout_height="44dp"
                 android:layout_marginStart="16dp"
+                android:layout_marginTop="2dp"
                 android:layout_marginEnd="16dp"
                 android:background="@drawable/bg_card"
                 android:drawableStart="@drawable/ic_search"
@@ -120,7 +124,49 @@
                 android:textColorHint="@color/muted"
                 android:textSize="14sp" />
 
-            <!-- count · sort · LIST / GRID (or SQUARES) -->
+            <!-- Folders page: storage switch, path, hidden note -->
+            <LinearLayout
+                android:id="@+id/folder_bar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingStart="16dp"
+                android:paddingTop="8dp"
+                android:paddingEnd="16dp"
+                android:visibility="gone">
+
+                <HorizontalScrollView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:scrollbars="none">
+
+                    <LinearLayout
+                        android:id="@+id/storage_row"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal" />
+                </HorizontalScrollView>
+
+                <TextView
+                    android:id="@+id/folder_path"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:ellipsize="start"
+                    android:maxLines="1"
+                    android:textColor="@color/accent"
+                    android:textSize="12.5sp" />
+
+                <TextView
+                    android:id="@+id/folder_note"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:textColor="@color/muted"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <!-- count · updating · sort · view -->
             <LinearLayout
                 android:id="@+id/tab_bar"
                 android:layout_width="match_parent"
@@ -141,6 +187,17 @@
                     android:maxLines="1"
                     android:textColor="@color/muted"
                     android:textSize="12sp" />
+
+                <TextView
+                    android:id="@+id/updating"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="8dp"
+                    android:maxLines="1"
+                    android:text="@string/updating"
+                    android:textColor="@color/accent"
+                    android:textSize="11sp"
+                    android:visibility="gone" />
 
                 <TextView
                     android:id="@+id/btn_sort"
@@ -167,8 +224,9 @@
                     android:orientation="horizontal"
                     android:padding="2dp">
 
-                    <TextView android:id="@+id/view_list" style="@style/NKTSegment" android:drawableStart="@drawable/ic_list" android:text="@string/view_list" />
-                    <TextView android:id="@+id/view_grid" style="@style/NKTSegment" android:drawableStart="@drawable/ic_grid" android:text="@string/view_squares" />
+                    <ImageButton android:id="@+id/view_a" style="@style/NKTViewSeg" android:contentDescription="@string/view_list" android:src="@drawable/ic_list" />
+                    <ImageButton android:id="@+id/view_b" style="@style/NKTViewSeg" android:contentDescription="@string/view_grid" android:src="@drawable/ic_grid" />
+                    <ImageButton android:id="@+id/view_c" style="@style/NKTViewSeg" android:contentDescription="@string/view_squares" android:src="@drawable/ic_music" />
                 </LinearLayout>
             </LinearLayout>
 
@@ -424,4 +482,37 @@
             android:src="@drawable/ic_close"
             android:tint="@color/muted" />
     </LinearLayout>
+
 </LinearLayout>
+
+    <!-- ☰ menu -->
+    <View
+        android:id="@+id/scrim"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:alpha="0"
+        android:background="#B3000000"
+        android:clickable="true"
+        android:elevation="20dp"
+        android:visibility="gone" />
+
+    <ScrollView
+        android:id="@+id/drawer"
+        android:layout_width="300dp"
+        android:layout_height="match_parent"
+        android:layout_gravity="start"
+        android:background="@drawable/bg_drawer"
+        android:elevation="24dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/drawer_items"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingStart="10dp"
+            android:paddingTop="14dp"
+            android:paddingEnd="10dp"
+            android:paddingBottom="20dp" />
+    </ScrollView>
+</FrameLayout>

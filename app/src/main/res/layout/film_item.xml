@@ -14,4 +14,16 @@
         android:background="@drawable/bg_cell"
         android:contentDescription="@null"
         android:scaleType="centerCrop" />
+
+    <ImageView
+        android:id="@+id/fi_play"
+        android:layout_width="18dp"
+        android:layout_height="18dp"
+        android:layout_gravity="center"
+        android:background="@drawable/bg_badge"
+        android:contentDescription="@null"
+        android:padding="3dp"
+        android:src="@drawable/ic_play"
+        android:tint="#FFFFFFFF"
+        android:visibility="gone" />
 </FrameLayout>

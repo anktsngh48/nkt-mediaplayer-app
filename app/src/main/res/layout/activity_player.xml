@@ -15,39 +15,17 @@
 
     <include layout="@layout/nkt_player_controls" />
 
-    <!-- Picture of the moment you're seeking to -->
-    <LinearLayout
-        android:id="@+id/seek_preview"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|start"
-        android:layout_marginBottom="118dp"
-        android:gravity="center_horizontal"
-        android:orientation="vertical"
-        android:visibility="gone">
-
-        <ImageView
-            android:id="@+id/seek_img"
-            android:layout_width="176dp"
-            android:layout_height="99dp"
-            android:background="@drawable/bg_preview"
-            android:contentDescription="@null"
-            android:padding="2dp"
-            android:scaleType="centerCrop" />
-
-        <TextView
-            android:id="@+id/seek_time"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:background="@drawable/bg_indicator"
-            android:paddingStart="10dp"
-            android:paddingTop="3dp"
-            android:paddingEnd="10dp"
-            android:paddingBottom="3dp"
-            android:textColor="@color/accent"
-            android:textSize="13sp" />
-    </LinearLayout>
+    <!-- Shown when a video has stopped at its end -->
+    <ImageButton
+        android:id="@+id/btn_replay"
+        android:layout_width="72dp"
+        android:layout_height="72dp"
+        android:layout_gravity="center"
+        android:background="@drawable/bg_play_btn"
+        android:contentDescription="@string/cd_replay"
+        android:src="@drawable/ic_repeat"
+        android:tint="@color/accent"
+        android:visibility="gone" />
 
     <!-- Press and hold: plays at 2× while the finger stays down -->
     <TextView

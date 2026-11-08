@@ -291,7 +291,7 @@
     <string name="autonext_sub">When off, a video stops at the end</string>
     <string name="keep_history">Keep history</string>
     <string name="keep_history_sub">Songs, videos and photos you open, newest first (Playlists → History)</string>
-    <string name="nkt_share_sub">Share files with a computer on Wi-Fi</string>
+    <string name="nkt_share_sub">Share files with a computer or other devices on Wi-Fi</string>
     <string name="version_line">Version 1.0</string>
 
     <!-- video player -->
@@ -363,6 +363,225 @@
     <string name="access_rw_choice">Read &amp; write — open, copy, add, rename, delete</string>
     <string name="access_ro_choice">Read only — open and copy, can\'t change anything</string>
     <string name="access_ro">Read only · no time limit</string>
+
+    
+    <!-- ☰ menu, start page -->
+    <string name="cd_menu">Open the menu</string>
+    <string name="menu_hint">Tap ⌂ to choose the page the app opens on</string>
+    <string name="menu_songs">Songs</string>
+    <string name="menu_videos">Videos</string>
+    <string name="menu_gallery">Gallery</string>
+    <string name="menu_folders">Folders</string>
+    <string name="menu_playlists">Playlists</string>
+    <string name="menu_history">History</string>
+    <string name="menu_settings">Settings</string>
+    <string name="other_devices">Other devices</string>
+    <string name="menu_footer">NKT Media Player · Version 1.0</string>
+    <string name="start_page_set">%1$s opens first from now on</string>
+    <string name="cd_start_page">Open %1$s first</string>
+    <string name="page_songs">SONGS</string>
+    <string name="page_videos">VIDEOS</string>
+    <string name="page_gallery">GALLERY</string>
+    <string name="page_folders">FOLDERS</string>
+    <string name="page_playlists">PLAYLISTS</string>
+    <string name="page_history">HISTORY</string>
+    <string name="page_settings">SETTINGS</string>
+    <string name="updating">⟳ Updating</string>
+
+    <!-- Sort & view -->
+    <string name="sort_view_title">SORT &amp; VIEW</string>
+    <string name="sort_by_caps">SORT BY</string>
+    <string name="sort_more_caps">MORE FOR THIS PAGE</string>
+    <string name="view_caps">VIEW</string>
+    <string name="sort_az">A–Z</string>
+    <string name="sort_za">Z–A</string>
+    <string name="sort_order_added">Order added</string>
+    <string name="sort_folders_first">Folders first</string>
+    <string name="sort_s_order">ADDED</string>
+    <string name="view_folders">FOLDERS</string>
+    <string name="back_to">‹ %1$s</string>
+
+    <!-- Folders (whole storage) -->
+    <string name="phone_storage_caps">PHONE STORAGE</string>
+    <string name="sd_card_caps">SD CARD</string>
+    <string name="usb_caps">USB %1$d</string>
+    <string name="folders_all_shown">Showing every folder, hidden ones too. Hide them in Settings</string>
+    <plurals name="folders_hidden_n">
+        <item quantity="one">%d hidden folder not shown. Show it in Settings</item>
+        <item quantity="other">%d hidden folders not shown. Show them in Settings</item>
+    </plurals>
+    <string name="folders_need_access">Allow access to all files so Folders can show every folder on your phone.</string>
+    <string name="folder_locked">Android doesn\'t let apps open this folder</string>
+    <string name="folder_empty">Empty</string>
+    <string name="play_all_here">▶ Play all songs here</string>
+    <string name="new_folder">New folder</string>
+    <string name="new_text_file">New text file</string>
+    <string name="name_hint">Name</string>
+    <string name="name_taken">Something with that name is already here</string>
+    <string name="couldnt_create">Couldn\'t create it here</string>
+    <string name="no_app_to_open">No app on this phone can open this file</string>
+    <string name="folder_items">%1$s · %2$s</string>
+    <string name="file_line">%1$s · %2$s</string>
+
+    <!-- Properties -->
+    <string name="properties">Properties</string>
+    <string name="properties_caps">PROPERTIES</string>
+    <string name="open_with_caps">OPEN WITH</string>
+    <string name="rename_caps">RENAME</string>
+    <string name="share_caps">SHARE</string>
+    <string name="delete_caps">DELETE</string>
+    <string name="close_caps">CLOSE</string>
+    <string name="d_modified">Date modified</string>
+    <string name="d_resolution">Resolution</string>
+    <string name="rename">Rename</string>
+    <string name="renamed">Renamed</string>
+    <string name="rename_failed">Couldn\'t rename. Allow access to all files and try again.</string>
+
+    <!-- Settings -->
+    <string name="set_folders">FOLDERS</string>
+    <string name="hide_dot">Hide folders starting with a dot</string>
+    <string name="hide_dot_sub">Folders shows every folder unless you hide some here</string>
+    <string name="hide_nomedia">Hide folders with a .nomedia file</string>
+    <string name="hide_thumbdirs">Hide .thumbnails folders</string>
+    <string name="folders_page_only">Folders page only</string>
+    <string name="show_hidden_media">Show hidden files in Songs, Videos, Gallery</string>
+    <string name="video_end">When a video ends</string>
+    <string name="karaoke_strength">Karaoke strength</string>
+
+    <string-array name="video_end_choices">
+        <item>Play next video</item>
+        <item>Go back</item>
+        <item>Stop on last frame</item>
+    </string-array>
+    <string-array name="karaoke_strengths">
+        <item>Light</item>
+        <item>Normal</item>
+        <item>Strong</item>
+    </string-array>
+
+    <!-- Video player -->
+    <string name="save_frame">Save this frame as image</string>
+    <string name="frame_saved">Frame saved in Pictures/NKT Media Player</string>
+    <string name="frame_failed">Couldn\'t save this frame</string>
+    <string name="view_caps_short">VIEW</string>
+    <string name="video_end_menu">When this video ends: %1$s</string>
+    <string name="karaoke_menu_on">Karaoke: ON</string>
+    <string name="karaoke_menu_off">Karaoke: OFF</string>
+    <string name="karaoke_now_on">Karaoke on</string>
+    <string name="karaoke_now_off">Karaoke off</string>
+    <string name="cd_replay">Play again</string>
+
+    <!-- Karaoke -->
+    <string name="karaoke_sub2">Removes the main vocals · songs and videos</string>
+    <string name="strength_caps">STRENGTH</string>
+    <string name="key_caps">KEY</string>
+    <string name="key_value">Key %1$s</string>
+    <string name="cd_key_down">Key down</string>
+    <string name="cd_key_up">Key up</string>
+    <string name="cd_key_reset">Reset key</string>
+    <string name="karaoke_lyrics">Show lyrics while singing</string>
+    <string name="karaoke_lyrics_sub">Big current line on the music player</string>
+    <string name="karaoke_working_detail">● Working on this song · %1$s · %2$s</string>
+    <string name="opt_karaoke">Karaoke</string>
+
+    <!-- Viewer -->
+    <string name="viewer_hint_mixed">Swipe or tap ‹ › for the previous or next photo or video</string>
+    <string name="cd_prev_item">Previous photo or video</string>
+    <string name="cd_next_item">Next photo or video</string>
+    <string name="cd_full_player">Open in the video player</string>
+
+    <!-- NKT Share -->
+    <string name="nkt_share_long">Share files with a computer or other devices on Wi-Fi</string>
+
+    <!-- Other devices -->
+    <string name="other_devices_caps">OTHER DEVICES</string>
+    <string name="found_wifi_caps">FOUND ON THIS WI-FI</string>
+    <string name="saved_caps">SAVED</string>
+    <string name="looking">⟳ Looking…</string>
+    <string name="nothing_found">Turn on NKT Share on the other phone and join the same Wi-Fi.</string>
+    <string name="no_saved">Devices you add with ＋ stay here.</string>
+    <string name="devices_hint">Other phones show up here when NKT Share is on. Any FTP server on your Wi-Fi works too — add it with ＋.</string>
+    <string name="badge_app">NKT MEDIA PLAYER</string>
+    <string name="with_password">password</string>
+    <string name="open_login">open</string>
+    <string name="online">online</string>
+    <string name="offline">offline</string>
+    <string name="checking">checking…</string>
+    <string name="last_used">last used %1$s</string>
+    <string name="add_device">Add a device</string>
+    <string name="add_device_caps">ADD A DEVICE</string>
+    <string name="add_device_help">Any FTP server works — FileZilla on a laptop, a home NAS, or a phone running NKT Share.</string>
+    <string name="f_name_opt">NAME (OPTIONAL)</string>
+    <string name="f_address">ADDRESS</string>
+    <string name="f_port">PORT</string>
+    <string name="f_user">USER NAME</string>
+    <string name="f_password">PASSWORD</string>
+    <string name="login_as_caps">LOG IN AS</string>
+    <string name="guest">Guest</string>
+    <string name="user_password">User name &amp; password</string>
+    <string name="save_device">Save this device</string>
+    <string name="connect_caps">CONNECT</string>
+    <string name="edit">Edit</string>
+    <string name="forget">Forget</string>
+    <string name="address_needed">Type the address first</string>
+    <string name="connecting">Connecting…</string>
+    <string name="connected_rw">● Connected · read &amp; write</string>
+    <string name="connected_ro">● Connected · read only</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="cant_connect">Couldn\'t connect to %1$s</string>
+    <string name="lost_connection">Lost the connection to %1$s</string>
+    <string name="retry_caps">RETRY</string>
+    <string name="wrong_login">Wrong user name or password</string>
+    <string name="play_all_songs_here">PLAY ALL SONGS HERE</string>
+    <string name="tap_to_play">%1$s · tap to play</string>
+    <string name="copies_save_to">Copies save to</string>
+    <string name="change_caps">CHANGE</string>
+    <string name="copy_to_phone">Copy to this phone</string>
+    <string name="copying_n">Copying %1$d of %2$d to this phone</string>
+    <string name="copying_one">Copying 1 file to this phone</string>
+    <string name="saving_to">Saving to %1$s</string>
+    <string name="copied_to">Copied to %1$s</string>
+    <string name="copy_failed">Couldn\'t copy %1$s</string>
+    <string name="copies_channel">Copies from other devices</string>
+    <string name="save_copies_caps">SAVE COPIES TO</string>
+    <string name="save_copies_help">Files you copy from %1$s go to this folder on your phone.</string>
+    <string name="ask_every_time">Ask every time</string>
+    <string name="ask_every_time_sub">Choose a folder on each copy</string>
+    <string name="save_here_caps">SAVE HERE</string>
+    <string name="new_folder_here">＋ New folder here</string>
+    <string name="needs_all_files">To save here, allow access to all files. Download, Music, Movies, Pictures and DCIM work without it.</string>
+    <string name="opening">Opening…</string>
+
+    <!-- Text editor -->
+    <string name="editor_saved">saved</string>
+    <string name="editor_edited">edited</string>
+    <string name="editor_status">Ln %1$d, Col %2$d · %3$s · %4$d chars</string>
+    <string name="editor_read_only">Read only — this file is too big to edit here</string>
+    <string name="editor_too_big">Too big to open here</string>
+    <string name="editor_unsaved_title">Save your changes?</string>
+    <string name="discard">Discard</string>
+    <string name="find_hint">Find</string>
+    <string name="replace_hint">Replace with…</string>
+    <string name="replace_caps">REPLACE</string>
+    <string name="all_caps">ALL</string>
+    <string name="match_n_of">%1$d of %2$d</string>
+    <string name="no_match">0 of 0</string>
+    <string name="wrap_caps">WRAP</string>
+    <string name="cd_undo">Undo</string>
+    <string name="cd_redo">Redo</string>
+    <string name="cd_find">Find and replace</string>
+    <string name="cd_smaller">Smaller text</string>
+    <string name="cd_bigger">Bigger text</string>
+    <string name="saved_file">Saved</string>
+    <string name="save_failed">Couldn\'t save the file</string>
+    <string name="cant_open_file">Couldn\'t open this file</string>
+    <string name="n_replaced">Replaced %1$d</string>
+
+    <!-- PDF reader -->
+    <string name="pdf_page">%1$d / %2$d</string>
+    <string name="go_to_page">Go to page</string>
+    <string name="pdf_locked">This PDF is locked or damaged — open it with another app</string>
+    <string name="cd_night">Night mode</string>
 
     <string-array name="orientations">
         <item>Auto rotate</item>

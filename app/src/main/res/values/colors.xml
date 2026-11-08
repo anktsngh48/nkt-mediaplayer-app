@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- NKT palette (same as NKT JustSay) -->
 <resources>
     <color name="bg">#FF05080F</color>
     <color name="card">#FF111827</color>
@@ -6,5 +7,6 @@
     <color name="accent2">#FF7B61FF</color>
     <color name="text">#FFE8F0FE</color>
     <color name="muted">#FF8A9AB2</color>
-    <color name="ic_launcher_background">#FF05080F</color>
+    <color name="success">#FF00E5A0</color>
+    <color name="border">#1F00E5FF</color>
 </resources>

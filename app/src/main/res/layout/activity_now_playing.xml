@@ -291,6 +291,7 @@
             <TextView android:id="@+id/opt_timer" style="@style/NKTOption" android:drawableTop="@drawable/ic_timer" android:text="@string/opt_timer" />
             <TextView android:id="@+id/opt_speed" style="@style/NKTOption" android:drawableTop="@drawable/ic_speed" android:text="@string/opt_speed" />
             <TextView android:id="@+id/opt_lyrics" style="@style/NKTOption" android:drawableTop="@drawable/ic_lyrics" android:text="@string/opt_lyrics" />
+            <TextView android:id="@+id/opt_karaoke" style="@style/NKTOption" android:drawableTop="@drawable/ic_mic_off" android:text="@string/opt_karaoke" />
             <TextView android:id="@+id/opt_queue" style="@style/NKTOption" android:drawableTop="@drawable/ic_playlist" android:text="@string/opt_queue" />
             <TextView android:id="@+id/opt_fav" style="@style/NKTOption" android:drawableTop="@drawable/ic_heart" android:text="@string/opt_fav" />
         </LinearLayout>
