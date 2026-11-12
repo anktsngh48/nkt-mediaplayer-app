@@ -72,7 +72,17 @@ public final class NotifArt implements BitmapLoader {
         return AppLogo.bitmap(c.getApplicationContext(), size);
     }
 
+    /** The song's own (or downloaded) picture, or null when it has none (the app logo is not returned). Not on the main thread. */
+    public static Bitmap artFor(Context c, MediaInfo m) {
+        try { return new NotifArt(c).resolveArt(forSong(m)); } catch (Throwable t) { return null; }
+    }
+
     private Bitmap resolve(Uri uri) {
+        Bitmap b = resolveArt(uri);
+        return b != null ? b : AppLogo.bitmap(app, SIZE);
+    }
+
+    private Bitmap resolveArt(Uri uri) {
         if ("song".equals(uri.getAuthority())) {
             String u = uri.getQueryParameter("u");
             if (u != null) {
@@ -94,7 +104,7 @@ public final class NotifArt implements BitmapLoader {
                 }
             }
         }
-        return AppLogo.bitmap(app, SIZE);
+        return null;
     }
 
     /** Title, artist and album read from the file, for the internet search. */
