@@ -115,8 +115,7 @@ public class MetaEditActivity extends Activity {
 
         findViewById(R.id.me_back).setOnClickListener(v -> finish());
         findViewById(R.id.me_art_change).setOnClickListener(v -> {
-            Intent pick = new Intent(Intent.ACTION_GET_CONTENT).setType("image/*").addCategory(Intent.CATEGORY_OPENABLE);
-            try { startActivityForResult(Intent.createChooser(pick, getString(R.string.change_art)), REQ_ART); }
+            try { startActivityForResult(ImagePickActivity.intent(this), REQ_ART); }      // NKT's own picture chooser
             catch (Exception e) { Ui.toast(this, R.string.no_picker); }
         });
         findViewById(R.id.me_art_remove).setOnClickListener(v -> {

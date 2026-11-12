@@ -762,7 +762,6 @@
 
     <!-- Now Playing views, album art, app logo -->
     <string name="set_album_art">ALBUM ART</string>
-    <string name="set_appearance">APPEARANCE</string>
     <string name="np_opens_with">Now Playing opens with</string>
     <string name="np_opens_caps">NOW PLAYING OPENS WITH</string>
     <string name="np_default_view_caps">DEFAULT VIEW</string>
@@ -775,17 +774,6 @@
     <string name="viz_gamaka">Gamaka line</string>
     <string name="dl_art">Download missing album art</string>
     <string name="dl_art_sub">Songs without art get it from the internet</string>
-    <string name="app_logo">App logo</string>
-    <string name="app_logo_sub_custom">Custom logo · shown when a song has no album art</string>
-    <string name="app_logo_sub_default">NKT logo · shown when a song has no album art</string>
-    <string name="app_logo_caps">APP LOGO</string>
-    <string name="logo_default_caps">NKT DEFAULT</string>
-    <string name="logo_yours_caps">YOUR IMAGE</string>
-    <string name="logo_choose">CHOOSE FROM GALLERY</string>
-    <string name="logo_use_default">Use the NKT default again</string>
-    <string name="logo_hint">Pick a square picture; it is cropped to a square and saved inside the app. The tiny status-bar icon stays the white NKT mark: Android only allows one colour there.</string>
-    <string name="logo_saved">Logo saved</string>
-    <string name="logo_failed">Could not use that picture</string>
 
     <!-- Now Playing: visualiser, find art, lyrics edit -->
     <string name="cd_viz">Visualiser. Tap to show controls</string>
@@ -809,7 +797,7 @@
     <string name="art_results">RESULTS</string>
     <string name="art_searching">Searching the internet…</string>
     <string name="art_none">Nothing found. Tap the line above to change the title or artist.</string>
-    <string name="art_embed">Also save inside the song file</string>
+    <string name="art_embed">Save this for audio permanently</string>
     <string name="art_embed_sub">Other players will show it too</string>
     <string name="art_gallery">GALLERY</string>
     <string name="art_use">USE THIS ART</string>
@@ -844,10 +832,28 @@
 
     <!-- Home-screen widgets -->
     <string name="widget_label">NKT MEDIA PLAYER</string>
-    <string name="widget_large_desc">Windscreen picture, song and player controls (4×4)</string>
+    <string name="widget_large_desc">What the player shows in a square picture, with the song and player controls (4×3)</string>
     <string name="widget_compact_desc">Windscreen picture and player controls (4×2)</string>
     <string name="lyrics_none_widget">No lyrics found</string>
     <string name="docs_need_access">To choose files from here, allow “All files access” for NKT Media Player in Settings.</string>
+    <string name="viz_steady">Windscreen · steady speed</string>
+    <string name="viz_style_steady">STEADY</string>
+    <string name="viz_speed">SPEED</string>
+    <string name="set_net_perms">INTERNET &amp; PERMISSIONS</string>
+    <string name="no_internet">Do not use internet</string>
+    <string name="no_internet_sub">Lyrics, album art, online music and links stay off. NKT Share and other devices on your Wi-Fi still work.</string>
+    <string name="reset_perms">Remove all permissions</string>
+    <string name="reset_perms_sub">Start fresh: NKT asks for every permission again</string>
+    <string name="reset_perms_title">Remove all permissions?</string>
+    <string name="reset_perms_msg">NKT will close and the music will stop. The next time you open it, it asks for every permission again, like a new install.</string>
+    <string name="reset_perms_go">REMOVE</string>
+    <string name="reset_perms_files">Switch off “All files access” on the next screen</string>
+    <string name="reset_perms_manual">Open Permissions on the next screen and remove each one</string>
+    <string name="net_off_toast">Internet is turned off in Settings</string>
+    <string name="net_off_online">Internet is turned off.\nTurn it back on in Settings → Internet &amp; permissions to use online music.</string>
+    <string name="pick_image_title">CHOOSE A PICTURE</string>
+    <string name="pick_other_apps">OTHER APPS</string>
+    <string name="pick_image_empty">No pictures found on this phone.</string>
     <string name="widget_idle">Nothing playing</string>
     <string name="widget_idle_sub">Tap to open</string>
 </resources>

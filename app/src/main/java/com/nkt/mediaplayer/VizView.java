@@ -20,7 +20,7 @@ import android.view.ViewOutlineProvider;
  */
 public class VizView extends View {
 
-    public static final int WINDSCREEN = 0, GAMAKA = 1;
+    public static final int WINDSCREEN = 0, GAMAKA = 1, STEADY = 2;
 
     private static final int ACC = 0xFF00E5FF;
     private static final String[] SWARA = {"Sa", "Re", "Ga", "Ma", "Pa", "Dha", "Ni", "Sa'"};
@@ -33,6 +33,9 @@ public class VizView extends View {
 
     // road
     private float off = 0f;
+    private float speedNow = 0f;          // eased speed of the road, so it never jumps
+    private float pulseS = 0f;            // eased beat pulse
+    private float steadySpeed = 40 * 0.3f;
     private long lastFrame = 0;
     private int seenBeat = 0;
     private long beatAt = 0;
@@ -67,10 +70,15 @@ public class VizView extends View {
     }
 
     public void setStyle(int s) {
-        style = s == GAMAKA ? GAMAKA : WINDSCREEN;
+        style = s == GAMAKA ? GAMAKA : s == STEADY ? STEADY : WINDSCREEN;
         hN = 0;
+        haveLane = false;
         invalidate();
     }
+
+    /** Steady windscreen: the speed options are 20, 40, 60, 80; the road runs this many × SPEED_UNIT per second. */
+    public static final float SPEED_UNIT = 0.3f;
+    public void setSteadySpeed(int s) { steadySpeed = Math.max(1, s) * SPEED_UNIT; }
 
     public int getStyle() { return style; }
 
@@ -133,8 +141,8 @@ public class VizView extends View {
             beatAt = AudioAnalyzer.lastBeatMs;
             beatIndex = seenBeat & 3;
         }
-        if (style == WINDSCREEN) drawWindscreen(canvas, now, dt, playing);
-        else drawGamaka(canvas, now, playing);
+        if (style == GAMAKA) drawGamaka(canvas, now, playing);
+        else drawWindscreen(canvas, now, dt, playing);
         if (running) postInvalidateOnAnimation();
     }
 
@@ -146,9 +154,21 @@ public class VizView extends View {
         float u = getHeight() / 298f;
         float wu = getWidth() / u;
         float dx = (wu - 348f) / 2f;
-        float since = beatAt == 0 ? 99f : (now - beatAt) / 1000f;
-        float pulse = playing ? (float) Math.exp(-since / TAU) : 0f;
-        off += (playing ? 6f + 12f * pulse : 0f) * dt;
+        float pulse, target;
+        if (style == STEADY) {
+            pulse = 0f;                                              // the road does not follow the beat
+            target = playing ? steadySpeed : 0f;
+        } else {
+            float since = beatAt == 0 ? 99f : (now - beatAt) / 1000f;
+            float raw = playing ? (float) Math.exp(-since / TAU) : 0f;
+            // the pulse rises over a few frames and fades away: no sudden step
+            pulseS += (raw - pulseS) * (1f - (float) Math.exp(-dt / (raw > pulseS ? 0.07f : 0.14f)));
+            pulse = pulseS;
+            target = playing ? 7f + 7f * pulse : 0f;
+        }
+        // the speed glides towards its target (starting, stopping and beats alike)
+        speedNow += (target - speedNow) * (1f - (float) Math.exp(-dt / 0.45f));
+        off += speedNow * dt;
 
         cv.save();
         cv.scale(u, u);
@@ -161,6 +181,15 @@ public class VizView extends View {
 
     private static final float LH = 21f, HX = 106f, PPS = 56f;
 
+    /** Name of a lane: 0..6 are Sa..Ni, 7 is the upper Sa; further up the next octave (marked '), further down the lower one (marked .). */
+    private static String laneName(int k) {
+        int oct = Math.floorDiv(k, 7), idx = Math.floorMod(k, 7);
+        return SWARA[idx] + (oct > 0 ? "'" : oct < 0 ? "." : "");
+    }
+
+    private float baseNow = 0f;            // the lane at the bottom of the screen; moves when the line needs more room
+    private long lastGam = 0;
+
     private static float laneOf(float s) {
         if (s <= 0) return s / 2f;
         if (s >= 12) return 7 + (s - 12) / 2f;
@@ -170,13 +199,27 @@ public class VizView extends View {
         return 7;
     }
 
-    /** Takes the latest sung note into the line. */
+    private boolean haveLane = false;
+    private int saUsed = -2;
+
+    /** Takes the latest sung note into the line. Between notes the line holds its last height, so it never breaks. */
     private void sample(long now) {
         if (now - lastSample < 16) return;
         lastSample = now;
+        if (seenSong != AudioAnalyzer.songNo) {                      // another song: its own key, its own line
+            seenSong = AudioAnalyzer.songNo;
+            provSa = -1f; hN = 0; haveSemis = false; haveLane = false;
+        }
         int sa = saNow(getContext());
         float hz = AudioAnalyzer.pitchHz;
-        float lane = Float.NaN;
+        if (sa < 0 && hz > 0) {                                       // no Sa known yet: the first note heard stands in
+            if (provSa < 0) provSa = ((Math.round(12.0 * Math.log(hz / 261.6256) / Math.log(2.0)) % 12) + 12) % 12;
+            sa = (int) provSa;
+        }
+        if (sa != saUsed) {                                           // a different Sa moves every lane: start the line again
+            if (saUsed != -2 && sa >= 0) { hN = 0; haveSemis = false; haveLane = false; }
+            saUsed = sa;
+        }
         if (hz > 0 && sa >= 0) {
             float saHz = (float) (261.6256 * Math.pow(2.0, sa / 12.0));
             float s = (float) (12.0 * Math.log(hz / saHz) / Math.log(2.0));
@@ -184,14 +227,19 @@ public class VizView extends View {
             if (s < -2.5f || s > 14.5f) s = ((s % 12f) + 12f) % 12f;               // far away: bring it into the octave
             prevSemis = s;
             haveSemis = true;
-            lane = laneOf(s);
-            headLane = lane;
+            float lane = laneOf(s);
+            headLane = haveLane ? headLane + (lane - headLane) * 0.5f : lane;      // a little smoothing
+            haveLane = true;
             voicedAt = now;
         }
+        if (!haveLane) return;                                        // nothing sung yet
         if (hN == HIST) { System.arraycopy(hT, 1, hT, 0, HIST - 1); System.arraycopy(hLane, 1, hLane, 0, HIST - 1); hN--; }
         hT[hN] = now;
-        hLane[hN++] = lane;
+        hLane[hN++] = headLane;
     }
+
+    private float provSa = -1f;
+    private int seenSong = 0;
 
     private void drawGamaka(Canvas cv, long now, boolean playing) {
         sample(now);
@@ -207,7 +255,17 @@ public class VizView extends View {
         p.setShader(null);
 
         boolean voiced = now - voicedAt < 600 && playing;
-        int curLane = voiced ? Math.max(0, Math.min(7, Math.round(headLane))) : -1;
+        int curLane = voiced ? Math.round(headLane) : Integer.MIN_VALUE;
+
+        // the swara column moves when the note goes above or below the eight lanes
+        float dtg = lastGam == 0 ? 0f : Math.min(0.1f, (now - lastGam) / 1000f);
+        lastGam = now;
+        float want = 0f;
+        if (haveLane) {
+            if (headLane > want + 6.4f) want = headLane - 6.4f;
+            if (headLane < want + 0.6f) want = headLane - 0.6f;
+        }
+        baseNow += (want - baseNow) * (1f - (float) Math.exp(-dtg / 0.25f));
 
         // "NOW SINGING"
         p.setTypeface(orb);
@@ -219,26 +277,33 @@ public class VizView extends View {
         p.setLetterSpacing(0f);
         p.setFakeBoldText(true);
         p.setColor(ACC);
-        cv.drawText(curLane >= 0 ? SWARA[curLane] : "—", 16, 12 + 12 + 30, p);
+        cv.drawText(curLane != Integer.MIN_VALUE ? laneName(curLane) : "—", 16, 12 + 12 + 30, p);
         p.setFakeBoldText(false);
         p.setTypeface(null);
 
-        // lanes
+        // lanes (inside a clip, so lanes that slide in and out are cut cleanly)
         float rx = 40f, rw = wu - 52f, top = 64f;
         p.setTextSize(11f);
-        for (int r = 0; r < 8; r++) {
-            int lane = 7 - r;
-            boolean act = lane == curLane;
+        cv.save();
+        cv.clipRect(0, top, wu, top + 168f);
+        int k0 = (int) Math.floor(baseNow) - 1;
+        for (int k = k0; k <= k0 + 10; k++) {
+            float cy = top + (7 - (k - baseNow)) * LH + LH / 2;
+            if (cy < top - LH || cy > top + 168f + LH) continue;
+            boolean act = k == curLane;
+            p.setStyle(Paint.Style.FILL);
             p.setColor(act ? ACC : 0xFF8A9AB2);
             p.setFakeBoldText(act);
-            cv.drawText(SWARA[lane], 8, top + r * LH + LH / 2 + 4, p);
+            cv.drawText(laneName(k), 4, cy + 4, p);
             p.setFakeBoldText(false);
+            int idx = Math.floorMod(k, 7);
             p.setStyle(Paint.Style.STROKE);
             p.setStrokeWidth(1f);
-            p.setColor(lane == 0 || lane == 7 ? 0x29E8F0FE : lane == 4 ? 0x1AE8F0FE : 0x0DE8F0FE);
-            cv.drawLine(rx, top + r * LH + LH / 2, rx + rw, top + r * LH + LH / 2, p);
-            p.setStyle(Paint.Style.FILL);
+            p.setColor(idx == 0 ? 0x29E8F0FE : idx == 4 ? 0x1AE8F0FE : 0x0DE8F0FE);
+            cv.drawLine(rx, cy, rx + rw, cy, p);
         }
+        cv.restore();
+        p.setStyle(Paint.Style.FILL);
 
         // the line: what was sung (solid) and a dotted guess ahead
         cv.save();
@@ -249,14 +314,17 @@ public class VizView extends View {
         p.setStrokeCap(Paint.Cap.ROUND);
         p.setStrokeJoin(Paint.Join.ROUND);
         path.reset();
+        float px = 0, py = 0;
         boolean pen = false;
         for (int i = 0; i < hN; i++) {
             float x = HX + (hT[i] - now) / 1000f * PPS;
-            if (x < -4) { pen = false; continue; }
-            if (Float.isNaN(hLane[i])) { pen = false; continue; }
-            float y = (7 - hLane[i]) * LH + LH / 2;
-            if (!pen) { path.moveTo(x, y); pen = true; } else path.lineTo(x, y);
+            if (x < -4) continue;                                     // already scrolled out on the left
+            float y = (7 - (hLane[i] - baseNow)) * LH + LH / 2;
+            if (!pen) { path.moveTo(x, y); pen = true; }
+            else path.quadTo(px, py, (px + x) / 2f, (py + y) / 2f);   // every point is joined, with soft corners
+            px = x; py = y;
         }
+        if (pen) path.lineTo(px, py);
         p.setShader(new LinearGradient(0, 0, rw, 0, 0xFF7B61FF, ACC, Shader.TileMode.CLAMP));
         p.setStrokeWidth(9f);
         p.setAlpha(0x33);
@@ -266,7 +334,7 @@ public class VizView extends View {
         cv.drawPath(path, p);
         p.setShader(null);
 
-        float hy = (7 - headLane) * LH + LH / 2;
+        float hy = (7 - (headLane - baseNow)) * LH + LH / 2;
         if (voiced) {
             p.setStrokeWidth(2f);
             p.setColor(0x9900E5FF);

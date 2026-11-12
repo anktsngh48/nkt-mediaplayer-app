@@ -34,6 +34,7 @@ public class DefaultViewActivity extends Activity {
         addView(R.string.np_view_art, 0, Prefs.VIEW_ART);
         header(R.string.np_viz_style_caps);
         addStyle(R.string.viz_windscreen, 0);
+        addStyle(R.string.viz_steady, 2);
         addStyle(R.string.viz_gamaka, 1);
         update();
     }
@@ -79,6 +80,6 @@ public class DefaultViewActivity extends Activity {
         if (v == Prefs.VIEW_LYRICS) return c.getString(R.string.np_view_lyrics);
         if (v == Prefs.VIEW_ART) return c.getString(R.string.np_view_art);
         return c.getString(R.string.np_view_viz) + " · "
-                + c.getString(Prefs.vizStyle(c) == 1 ? R.string.viz_gamaka : R.string.viz_windscreen);
+                + c.getString(Prefs.vizStyle(c) == 1 ? R.string.viz_gamaka : Prefs.vizStyle(c) == 2 ? R.string.viz_steady : R.string.viz_windscreen);
     }
 }

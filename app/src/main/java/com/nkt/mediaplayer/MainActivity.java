@@ -819,6 +819,10 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
             case "auto_art":
                 Prefs.setAutoArt(this, on);
                 break;
+            case "no_internet":
+                Prefs.setNoInternet(this, on);
+                if (online != null) { online.reset(); if (page == ONLINE) online.show(); }      // the page shows its message, or loads again
+                break;
         }
     }
 
@@ -1494,9 +1498,10 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
                 R.drawable.ic_folder, Prefs.hideThumbDirs(this)));
         if (!access && Build.VERSION.SDK_INT >= 30)
             all.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.allow), getString(R.string.hidden_explain), null, "folders_access", R.drawable.ic_lock));
-        all.add(RowAdapter.Row.header(getString(R.string.set_appearance)));
-        all.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.app_logo),
-                getString(AppLogo.custom(this) ? R.string.app_logo_sub_custom : R.string.app_logo_sub_default), null, "app_logo", R.drawable.ic_image));
+        all.add(RowAdapter.Row.header(getString(R.string.set_net_perms)));
+        all.add(RowAdapter.Row.toggle(getString(R.string.no_internet), getString(R.string.no_internet_sub), "no_internet",
+                R.drawable.ic_globe, Prefs.noInternet(this)));
+        all.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.reset_perms), getString(R.string.reset_perms_sub), null, "reset_perms", R.drawable.ic_lock));
         all.add(RowAdapter.Row.header(getString(R.string.set_about)));
         all.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.app_name), getString(R.string.version_line), null, "about", R.drawable.ic_info));
         for (RowAdapter.Row r : all) {
@@ -1994,8 +1999,8 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
                         }).setNegativeButton(R.string.cancel, null).show();
                 break;
             case "folders_access": needAccessFor("folders"); break;
+            case "reset_perms": confirmResetPermissions(); break;
             case "np_view": startActivity(new Intent(this, DefaultViewActivity.class)); break;
-            case "app_logo": startActivity(new Intent(this, LogoActivity.class)); break;
             case "new_here": newHere(); break;
             case "play_here": {
                 List<MediaInfo> songs = new ArrayList<>();
@@ -2203,13 +2208,49 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
                 .setNegativeButton(R.string.download_caps, (d, w) -> {
                     String s = input.getText().toString().trim();
                     if (!s.startsWith("http://") && !s.startsWith("https://")) { Ui.toast(this, R.string.link_invalid); return; }
+                    if (Net.off()) { Ui.toast(this, R.string.net_off_toast); return; }
                     if (YouTube.isYouTube(s)) { Ui.toast(this, R.string.youtube_no_download); return; }
                     Downloads.start(this, Uri.parse(s), null);
                 })
                 .show();
     }
 
+    /** Settings → INTERNET & PERMISSIONS → Remove all permissions: a fresh start, NKT asks for everything again. */
+    private void confirmResetPermissions() {
+        Dialogs.builder(this)
+                .setTitle(R.string.reset_perms_title)
+                .setMessage(R.string.reset_perms_msg)
+                .setPositiveButton(R.string.reset_perms_go, (d, w) -> resetPermissions())
+                .setNegativeButton(R.string.cancel, null)
+                .show();
+    }
+
+    private void resetPermissions() {
+        boolean allFiles = Build.VERSION.SDK_INT >= 30 && HiddenScanner.hasAllFilesAccess(this);
+        if (Build.VERSION.SDK_INT >= 33) {
+            // Android removes these when the app closes
+            List<String> granted = new ArrayList<>();
+            String[] all = {Manifest.permission.READ_MEDIA_AUDIO, Manifest.permission.READ_MEDIA_VIDEO,
+                    Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.POST_NOTIFICATIONS, Manifest.permission.RECORD_AUDIO};
+            for (String p : all) if (checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED) granted.add(p);
+            try { if (!granted.isEmpty()) revokeSelfPermissionsOnKill(granted); } catch (Throwable ignored) { }
+            if (allFiles) {                                           // this one only Android's own page can switch off
+                Ui.toast(this, R.string.reset_perms_files);
+                try { startActivity(HiddenScanner.allFilesAccessIntent(this)); } catch (Throwable ignored) { }
+            }
+            ui.postDelayed(() -> { finishAndRemoveTask(); android.os.Process.killProcess(android.os.Process.myPid()); }, allFiles ? 1800 : 500);
+        } else {
+            // before Android 13 an app cannot take its own permissions away: the phone's page does it
+            Ui.toast(this, R.string.reset_perms_manual);
+            try {
+                startActivity(allFiles ? HiddenScanner.allFilesAccessIntent(this)
+                        : new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName())));
+            } catch (Throwable ignored) { }
+        }
+    }
+
     private void playLink(String text, boolean asVideo) {
+        if (Net.off()) { Ui.toast(this, R.string.net_off_toast); return; }
         String s = text.trim();
         if (!s.startsWith("http://") && !s.startsWith("https://")) {
             Ui.toast(this, R.string.link_invalid);

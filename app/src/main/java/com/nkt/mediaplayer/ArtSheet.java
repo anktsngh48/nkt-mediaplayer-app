@@ -48,6 +48,7 @@ public final class ArtSheet {
         gal.setTypeface(Ui.orbitron(a));
         use.setTypeface(Ui.orbitron(a));
         embedSwitch = v.findViewById(R.id.fa_embed);
+        embedSwitch.setChecked(true);                       // "Save this for audio permanently" is on to begin with
         v.findViewById(R.id.fa_close).setOnClickListener(x -> d.dismiss());
 
         final String[] q = {m.title, m.artist};
@@ -65,7 +66,7 @@ public final class ArtSheet {
             results.removeAllViews();
             hits.clear();
             chosen[0] = -1;
-            status.setText(R.string.art_searching);
+            status.setText(Net.off() ? R.string.net_off_toast : R.string.art_searching);
             status.setVisibility(View.VISIBLE);
             new Thread(() -> {
                 List<ArtFinder.Hit> got = ArtFinder.search(q[0], q[1], m.album);
@@ -73,7 +74,7 @@ public final class ArtSheet {
                     if (my != gen[0] || !d.isShowing()) return;
                     hits.addAll(got);
                     status.setVisibility(got.isEmpty() ? View.VISIBLE : View.GONE);
-                    status.setText(R.string.art_none);
+                    status.setText(Net.off() ? R.string.net_off_toast : R.string.art_none);
                     for (int i = 0; i < got.size(); i++) addTile(a, results, got.get(i), i, chosen, my, gen);
                     if (!got.isEmpty()) select(results, chosen, 0);
                 });
@@ -105,8 +106,7 @@ public final class ArtSheet {
         });
 
         gal.setOnClickListener(x -> {
-            Intent pick = new Intent(Intent.ACTION_GET_CONTENT).setType("image/*").addCategory(Intent.CATEGORY_OPENABLE);
-            try { a.startActivityForResult(Intent.createChooser(pick, a.getString(R.string.art_gallery)), REQ_GALLERY); }
+            try { a.startActivityForResult(ImagePickActivity.intent(a), REQ_GALLERY); }      // NKT's own picture chooser
             catch (Exception e) { Ui.toast(a, R.string.no_picker); }
         });
 

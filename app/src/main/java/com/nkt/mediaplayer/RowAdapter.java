@@ -158,8 +158,7 @@ public class RowAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             if (r.type == FOLDER || r.type == PLAYLIST) h.badge(r.icon); else h.badge(0);
         } else {
             h.thumb.setTag(R.id.thumb_key, null);
-            if ("app_logo".equals(r.key)) Thumbs.showBitmap(h.thumb, AppLogo.bitmap(h.thumb.getContext(), 96));   // Settings: the logo itself
-            else Thumbs.showPlaceholder(h.thumb, r.icon);
+            Thumbs.showPlaceholder(h.thumb, r.icon);
             h.badge(0);
         }
         boolean more = !picking && (r.type == MEDIA || r.type == PLAYLIST || (r.type == FOLDER && r.pick != null));

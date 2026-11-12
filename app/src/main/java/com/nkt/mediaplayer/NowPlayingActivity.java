@@ -502,13 +502,32 @@ public class NowPlayingActivity extends Activity {
         art.setOnClickListener(v -> setMode(MODE_VIZ));                 // thumbnail → next view
         viz.setOnClickListener(v -> showOverlay(vizOvl.getVisibility() != View.VISIBLE));
         ovlStyle.setOnClickListener(v -> {
-            int next = viz.getStyle() == VizView.WINDSCREEN ? VizView.GAMAKA : VizView.WINDSCREEN;
+            int cur = viz.getStyle();
+            int next = cur == VizView.WINDSCREEN ? VizView.STEADY : cur == VizView.STEADY ? VizView.GAMAKA : VizView.WINDSCREEN;
             Prefs.setVizStyle(this, next);
             WidgetUpdater.update(this);
             viz.setStyle(next);
             showOverlay(true);
         });
         ovlSa.setOnClickListener(v -> chooseSa());
+        viz.setSteadySpeed(Prefs.vizSpeed(this));
+        ((TextView) findViewById(R.id.ovl_speed_label)).setTypeface(Ui.orbitron(this));
+        int[] speedIds = {R.id.ovl_sp0, R.id.ovl_sp1, R.id.ovl_sp2, R.id.ovl_sp3};
+        int[] speedVals = {20, 40, 60, 80};
+        for (int i = 0; i < 4; i++) {
+            final int val = speedVals[i];
+            TextView t = findViewById(speedIds[i]);
+            t.setTypeface(Ui.orbitron(this));
+            t.setOnClickListener(v -> {
+                Prefs.setVizSpeed(this, val);
+                viz.setSteadySpeed(val);
+                markSpeed();
+                WidgetUpdater.update(this);
+                ui.removeCallbacks(hideOvl);
+                ui.postDelayed(hideOvl, 4000);
+            });
+        }
+        markSpeed();
         findArt.setOnClickListener(v -> ArtSheet.show(this, Media.current(controller)));
         findViewById(R.id.opt_lyrics).setOnLongClickListener(v -> { editLyrics(); return true; });
 
@@ -538,6 +557,18 @@ public class NowPlayingActivity extends Activity {
         if (m == MODE_LYRICS) { ui.removeCallbacks(tick); ui.post(tick); }
     }
 
+    /** The chosen speed shows in the accent colour. */
+    private void markSpeed() {
+        int[] ids = {R.id.ovl_sp0, R.id.ovl_sp1, R.id.ovl_sp2, R.id.ovl_sp3};
+        int[] vals = {20, 40, 60, 80};
+        for (int i = 0; i < 4; i++) {
+            TextView t = findViewById(ids[i]);
+            boolean on = Prefs.vizSpeed(this) == vals[i];
+            t.setTextColor(getColor(on ? R.color.accent : R.color.muted));
+            t.setTypeface(t.getTypeface(), on ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
+        }
+    }
+
     private void showFindArt() { findArt.setVisibility(mode == MODE_ART && !hasArt && controller != null && controller.getMediaItemCount() > 0 ? View.VISIBLE : View.GONE); }
 
     private void showOverlay(boolean on) {
@@ -545,11 +576,13 @@ public class NowPlayingActivity extends Activity {
         ui.removeCallbacks(ovlTick);
         vizOvl.setVisibility(on && mode == MODE_VIZ ? View.VISIBLE : View.GONE);
         if (!on || mode != MODE_VIZ) return;
-        boolean wind = viz.getStyle() == VizView.WINDSCREEN;
+        int st = viz.getStyle();
+        boolean wind = st == VizView.WINDSCREEN, steady = st == VizView.STEADY;
         findViewById(R.id.ovl_beat).setVisibility(wind ? View.VISIBLE : View.GONE);
         ovlBpm.setVisibility(wind ? View.VISIBLE : View.GONE);
-        ovlSa.setVisibility(wind ? View.GONE : View.VISIBLE);
-        ovlStyle.setText(wind ? R.string.viz_style_windscreen : R.string.viz_style_gamaka);
+        ovlSa.setVisibility(st == VizView.GAMAKA ? View.VISIBLE : View.GONE);
+        findViewById(R.id.ovl_speed).setVisibility(steady ? View.VISIBLE : View.GONE);
+        ovlStyle.setText(wind ? R.string.viz_style_windscreen : steady ? R.string.viz_style_steady : R.string.viz_style_gamaka);
         updateOverlay();
         ui.postDelayed(ovlTick, 100);
         ui.postDelayed(hideOvl, 4000);
@@ -605,6 +638,7 @@ public class NowPlayingActivity extends Activity {
     }
 
     private void fetchLyrics(MediaInfo m, String t, String a, String al, long dur, boolean onlineOnly) {
+        if (onlineOnly && Net.off()) { Ui.toast(this, R.string.net_off_toast); return; }
         lyr = null;
         lyrCurrent = -1;
         lyrAdapter.notifyDataSetChanged();

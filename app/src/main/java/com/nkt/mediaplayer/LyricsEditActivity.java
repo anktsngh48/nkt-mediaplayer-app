@@ -235,6 +235,7 @@ public class LyricsEditActivity extends Activity {
     private void searchOnline() {
         if (!loaded) return;
         Ui.toast(this, R.string.lyr_looking);
+        if (Net.off()) { Ui.toast(this, R.string.net_off_toast); return; }
         new Thread(() -> {
             String keep = Lyrics.savedText(this, song);           // searching saves its result; put the old copy back
             Lyrics.Result r = Lyrics.online(this, song, title, artist, album, controller != null && controller.getDuration() > 0 ? controller.getDuration() : 0);

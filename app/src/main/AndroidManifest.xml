@@ -51,6 +51,7 @@
     </queries>
 
     <application
+        android:name=".NktApp"
         android:allowBackup="false"
         android:requestLegacyExternalStorage="true"
         android:icon="@mipmap/ic_launcher"
@@ -186,7 +187,7 @@
 
         <activity android:name=".EqualizerActivity" android:exported="false" />
         <activity android:name=".DefaultViewActivity" android:exported="false" />
-        <activity android:name=".LogoActivity" android:exported="false" />
+        <activity android:name=".ImagePickActivity" android:exported="false" />
         <activity android:name=".LyricsEditActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
 
         <!-- Other devices: browse, stream and copy from FTP servers and phones running NKT Share -->

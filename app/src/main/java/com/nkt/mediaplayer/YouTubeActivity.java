@@ -25,6 +25,7 @@ public class YouTubeActivity extends Activity {
     private static final String EXTRA_URL = "url";
 
     public static void open(Context c, String url) {
+        if (Net.off()) { Ui.toast(c, R.string.net_off_toast); return; }
         c.startActivity(new Intent(c, YouTubeActivity.class).putExtra(EXTRA_URL, url));
     }
 

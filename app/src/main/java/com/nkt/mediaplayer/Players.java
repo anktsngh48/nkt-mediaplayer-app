@@ -62,6 +62,8 @@ public final class Players {
         @Override
         public long open(DataSpec spec) throws IOException {
             Uri u = spec.uri;
+            if (Net.off() && ("http".equalsIgnoreCase(u.getScheme()) || "https".equalsIgnoreCase(u.getScheme())))
+                throw new IOException("Internet is turned off in Settings");
             current = "ftp".equalsIgnoreCase(u.getScheme()) ? new FtpDataSource(app) : new DefaultDataSource.Factory(app).createDataSource();
             for (TransferListener t : listeners) current.addTransferListener(t);
             return current.open(spec);

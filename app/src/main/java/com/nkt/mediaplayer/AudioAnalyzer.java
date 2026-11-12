@@ -80,7 +80,8 @@ public final class AudioAnalyzer {
     static void flushed() { resetStateRequested = true; }
 
     /** A new song: forget the key found for the last one. */
-    public static void newSong() { resetStateRequested = true; saHist = new float[12]; autoSa = -1; }
+    public static volatile int songNo = 0;
+    public static void newSong() { songNo++; resetStateRequested = true; saHist = new float[12]; autoSa = -1; }
 
     private static volatile boolean resetStateRequested = false;
 
@@ -222,6 +223,16 @@ public final class AudioAnalyzer {
                 while (t + 1 < tMax && cmnd[t + 1] < cmnd[t]) t++;
                 found = t;
                 break;
+            }
+        }
+        if (found < 0) {
+            // not a clean note (voice over instruments): take the clearest dip, if it is clear enough, preferring the highest pitch of similar dips
+            float bestV = 1f;
+            for (int t = tMin; t < tMax; t++) if (cmnd[t] < bestV) bestV = cmnd[t];
+            if (bestV < 0.38f) {
+                for (int t = Math.max(tMin, 2); t < tMax - 1; t++) {
+                    if (cmnd[t] <= bestV * 1.2f && cmnd[t] <= cmnd[t - 1] && cmnd[t] <= cmnd[t + 1]) { found = t; break; }
+                }
             }
         }
         if (found < 0) { lastHz2 = lastHz; lastHz = 0f; pitchHz = 0f; return; }

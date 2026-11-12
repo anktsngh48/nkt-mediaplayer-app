@@ -31,6 +31,7 @@ public final class ArtFinder {
 
     /** All sources, best first. Call off the main thread. */
     public static List<Hit> search(String title, String artist, String album) {
+        if (Net.off()) return new ArrayList<>();
         String t = Lyrics.cleanTitle(title), a = artist == null ? "" : artist.trim();
         if (a.isEmpty() && t.contains(" - ")) {
             int i = t.indexOf(" - ");
@@ -94,6 +95,7 @@ public final class ArtFinder {
 
     /** Downloads one picture. Call off the main thread. Null on failure. */
     public static byte[] download(String url) {
+        if (Net.off()) return null;
         HttpURLConnection con = null;
         try {
             con = (HttpURLConnection) new URL(url).openConnection();
@@ -133,7 +135,7 @@ public final class ArtFinder {
      * True when the song now has a downloaded picture.
      */
     static boolean ensure(Context app, MediaInfo m) {
-        if (!Prefs.autoArt(app) || m == null || m.video || m.image || m.other) return false;
+        if (!Prefs.autoArt(app) || Net.off() || m == null || m.video || m.image || m.other) return false;
         synchronized (LOCK) {
             try {
                 if (ArtStore.has(app, m)) return true;
@@ -160,6 +162,7 @@ public final class ArtFinder {
     }
 
     private static String get(String url) {
+        if (Net.off()) return null;
         byte[] d = download(url);
         return d == null ? null : new String(d, java.nio.charset.StandardCharsets.UTF_8);
     }

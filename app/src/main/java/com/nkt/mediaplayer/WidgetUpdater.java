@@ -25,7 +25,7 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** Draws the home-screen widgets (4×4 and 4×2): the windscreen picture, the song, and previous / play-pause / next. */
+/** Draws the home-screen widgets (4×3 and 4×2): the windscreen picture, the song, and previous / play-pause / next. */
 public final class WidgetUpdater {
 
     private WidgetUpdater() { }
@@ -114,33 +114,33 @@ public final class WidgetUpdater {
 
     /** What the player shows right now, as a still picture: the visualiser, the lyrics or the album art. */
     private static Bitmap scene(Context c, boolean large, Info info, int mode) {
-        int w = large ? 480 : 264, h = large ? 314 : 264;
+        int w = large ? 400 : 264, h = w;                         // both are square pictures
         Bitmap b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
         Canvas cv = new Canvas(b);
 
-        // rounded corners that match the card: top for 4×4, left for 4×2
-        float r = (large ? 28f / 358f * w : 28f / 132f * w);
+        // rounded corners: all four on the square picture (4×3), the left two beside the text (4×2)
+        float r = large ? 0.09f * w : 28f / 132f * w;
         Path clip = new Path();
-        float[] radii = large ? new float[]{r, r, r, r, 0, 0, 0, 0} : new float[]{r, r, 0, 0, 0, 0, r, r};
+        float[] radii = large ? new float[]{r, r, r, r, r, r, r, r} : new float[]{r, r, 0, 0, 0, 0, r, r};
         clip.addRoundRect(new RectF(0, 0, w, h), radii, Path.Direction.CW);
         cv.clipPath(clip);
 
         if (mode == 2) art(c, cv, w, h, info);
         else if (mode == 1) lyrics(c, cv, w, h, info);
         else if (Prefs.vizStyle(c) == VizView.GAMAKA) gamaka(c, cv, w, h);
-        else windscreen(cv, w, h, large, info);
+        else windscreen(c, cv, w, h, large, info);
         return b;
     }
 
-    private static void windscreen(Canvas cv, int w, int h, boolean large, Info info) {
-        float vx = large ? 0 : 92, vy = large ? 70 : 100, vw = large ? 348 : 164, vh = large ? 228 : 198;
+    private static void windscreen(Context c, Canvas cv, int w, int h, boolean large, Info info) {
+        float vx = large ? 60 : 92, vy = large ? 70 : 100, vw = large ? 228 : 164, vh = large ? 228 : 198;
         float s = Math.max(w / vw, h / vh);                       // fill the area, keep the shape (the sides are cropped)
         float tx = (w - vw * s) / 2f - vx * s, ty = (h - vh * s) - vy * s;
         cv.translate(tx, ty);
         cv.scale(s, s);
         float left = -tx / s, right = (w - tx) / s;
-        float off = 1.3f + info.posMs / 1000f * 6f;
-        new WindscreenPainter().paint(cv, left, right, off, info.playing ? 0.6f : 0f);
+        float off = 1.3f + info.posMs / 1000f * (Prefs.vizStyle(c) == VizView.STEADY ? Prefs.vizSpeed(c) * VizView.SPEED_UNIT : 7f);
+        new WindscreenPainter().paint(cv, left, right, off, info.playing && Prefs.vizStyle(c) != VizView.STEADY ? 0.6f : 0f);
     }
 
     /** The Gamaka lanes (a still picture cannot show the moving line). */
@@ -158,18 +158,7 @@ public final class WidgetUpdater {
         Bitmap a = info.cur == null ? AppLogo.bitmap(c, 512) : NotifArt.bitmapFor(c, info.cur, 512);
         if (a == null) return;
         Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
-        boolean wide = w > h;
-        if (wide) {                                              // 4×4: the picture sits in the middle, whole
-            float side = h * 0.92f, x = (w - side) / 2f, y = (h - side) / 2f;
-            Path rr = new Path();
-            rr.addRoundRect(new RectF(x, y, x + side, y + side), 22f, 22f, Path.Direction.CW);
-            cv.save();
-            cv.clipPath(rr);
-            cv.drawBitmap(a, null, new RectF(x, y, x + side, y + side), p);
-            cv.restore();
-        } else {
-            cv.drawBitmap(a, null, new RectF(0, 0, w, h), p);   // 4×2: the picture fills its square
-        }
+        cv.drawBitmap(a, null, new RectF(0, 0, w, h), p);          // the picture fills its square
     }
 
     // the lyrics of the song in view are kept so they are not looked up again at every refresh

@@ -67,7 +67,7 @@
                 android:contentDescription="@string/cd_prev"
                 android:src="@drawable/wg_prev" />
 
-            <View
+            <FrameLayout
                 android:layout_width="0dp"
                 android:layout_height="1dp"
                 android:layout_weight="1" />
@@ -80,7 +80,7 @@
                 android:contentDescription="@string/cd_play"
                 android:src="@drawable/wg_pause" />
 
-            <View
+            <FrameLayout
                 android:layout_width="0dp"
                 android:layout_height="1dp"
                 android:layout_weight="1" />

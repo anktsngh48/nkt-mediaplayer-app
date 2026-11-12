@@ -18,6 +18,7 @@ public final class Downloads {
     }
 
     public static void start(Activity a, Uri link, String fallbackName) {
+        if (Net.off()) { Ui.toast(a, R.string.net_off_toast); return; }
         try {
             String name = fileName(link, fallbackName);
             DownloadManager.Request r = new DownloadManager.Request(link)

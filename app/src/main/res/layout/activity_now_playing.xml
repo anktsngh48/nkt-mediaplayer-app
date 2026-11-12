@@ -149,6 +149,66 @@
                     android:textColor="@color/accent"
                     android:textSize="9.5sp" />
 
+                <LinearLayout
+                    android:id="@+id/ovl_speed"
+                    android:layout_width="wrap_content"
+                    android:layout_height="44dp"
+                    android:layout_gravity="bottom|start"
+                    android:layout_margin="12dp"
+                    android:background="@drawable/bg_viz_chip"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="10dp"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/ovl_speed_label"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:letterSpacing="0.14"
+                        android:text="@string/viz_speed"
+                        android:textColor="@color/accent"
+                        android:textSize="9.5sp" />
+
+                    <TextView
+                        android:id="@+id/ovl_sp0"
+                        android:layout_width="40dp"
+                        android:layout_height="36dp"
+                        android:gravity="center"
+                        android:text="20"
+                        android:textColor="@color/muted"
+                        android:textSize="12sp" />
+
+                    <TextView
+                        android:id="@+id/ovl_sp1"
+                        android:layout_width="40dp"
+                        android:layout_height="36dp"
+                        android:gravity="center"
+                        android:text="40"
+                        android:textColor="@color/muted"
+                        android:textSize="12sp" />
+
+                    <TextView
+                        android:id="@+id/ovl_sp2"
+                        android:layout_width="40dp"
+                        android:layout_height="36dp"
+                        android:gravity="center"
+                        android:text="60"
+                        android:textColor="@color/muted"
+                        android:textSize="12sp" />
+
+                    <TextView
+                        android:id="@+id/ovl_sp3"
+                        android:layout_width="40dp"
+                        android:layout_height="36dp"
+                        android:gravity="center"
+                        android:text="80"
+                        android:textColor="@color/muted"
+                        android:textSize="12sp" />
+
+                </LinearLayout>
+
                 <TextView
                     android:id="@+id/ovl_style"
                     android:layout_width="wrap_content"

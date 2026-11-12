@@ -200,16 +200,25 @@ public final class Prefs {
     public static final int VIEW_VIZ = 0, VIEW_LYRICS = 1, VIEW_ART = 2;
     public static int npView(Context c) { int v = sp(c).getInt("np_view", VIEW_VIZ); return v < 0 || v > 2 ? VIEW_VIZ : v; }
     public static void setNpView(Context c, int v) { sp(c).edit().putInt("np_view", v).apply(); }
-    /** 0 Windscreen (Visualiser 11), 1 Gamaka line (Visualiser 3). */
     /** The view Now Playing shows right now (flipped by tapping); the home-screen widget follows it. */
     public static int npNow(Context c) { int v = sp(c).getInt("np_now", -1); return v < 0 || v > 2 ? npView(c) : v; }
     public static void setNpNow(Context c, int v) { sp(c).edit().putInt("np_now", v).apply(); }
 
-    public static int vizStyle(Context c) { return sp(c).getInt("viz_style", 0) == 1 ? 1 : 0; }
-    public static void setVizStyle(Context c, int v) { sp(c).edit().putInt("viz_style", v == 1 ? 1 : 0).apply(); }
-    /** Gamaka: the note that counts as Sa, 0..11 (C = 0); -1 = chosen automatically. */
+    /** 0 Windscreen, 1 Gamaka line, 2 Windscreen at a steady speed. */
+    public static int vizStyle(Context c) { int v = sp(c).getInt("viz_style", 0); return v < 0 || v > 2 ? 0 : v; }
+    public static void setVizStyle(Context c, int v) { sp(c).edit().putInt("viz_style", v < 0 || v > 2 ? 0 : v).apply(); }
+
+    /** Steady windscreen: how fast the road runs: 20, 40, 60 or 80 (default 40). */
+    public static int vizSpeed(Context c) { int v = sp(c).getInt("viz_speed2", 40); return v == 20 || v == 60 || v == 80 ? v : 40; }
+    public static void setVizSpeed(Context c, int v) { sp(c).edit().putInt("viz_speed2", v).apply(); }
+
+    /** The Sa chosen by the listener, 0..11 (C = 0); -1 = find it automatically. */
     public static int saNote(Context c) { return sp(c).getInt("sa_note", -1); }
     public static void setSaNote(Context c, int v) { sp(c).edit().putInt("sa_note", v).apply(); }
+
+    // ── Internet ──
+    public static boolean noInternet(Context c) { return sp(c).getBoolean("no_internet", false); }
+    public static void setNoInternet(Context c, boolean v) { sp(c).edit().putBoolean("no_internet", v).apply(); }
 
     // ── Album art ──
     public static boolean autoArt(Context c) { return sp(c).getBoolean("auto_art", true); }

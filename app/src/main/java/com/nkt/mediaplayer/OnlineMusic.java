@@ -84,6 +84,18 @@ public final class OnlineMusic {
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     public void show() {
         box.setVisibility(View.VISIBLE);
+        if (Net.off()) {                                            // Settings: "Do not use internet"
+            reset();
+            android.widget.TextView t = new android.widget.TextView(a);
+            t.setText(R.string.net_off_online);
+            t.setGravity(android.view.Gravity.CENTER);
+            t.setPadding(Ui.dp(a, 32), Ui.dp(a, 32), Ui.dp(a, 32), Ui.dp(a, 32));
+            t.setTextColor(a.getColor(R.color.muted));
+            t.setTextSize(14f);
+            box.addView(t, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            return;
+        }
+        if (web == null) box.removeAllViews();                     // (the message, if it was showing)
         if (web != null) { web.onResume(); return; }
         web = new WebView(a);
         web.setBackgroundColor(a.getColor(R.color.bg));
@@ -117,6 +129,13 @@ public final class OnlineMusic {
         web.addJavascriptInterface(new Bridge(), "NKT");
         box.addView(web, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         web.loadUrl(PAGE);
+    }
+
+    /** Throws the page away (internet turned off); it is made again the next time it is shown. */
+    public void reset() {
+        pause();
+        if (web != null) { try { web.loadUrl("about:blank"); web.destroy(); } catch (Throwable ignored) { } web = null; }
+        box.removeAllViews();
     }
 
     /** Leaving the page: YouTube songs can't keep playing in the background. */
@@ -300,6 +319,7 @@ public final class OnlineMusic {
     }
 
     private static String get(String url, int timeoutMs) throws Exception {
+        if (Net.off()) throw new java.io.IOException("Internet is turned off");
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
         c.setConnectTimeout(timeoutMs);
         c.setReadTimeout(timeoutMs);

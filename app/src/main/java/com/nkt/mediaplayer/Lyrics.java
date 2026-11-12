@@ -298,6 +298,7 @@ public final class Lyrics {
     }
 
     private static String get(String url) {
+        if (Net.off()) return null;
         HttpURLConnection con = null;
         try {
             con = (HttpURLConnection) new URL(url).openConnection();
