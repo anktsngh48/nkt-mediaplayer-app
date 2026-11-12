@@ -833,7 +833,7 @@
     <string name="lyr_back5">−5 s</string>
     <string name="lyr_fwd5">+5 s</string>
     <string name="lyr_earlier">−0.1</string>
-    <string name="lyr_later">+0.1</string>
+    <string name="lyr_step_later">+0.1</string>
     <string name="lyr_timing_empty">Type the lyrics in TEXT first, then give each line its time here.</string>
     <string name="lyr_discard">Leave without saving?</string>
     <string name="lyr_leave">Leave</string>
