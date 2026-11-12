@@ -14,6 +14,7 @@ import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -48,11 +49,20 @@ public class NowPlayingActivity extends Activity {
     private MediaController controller;
 
     private ImageView art;
+    private VizView viz;
+    private View vizOvl, findArt;
+    private LinearLayout dots, beatDots;
+    private TextView ovlBpm, ovlSa, ovlStyle;
+    private static final int MODE_VIZ = 0, MODE_LYRICS = 1, MODE_ART = 2;
+    private int mode = MODE_VIZ;
+    private boolean hasArt = false;
+    private int artVersion = -1;
     private TextView title, artist, tCur, tDur, sleepChip, upNext, optFav, optSpeed;
     private SeekBar seek;
     private ImageButton play, shuffle, repeat;
     private boolean dragging = false;
     private String artFor = null;
+    private String songFor = null;
     private List<Uri> openedUris;      // files opened or shared from another app
 
     private final Runnable tick = new Runnable() {
@@ -60,6 +70,7 @@ public class NowPlayingActivity extends Activity {
             updateProgress();
             updateSleep();
             updateLyricLine();
+            if (ArtStore.version.get() != artVersion && controller != null) { artVersion = ArtStore.version.get(); artFor = null; updateArt(controller.getMediaMetadata()); }
             ui.postDelayed(this, lyricsOpen() ? 200 : 500);
         }
     };
@@ -72,6 +83,14 @@ public class NowPlayingActivity extends Activity {
 
         art = findViewById(R.id.np_art);
         art.setClipToOutline(true);
+        viz = findViewById(R.id.np_viz);
+        vizOvl = findViewById(R.id.np_viz_ovl);
+        findArt = findViewById(R.id.np_find_art);
+        dots = findViewById(R.id.np_dots);
+        beatDots = findViewById(R.id.ovl_beat_dots);
+        ovlBpm = findViewById(R.id.ovl_bpm);
+        ovlSa = findViewById(R.id.ovl_sa);
+        ovlStyle = findViewById(R.id.ovl_style);
         title = findViewById(R.id.np_title);
         artist = findViewById(R.id.np_artist);
         tCur = findViewById(R.id.np_cur);
@@ -87,7 +106,7 @@ public class NowPlayingActivity extends Activity {
         optSpeed = findViewById(R.id.opt_speed);
         ((TextView) findViewById(R.id.np_upnext_label)).setTypeface(Ui.orbitron(this));
 
-        findViewById(R.id.np_back).setOnClickListener(v -> finish());
+        findViewById(R.id.np_back).setOnClickListener(v -> onBackPressed());
         play.setOnClickListener(v -> {
             if (controller == null) return;
             if (controller.isPlaying()) controller.pause();
@@ -121,6 +140,7 @@ public class NowPlayingActivity extends Activity {
         showKaraoke();
         findViewById(R.id.np_watch).setOnClickListener(v -> watchVideo());
         setupLyrics();
+        setupStage();
         sleepChip.setOnClickListener(v -> openSpeedSheet());
 
         seek.setMax(1000);
@@ -149,12 +169,21 @@ public class NowPlayingActivity extends Activity {
     /** "Open with" / "Share" from another app: one or several audio files. */
     private void handleIntent(Intent i) {
         if (i == null || !Intent.ACTION_VIEW.equals(i.getAction()) || i.getData() == null) return;
+        setIntent(i);
         openedUris = new ArrayList<>();
         ClipData clip = i.getClipData();
         if (clip != null && clip.getItemCount() > 1) {
             for (int k = 0; k < clip.getItemCount(); k++) if (clip.getItemAt(k).getUri() != null) openedUris.add(clip.getItemAt(k).getUri());
         } else openedUris.add(i.getData());
         if (controller != null) playOpened();
+    }
+
+    @SuppressWarnings("deprecation")
+    @Override
+    public void onBackPressed() {
+        // a song opened from another app: Back shows the explorer at its folder
+        if (ExternalOpen.isExternal(getIntent()) && ExternalOpen.back(this, getIntent().getData())) return;
+        super.onBackPressed();
     }
 
     private void playOpened() {
@@ -189,6 +218,8 @@ public class NowPlayingActivity extends Activity {
     @Override
     protected void onStop() {
         ui.removeCallbacks(tick);
+        ui.removeCallbacks(ovlTick);
+        ui.removeCallbacks(hideOvl);
         if (controller != null) controller.removeListener(listener);
         controller = null;
         MediaController.releaseFuture(future);
@@ -224,15 +255,20 @@ public class NowPlayingActivity extends Activity {
         if (md.artworkData != null) {
             try { b = BitmapFactory.decodeByteArray(md.artworkData, 0, md.artworkData.length); } catch (Exception ignored) { }
         }
-        if (b != null) { Thumbs.showBitmap(art, b); artFor = id; return; }
-        if (id == null) { Thumbs.showPlaceholder(art, R.drawable.ic_music); artFor = null; return; }
+        if (b != null) { Thumbs.showBitmap(art, b); artFor = id; hasArt = true; showFindArt(); return; }
+        if (id == null) { Thumbs.showPlaceholder(art, R.drawable.ic_music); artFor = null; hasArt = false; showFindArt(); return; }
         if (id.equals(artFor)) return;            // already showing (or fetching) this song's art
+        if (!id.equals(songFor)) { songFor = id; AudioAnalyzer.newSong(); }
         artFor = id;
+        hasArt = false;
         Thumbs.showPlaceholder(art, R.drawable.ic_music);
+        showFindArt();
         MediaInfo m = Media.current(controller);
         if (m == null) return;
         final String want = id;
-        Thumbs.big(this, m, bmp -> { if (bmp != null && want.equals(artFor)) Thumbs.showBitmap(art, bmp); });
+        Thumbs.big(this, m, bmp -> {
+            if (bmp != null && want.equals(artFor)) { Thumbs.showBitmap(art, bmp); hasArt = true; showFindArt(); }
+        });
     }
 
     private void updateProgress() {
@@ -364,6 +400,7 @@ public class NowPlayingActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, android.content.Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == ArtSheet.REQ_GALLERY && resultCode == RESULT_OK && data != null) { ArtSheet.picked(this, data.getData()); return; }
         if (deleter != null) deleter.onActivityResult(requestCode, resultCode);
     }
 
@@ -405,7 +442,7 @@ public class NowPlayingActivity extends Activity {
     private long lyrTouched = 0;
     private int lyrCurrent = -1;
 
-    private boolean lyricsOpen() { return lyricsPanel != null && lyricsPanel.getVisibility() == View.VISIBLE; }
+    private boolean lyricsOpen() { return mode == MODE_LYRICS; }
 
     @SuppressLint("ClickableViewAccessibility")
     private void setupLyrics() {
@@ -417,22 +454,140 @@ public class NowPlayingActivity extends Activity {
         lyrAdapter = new LyricAdapter();
         lyrList.setAdapter(lyrAdapter);
         lyrList.setOnTouchListener((v, e) -> { lyrTouched = System.currentTimeMillis(); return false; });
-        findViewById(R.id.lyr_close).setOnClickListener(v -> toggleLyrics());
+        findViewById(R.id.lyr_close).setOnClickListener(v -> setMode(MODE_ART));
         findViewById(R.id.lyr_minus).setOnClickListener(v -> nudge(-500));
         findViewById(R.id.lyr_plus).setOnClickListener(v -> nudge(500));
         findViewById(R.id.lyr_search).setOnClickListener(v -> searchAgain());
-        if (Prefs.sp(this).getBoolean("lyrics_open", false)) lyricsPanel.setVisibility(View.VISIBLE);
-        art.setVisibility(lyricsOpen() ? View.INVISIBLE : View.VISIBLE);
+        findViewById(R.id.lyr_edit).setOnClickListener(v -> editLyrics());
     }
 
-    private void toggleLyrics() {
-        boolean open = !lyricsOpen();
-        lyricsPanel.setVisibility(open ? View.VISIBLE : View.GONE);
-        art.setVisibility(open ? View.INVISIBLE : View.VISIBLE);
-        Prefs.sp(this).edit().putBoolean("lyrics_open", open).apply();
+    /** The ▸ Lyrics button in the options bar: lyrics on, or back to the thumbnail. */
+    private void toggleLyrics() { setMode(lyricsOpen() ? MODE_ART : MODE_LYRICS); }
+
+    // ── The stage: Visualiser → Lyrics → Thumbnail ───────────────────────────
+
+    private final Runnable hideOvl = () -> showOverlay(false);
+    private final Runnable ovlTick = new Runnable() {
+        @Override public void run() {
+            if (vizOvl.getVisibility() != View.VISIBLE) return;
+            updateOverlay();
+            ui.postDelayed(this, 100);
+        }
+    };
+
+    @SuppressLint("ClickableViewAccessibility")
+    private void setupStage() {
+        // dots: tap one to jump to that view
+        int[] names = {R.string.cd_show_viz, R.string.cd_show_lyrics, R.string.cd_show_art};
+        for (int i = 0; i < 3; i++) {
+            final int m = i;
+            FrameLayout cell = new FrameLayout(this);
+            cell.setLayoutParams(new LinearLayout.LayoutParams(Ui.dp(this, 44), Ui.dp(this, 44)));
+            cell.setContentDescription(getString(names[i]));
+            View dot = new View(this);
+            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(Ui.dp(this, 8), Ui.dp(this, 8), android.view.Gravity.CENTER);
+            cell.addView(dot, lp);
+            cell.setOnClickListener(v -> setMode(m));
+            dots.addView(cell);
+        }
+        for (int i = 0; i < 4; i++) {
+            View b = new View(this);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(Ui.dp(this, 8), Ui.dp(this, 8));
+            lp.setMarginStart(i == 0 ? 0 : Ui.dp(this, 5));
+            beatDots.addView(b, lp);
+        }
+        ((TextView) findViewById(R.id.ovl_beat_label)).setTypeface(Ui.orbitron(this));
+        for (TextView t : new TextView[]{ovlBpm, ovlSa, ovlStyle}) t.setTypeface(Ui.orbitron(this));
+
+        art.setOnClickListener(v -> setMode(MODE_VIZ));                 // thumbnail → next view
+        viz.setOnClickListener(v -> showOverlay(vizOvl.getVisibility() != View.VISIBLE));
+        ovlStyle.setOnClickListener(v -> {
+            int next = viz.getStyle() == VizView.WINDSCREEN ? VizView.GAMAKA : VizView.WINDSCREEN;
+            Prefs.setVizStyle(this, next);
+            WidgetUpdater.update(this);
+            viz.setStyle(next);
+            showOverlay(true);
+        });
+        ovlSa.setOnClickListener(v -> chooseSa());
+        findArt.setOnClickListener(v -> ArtSheet.show(this, Media.current(controller)));
+        findViewById(R.id.opt_lyrics).setOnLongClickListener(v -> { editLyrics(); return true; });
+
+        viz.setStyle(Prefs.vizStyle(this));
+        setMode(Prefs.npView(this));
+    }
+
+    private void setMode(int m) {
+        mode = m;
+        if (Prefs.npNow(this) != m) { Prefs.setNpNow(this, m); WidgetUpdater.update(this); }    // the widget shows the same view
+        viz.setVisibility(m == MODE_VIZ ? View.VISIBLE : View.GONE);
+        lyricsPanel.setVisibility(m == MODE_LYRICS ? View.VISIBLE : View.GONE);
+        art.setVisibility(m == MODE_ART ? View.VISIBLE : View.INVISIBLE);
+        if (m != MODE_VIZ) showOverlay(false);
+        for (int i = 0; i < dots.getChildCount(); i++) {
+            View dot = ((FrameLayout) dots.getChildAt(i)).getChildAt(0);
+            boolean on = i == m;
+            dot.setBackgroundResource(R.drawable.bg_dot);
+            dot.getBackground().setTint(getColor(on ? R.color.accent : R.color.muted));
+            ((FrameLayout.LayoutParams) dot.getLayoutParams()).width = Ui.dp(this, on ? 22 : 8);
+            dot.requestLayout();
+        }
         TextView opt = findViewById(R.id.opt_lyrics);
-        opt.setTextColor(getColor(open ? R.color.accent : R.color.muted));
-        if (open) loadLyricsIfNeeded();
+        opt.setTextColor(getColor(m == MODE_LYRICS ? R.color.accent : R.color.muted));
+        if (m == MODE_LYRICS && controller != null) loadLyricsIfNeeded();
+        showFindArt();
+        if (m == MODE_LYRICS) { ui.removeCallbacks(tick); ui.post(tick); }
+    }
+
+    private void showFindArt() { findArt.setVisibility(mode == MODE_ART && !hasArt && controller != null && controller.getMediaItemCount() > 0 ? View.VISIBLE : View.GONE); }
+
+    private void showOverlay(boolean on) {
+        ui.removeCallbacks(hideOvl);
+        ui.removeCallbacks(ovlTick);
+        vizOvl.setVisibility(on && mode == MODE_VIZ ? View.VISIBLE : View.GONE);
+        if (!on || mode != MODE_VIZ) return;
+        boolean wind = viz.getStyle() == VizView.WINDSCREEN;
+        findViewById(R.id.ovl_beat).setVisibility(wind ? View.VISIBLE : View.GONE);
+        ovlBpm.setVisibility(wind ? View.VISIBLE : View.GONE);
+        ovlSa.setVisibility(wind ? View.GONE : View.VISIBLE);
+        ovlStyle.setText(wind ? R.string.viz_style_windscreen : R.string.viz_style_gamaka);
+        updateOverlay();
+        ui.postDelayed(ovlTick, 100);
+        ui.postDelayed(hideOvl, 4000);
+    }
+
+    private void updateOverlay() {
+        int bi = viz.beatIndex();
+        for (int i = 0; i < beatDots.getChildCount(); i++) {
+            View d = beatDots.getChildAt(i);
+            d.setBackgroundResource(R.drawable.bg_dot);
+            d.getBackground().setTint(getColor(i == bi ? R.color.accent : R.color.dot_off));
+            ((LinearLayout.LayoutParams) d.getLayoutParams()).width = Ui.dp(this, i == bi ? 22 : 8);
+        }
+        float bpm = AudioAnalyzer.bpm;
+        ovlBpm.setText(bpm > 0 ? getString(R.string.viz_bpm, Math.round(bpm)) : getString(R.string.viz_bpm_unknown));
+        int sa = VizView.saNow(this);
+        ovlSa.setText(sa >= 0 ? getString(R.string.viz_sa, VizView.noteName(sa)) : getString(R.string.viz_sa_none));
+    }
+
+    private void chooseSa() {
+        String[] notes = VizView.noteNames();
+        String[] items = new String[13];
+        items[0] = getString(R.string.viz_sa_auto) + (AudioAnalyzer.autoSa >= 0 ? " (" + notes[AudioAnalyzer.autoSa] + ")" : "");
+        System.arraycopy(notes, 0, items, 1, 12);
+        Dialogs.builder(this).setTitle(R.string.viz_sa_title)
+                .setSingleChoiceItems(items, Prefs.saNote(this) + 1, (d, w) -> {
+                    Prefs.setSaNote(this, w - 1);
+                    d.dismiss();
+                    showOverlay(true);
+                }).setNegativeButton(R.string.cancel, null).show();
+    }
+
+    private void editLyrics() {
+        MediaInfo m = Media.current(controller);
+        if (m == null) return;
+        MediaMetadata md = controller.getMediaMetadata();
+        LyricsEditActivity.open(this, m, md.title == null ? m.title : md.title.toString(),
+                md.artist == null ? "" : md.artist.toString(), md.albumTitle == null ? "" : md.albumTitle.toString());
     }
 
     private void loadLyricsIfNeeded() {

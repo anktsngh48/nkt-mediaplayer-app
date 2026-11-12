@@ -55,13 +55,15 @@ public class ShareReceiverActivity extends Activity {
         try { t = getContentResolver().getType(u); } catch (Exception ignored) { }
         if (t == null || t.equals("*/*") || t.endsWith("/*")) {
             String n = Ui.displayName(this, u).toLowerCase(Locale.ROOT);
+            if (n.endsWith(".pdf")) return "pdf";
             if (n.matches(".*\\.(mp3|m4a|aac|flac|wav|ogg|opus|wma|amr)$")) return "audio";
             if (n.matches(".*\\.(jpg|jpeg|png|webp|gif|heic|heif|bmp)$")) return "image";
             if (n.matches(".*\\.(mp4|mkv|webm|3gp|mov|avi|m4v|ts)$")) return "video";
             t = t == null ? fallbackType : t;
         }
         if (t == null) return "video";
-        if (t.startsWith("audio")) return "audio";
+        if (t.equals("application/pdf")) return "pdf";
+        if (t.startsWith("audio") || t.equals("application/ogg") || t.equals("application/x-flac")) return "audio";
         if (t.startsWith("image")) return "image";
         return "video";
     }
@@ -80,6 +82,13 @@ public class ShareReceiverActivity extends Activity {
         }
         // pass on the permission to read the shared files
         Intent next;
+        if (kind.equals("pdf")) {
+            next = new Intent(this, PdfActivity.class).setData(uris.get(0));
+            next.putExtra(ExternalOpen.EXTRA, true);
+            next.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(next);
+            return;
+        }
         if (kind.equals("audio")) {
             next = new Intent(this, NowPlayingActivity.class).setAction(Intent.ACTION_VIEW).setData(items.get(0).uri);
         } else if (kind.equals("image")) {
@@ -89,6 +98,7 @@ public class ShareReceiverActivity extends Activity {
             next = PlayerActivity.intent(this, items, 0, 0);
         }
         next.setClipData(clip);
+        next.putExtra(ExternalOpen.EXTRA, true);
         next.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         startActivity(next);
     }

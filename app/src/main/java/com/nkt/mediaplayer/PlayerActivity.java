@@ -132,7 +132,7 @@ public class PlayerActivity extends Activity {
         durText = findViewById(R.id.ctl_duration);
         seekBar = findViewById(R.id.ctl_seek);
         playBtn = findViewById(R.id.ctl_play);
-        findViewById(R.id.btn_back).setOnClickListener(v -> finish());
+        findViewById(R.id.btn_back).setOnClickListener(v -> onBackPressed());
         rotateBtn.setOnClickListener(v -> { keepControls(); chooseOrientation(); });
         speedBtn.setOnClickListener(v -> { keepControls(); openSpeed(); });
         favBtn.setOnClickListener(v -> { keepControls(); toggleFavourite(); });
@@ -798,5 +798,13 @@ public class PlayerActivity extends Activity {
         ui.removeCallbacksAndMessages(null);
         if (player != null) { player.release(); player = null; }
         super.onDestroy();
+    }
+
+    @SuppressWarnings("deprecation")
+    @Override
+    public void onBackPressed() {
+        // a video opened from another app: Back shows the explorer at its folder
+        if (!items.isEmpty() && ExternalOpen.isExternal(getIntent()) && ExternalOpen.back(this, items.get(0).uri)) return;
+        super.onBackPressed();
     }
 }

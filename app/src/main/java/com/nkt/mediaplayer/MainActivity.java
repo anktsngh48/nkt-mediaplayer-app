@@ -98,7 +98,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
     private ViewGroup drawer, drawerItems, storageRow;
     private ImageView miniArt;
     private TextView miniTitle, miniSub;
-    private ImageButton miniPlay;
+    private ImageButton miniPlay, btnMini;
     private EditText search;
 
     private int page = SONGS;
@@ -219,7 +219,12 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
 
         findViewById(R.id.btn_menu).setOnClickListener(v -> openDrawer());
         findViewById(R.id.btn_link).setOnClickListener(v -> openLinkDialog());
-        findViewById(R.id.btn_share_pc).setOnClickListener(v -> startActivity(new Intent(this, NktShareActivity.class)));
+        btnMini = findViewById(R.id.btn_mini);
+        btnMini.setOnClickListener(v -> {
+            if (controller == null) return;
+            if (controller.isPlaying()) controller.pause(); else Media.play(controller);
+        });
+        btnMini.setOnLongClickListener(v -> { startActivity(new Intent(this, NowPlayingActivity.class)); return true; });
 
         onlineBox = findViewById(R.id.online_box);
         online = new OnlineMusic(this, findViewById(R.id.online_box), playing -> {
@@ -266,6 +271,31 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         }
         setPage(start < 0 || (start == SETTINGS && savedInstanceState == null) ? SONGS : start);
         if (hasPermission()) startLoading(); else showPermissionBox();
+        revealFrom(getIntent());
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        revealFrom(intent);
+    }
+
+    private String revealPath = null;
+
+    /** Back from a song, video or PDF opened from another app: the explorer, in its folder, with the file marked. */
+    private void revealFrom(Intent in) {
+        if (in == null || !in.hasExtra(ExternalOpen.REVEAL)) return;
+        String path = in.getStringExtra(ExternalOpen.REVEAL);
+        in.removeExtra(ExternalOpen.REVEAL);
+        if (path == null || path.isEmpty() || !hasPermission()) return;
+        File f = new File(path), dir = f.getParentFile();
+        if (dir == null || !dir.isDirectory()) return;
+        revealPath = f.getAbsolutePath();
+        rows.setHighlight(revealPath);
+        browseRoot = rootOf(dir);
+        if (page != FOLDERS) setPage(FOLDERS);
+        browse(dir);
     }
 
     private final Runnable searchRefresh = () -> { if (page == FOLDERS) deepSearch(filter); else refresh(); };
@@ -597,22 +627,35 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
             publish(a, v, im, pd, !more);
             // 2) hidden folders: a walk through the storage, which takes longer. Added when done.
             if (more) {
-                List<MediaInfo> a2 = new ArrayList<>(a), v2 = new ArrayList<>(v), im2 = new ArrayList<>(im);
-                HiddenScanner.Result h = HiddenScanner.scan(withHidden, withThumbs);
-                addMissing(a2, h.audio);
-                addMissing(v2, h.video);
-                addMissing(im2, h.images);
-                // Settings → ALL FILES: one kind of hidden folder can stay hidden while the other shows
-                if (hideDotNow || hideNomediaNow) {
-                    java.util.Map<String, Boolean> nomedia = new java.util.HashMap<>();
-                    dropHidden(a2, hideDotNow, hideNomediaNow, nomedia);
-                    dropHidden(v2, hideDotNow, hideNomediaNow, nomedia);
-                    dropHidden(im2, hideDotNow, hideNomediaNow, nomedia);
-                }
-                publish(a2, v2, im2, pd, true);
+                final boolean fHid = withHidden, fTh = withThumbs;
+                HiddenScanner.Result h = HiddenScanner.scan(this, fHid, fTh, hideDotNow, hideNomediaNow, first -> {
+                    // names are known already; details are still being read. Show them now, the last step follows.
+                    publishWithHidden(a, v, im, pd, first, hideDotNow, hideNomediaNow, false);
+                });
+                List<MediaInfo>[] done = publishWithHidden(a, v, im, pd, h, hideDotNow, hideNomediaNow, true);
+                List<MediaInfo> a2 = done[0], v2 = done[1], im2 = done[2];
                 LibraryCache.save(this, a2, v2, im2, gen, settings);
             } else LibraryCache.save(this, a, v, im, gen, settings);
         }).start();
+    }
+
+    /** Android's own library plus what the walk found, with hidden kinds the settings keep hidden left out. */
+    @SuppressWarnings("unchecked")
+    private List<MediaInfo>[] publishWithHidden(List<MediaInfo> a, List<MediaInfo> v, List<MediaInfo> im, List<MediaInfo> pd,
+                                                HiddenScanner.Result h, boolean hideDot, boolean hideNomedia, boolean done) {
+        List<MediaInfo> a2 = new ArrayList<>(a), v2 = new ArrayList<>(v), im2 = new ArrayList<>(im);
+        addMissing(a2, h.audio);
+        addMissing(v2, h.video);
+        addMissing(im2, h.images);
+        // Settings → ALL FILES: one kind of hidden folder can stay hidden while the other shows
+        if (hideDot || hideNomedia) {
+            java.util.Map<String, Boolean> nomedia = new java.util.HashMap<>();
+            dropHidden(a2, hideDot, hideNomedia, nomedia);
+            dropHidden(v2, hideDot, hideNomedia, nomedia);
+            dropHidden(im2, hideDot, hideNomedia, nomedia);
+        }
+        publish(a2, v2, im2, pd, done);
+        return new List[]{a2, v2, im2};
     }
 
     /** Shows a freshly read library without emptying the screen; done = the last step of this reading. */
@@ -772,6 +815,9 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
             case "history":
                 History.setEnabled(this, on);
                 refresh();
+                break;
+            case "auto_art":
+                Prefs.setAutoArt(this, on);
                 break;
         }
     }
@@ -1112,6 +1158,11 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
                 browseLoading = false;
                 if (!loading) updating.setVisibility(View.GONE);
                 if (page == FOLDERS) refresh();
+                if (revealPath != null && page == FOLDERS) {                   // opened from another app: bring its file into view
+                    int at = rows.indexOfPath(revealPath);
+                    if (at >= 0) list.scrollToPosition(at);
+                    revealPath = null;
+                }
             });
         }).start();
     }
@@ -1423,14 +1474,17 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
                 getResources().getStringArray(R.array.orientations)[Prefs.videoOrientation(this)], null, "orient", R.drawable.ic_screen_rotation));
         all.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.video_end),
                 getResources().getStringArray(R.array.video_end_choices)[Prefs.videoEnd(this)], null, "video_end", R.drawable.ic_next));
+        all.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.np_opens_with),
+                DefaultViewActivity.summary(this), null, "np_view", R.drawable.ic_eq));
+        all.add(RowAdapter.Row.header(getString(R.string.set_album_art)));
+        all.add(RowAdapter.Row.toggle(getString(R.string.dl_art), getString(R.string.dl_art_sub), "auto_art",
+                R.drawable.ic_download, Prefs.autoArt(this)));
         all.add(RowAdapter.Row.header(getString(R.string.set_history)));
         all.add(RowAdapter.Row.toggle(getString(R.string.keep_history), getString(R.string.keep_history_sub), "history",
                 R.drawable.ic_history, History.enabled(this)));
         all.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.clear_history),
                 getResources().getQuantityString(R.plurals.items, History.count(this), History.count(this)), null, "clear_history", R.drawable.ic_delete));
-        all.add(RowAdapter.Row.header(getString(R.string.set_about)));
-        all.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.app_name), getString(R.string.version_line), null, "about", R.drawable.ic_info));
-        // ALL FILES last: what's hidden here is hidden everywhere (All Files, Audio, Videos, Gallery)
+        // ALL FILES: what's hidden here is hidden everywhere (All Files, Audio, Videos, Gallery)
         all.add(RowAdapter.Row.header(getString(R.string.set_folders)));
         all.add(RowAdapter.Row.toggle(getString(R.string.hide_dot), getString(R.string.hide_everywhere_sub), "hide_dot",
                 R.drawable.ic_folder, Prefs.hideDot(this)));
@@ -1440,6 +1494,11 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
                 R.drawable.ic_folder, Prefs.hideThumbDirs(this)));
         if (!access && Build.VERSION.SDK_INT >= 30)
             all.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.allow), getString(R.string.hidden_explain), null, "folders_access", R.drawable.ic_lock));
+        all.add(RowAdapter.Row.header(getString(R.string.set_appearance)));
+        all.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.app_logo),
+                getString(AppLogo.custom(this) ? R.string.app_logo_sub_custom : R.string.app_logo_sub_default), null, "app_logo", R.drawable.ic_image));
+        all.add(RowAdapter.Row.header(getString(R.string.set_about)));
+        all.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.app_name), getString(R.string.version_line), null, "about", R.drawable.ic_info));
         for (RowAdapter.Row r : all) {
             if (r.type == RowAdapter.HEADER || matchesText(r.title) || (r.sub != null && matchesText(r.sub))) out.add(r);
         }
@@ -1935,6 +1994,8 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
                         }).setNegativeButton(R.string.cancel, null).show();
                 break;
             case "folders_access": needAccessFor("folders"); break;
+            case "np_view": startActivity(new Intent(this, DefaultViewActivity.class)); break;
+            case "app_logo": startActivity(new Intent(this, LogoActivity.class)); break;
             case "new_here": newHere(); break;
             case "play_here": {
                 List<MediaInfo> songs = new ArrayList<>();
@@ -2214,6 +2275,13 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
     }
 
     private void updateMini() {
+        boolean queued = controller != null && controller.getMediaItemCount() > 0 && controller.getCurrentMediaItem() != null;
+        btnMini.setVisibility(queued ? View.VISIBLE : View.GONE);
+        if (queued) {
+            boolean on = controller.isPlaying();
+            btnMini.setImageResource(on ? R.drawable.ic_pause : R.drawable.ic_play);
+            btnMini.setContentDescription(getString(on ? R.string.cd_pause : R.string.cd_play));
+        }
         if (controller == null || controller.getMediaItemCount() == 0 || controller.getCurrentMediaItem() == null) {
             mini.setVisibility(View.GONE);
             rows.setPlaying(null);

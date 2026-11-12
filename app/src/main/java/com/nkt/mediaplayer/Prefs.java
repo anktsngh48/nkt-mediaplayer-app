@@ -196,6 +196,25 @@ public final class Prefs {
     public static boolean pdfNight(Context c) { return sp(c).getBoolean("pdf_night", false); }
     public static void setPdfNight(Context c, boolean v) { sp(c).edit().putBoolean("pdf_night", v).apply(); }
 
+    // ── Now Playing: first view when it opens (0 visualiser, 1 lyrics, 2 thumbnail) and the visualiser style ──
+    public static final int VIEW_VIZ = 0, VIEW_LYRICS = 1, VIEW_ART = 2;
+    public static int npView(Context c) { int v = sp(c).getInt("np_view", VIEW_VIZ); return v < 0 || v > 2 ? VIEW_VIZ : v; }
+    public static void setNpView(Context c, int v) { sp(c).edit().putInt("np_view", v).apply(); }
+    /** 0 Windscreen (Visualiser 11), 1 Gamaka line (Visualiser 3). */
+    /** The view Now Playing shows right now (flipped by tapping); the home-screen widget follows it. */
+    public static int npNow(Context c) { int v = sp(c).getInt("np_now", -1); return v < 0 || v > 2 ? npView(c) : v; }
+    public static void setNpNow(Context c, int v) { sp(c).edit().putInt("np_now", v).apply(); }
+
+    public static int vizStyle(Context c) { return sp(c).getInt("viz_style", 0) == 1 ? 1 : 0; }
+    public static void setVizStyle(Context c, int v) { sp(c).edit().putInt("viz_style", v == 1 ? 1 : 0).apply(); }
+    /** Gamaka: the note that counts as Sa, 0..11 (C = 0); -1 = chosen automatically. */
+    public static int saNote(Context c) { return sp(c).getInt("sa_note", -1); }
+    public static void setSaNote(Context c, int v) { sp(c).edit().putInt("sa_note", v).apply(); }
+
+    // ── Album art ──
+    public static boolean autoArt(Context c) { return sp(c).getBoolean("auto_art", true); }
+    public static void setAutoArt(Context c, boolean v) { sp(c).edit().putBoolean("auto_art", v).apply(); }
+
     // ── helpers ──
     public static List<String> keys(JSONObject o) {
         List<String> l = new ArrayList<>();

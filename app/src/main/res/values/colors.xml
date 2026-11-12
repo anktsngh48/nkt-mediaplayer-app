@@ -9,4 +9,5 @@
     <color name="muted">#FF8A9AB2</color>
     <color name="success">#FF00E5A0</color>
     <color name="border">#1F00E5FF</color>
+    <color name="dot_off">#FF33405A</color>
 </resources>

@@ -82,6 +82,20 @@ public class RowAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     public List<Row> rows() { return rows; }
 
+    private String highlightPath;
+
+    /** The file just opened from another app: marked in the explorer. */
+    public void setHighlight(String path) {
+        highlightPath = path;
+        notifyDataSetChanged();
+    }
+
+    public int indexOfPath(String path) {
+        if (path == null) return -1;
+        for (int i = 0; i < rows.size(); i++) if (rows.get(i).media != null && path.equals(rows.get(i).media.path)) return i;
+        return -1;
+    }
+
     public void setPlaying(String mediaId) {
         if (mediaId == null ? playingId == null : mediaId.equals(playingId)) return;
         playingId = mediaId;
@@ -125,7 +139,8 @@ public class RowAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         boolean pickable = r.type == MEDIA || (r.type == FOLDER && r.pick != null && !r.pick.isEmpty());
         boolean picking = selection.active() && pickable;
         boolean picked = picking && (r.type == MEDIA ? selection.has(r.media) : selection.hasAll(r.pick));
-        boolean playing = r.type == MEDIA && playingId != null && playingId.equals(r.media.uri.toString());
+        boolean playing = r.type == MEDIA && ((playingId != null && playingId.equals(r.media.uri.toString()))
+                || (highlightPath != null && highlightPath.equals(r.media.path)));
         h.title.setTextColor(h.itemView.getContext().getColor(playing || picked ? R.color.accent : R.color.text));
         h.itemView.setSelected(playing);
         h.itemView.setActivated(picked);
@@ -143,7 +158,8 @@ public class RowAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             if (r.type == FOLDER || r.type == PLAYLIST) h.badge(r.icon); else h.badge(0);
         } else {
             h.thumb.setTag(R.id.thumb_key, null);
-            Thumbs.showPlaceholder(h.thumb, r.icon);
+            if ("app_logo".equals(r.key)) Thumbs.showBitmap(h.thumb, AppLogo.bitmap(h.thumb.getContext(), 96));   // Settings: the logo itself
+            else Thumbs.showPlaceholder(h.thumb, r.icon);
             h.badge(0);
         }
         boolean more = !picking && (r.type == MEDIA || r.type == PLAYLIST || (r.type == FOLDER && r.pick != null));

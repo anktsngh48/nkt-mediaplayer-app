@@ -36,6 +36,7 @@ import java.util.Collections;
 public class MetaEditActivity extends Activity {
 
     private static final String EXTRA_URI = "uri", EXTRA_PATH = "path", EXTRA_NAME = "name", EXTRA_TITLE = "title";
+    private static final String EXTRA_ART = "art_file", EXTRA_AUTOSAVE = "autosave";
     private static final int REQ_ART = 1, REQ_WRITE = 2, REQ_LEGACY = 3;
 
     public static void open(Context c, MediaInfo m) {
@@ -54,6 +55,21 @@ public class MetaEditActivity extends Activity {
                 .putExtra(EXTRA_PATH, m.path)
                 .putExtra(EXTRA_NAME, m.fileName)
                 .putExtra(EXTRA_TITLE, m.title));
+    }
+
+    /** Opens the editor with a picture already chosen as the new album art; with `save`, it is written to the file straight away. */
+    public static void openWithArt(Context c, MediaInfo m, File artFile, boolean save) {
+        if (m == null || artFile == null) return;
+        if (Build.VERSION.SDK_INT < 26) { Ui.toast(c, R.string.meta_needs_8); return; }
+        String scheme = m.uri.getScheme();
+        if (!"content".equals(scheme) && !"file".equals(scheme)) { Ui.toast(c, R.string.meta_only_local); return; }
+        c.startActivity(new Intent(c, MetaEditActivity.class)
+                .putExtra(EXTRA_URI, m.uri.toString())
+                .putExtra(EXTRA_PATH, m.path)
+                .putExtra(EXTRA_NAME, m.fileName)
+                .putExtra(EXTRA_TITLE, m.title)
+                .putExtra(EXTRA_ART, artFile.getAbsolutePath())
+                .putExtra(EXTRA_AUTOSAVE, save));
     }
 
     private final Handler ui = new Handler(Looper.getMainLooper());
@@ -134,8 +150,18 @@ public class MetaEditActivity extends Activity {
                     data = d;
                     for (int i = 0; i < inputs.length; i++) { inputs[i].setText(d.values[i]); inputs[i].setEnabled(true); }
                     if (inputs[0].getText().length() == 0) inputs[0].setHint(getIntent().getStringExtra(EXTRA_TITLE));
-                    showArt();
                     setBusy(false);
+                    String artPath = getIntent().getStringExtra(EXTRA_ART);
+                    if (artPath != null) {                       // a picture was chosen before this screen opened
+                        try (InputStream ai = new FileInputStream(artPath)) {
+                            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                            copy(ai, bos);
+                            data.art = bos.toByteArray();
+                            artChanged = true;
+                        } catch (Throwable ignored) { }
+                    }
+                    showArt();
+                    if (artPath != null && artChanged && getIntent().getBooleanExtra(EXTRA_AUTOSAVE, false)) startSave();
                 });
             } catch (Throwable t) {
                 ui.post(() -> {

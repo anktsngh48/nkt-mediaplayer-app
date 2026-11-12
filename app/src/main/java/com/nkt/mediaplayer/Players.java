@@ -33,7 +33,7 @@ public final class Players {
             protected AudioSink buildAudioSink(Context ctx, boolean enableFloatOutput, boolean enableAudioTrackPlaybackParams) {
                 // 16-bit output keeps every song in the processor chain (float output would skip it)
                 return new DefaultAudioSink.Builder(ctx)
-                        .setAudioProcessors(new AudioProcessor[]{new KaraokeProcessor()})
+                        .setAudioProcessors(new AudioProcessor[]{new AnalysisProcessor(), new KaraokeProcessor()})
                         .setEnableFloatOutput(false)
                         .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
                         .build();

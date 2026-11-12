@@ -83,6 +83,8 @@
                 <data android:scheme="content" />
                 <data android:scheme="file" />
                 <data android:mimeType="audio/*" />
+                <data android:mimeType="application/ogg" />
+                <data android:mimeType="application/x-flac" />
             </intent-filter>
         </activity>
 
@@ -102,6 +104,8 @@
                 <data android:scheme="content" />
                 <data android:scheme="file" />
                 <data android:mimeType="video/*" />
+                <data android:mimeType="application/x-matroska" />
+                <data android:mimeType="application/mp4" />
             </intent-filter>
         </activity>
 
@@ -142,6 +146,8 @@
                 <data android:mimeType="video/*" />
                 <data android:mimeType="image/*" />
                 <data android:mimeType="text/plain" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="application/ogg" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.SEND_MULTIPLE" />
@@ -149,10 +155,39 @@
                 <data android:mimeType="audio/*" />
                 <data android:mimeType="video/*" />
                 <data android:mimeType="image/*" />
+                <data android:mimeType="application/ogg" />
             </intent-filter>
         </activity>
 
+        <!-- Home-screen widgets: 4×4 and 4×2, windscreen picture with player controls -->
+        <receiver
+            android:name=".PlayerWidgetLarge"
+            android:exported="false"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_large_info" />
+        </receiver>
+        <receiver
+            android:name=".PlayerWidgetCompact"
+            android:exported="false"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_compact_info" />
+        </receiver>
+        <receiver android:name=".WidgetReceiver" android:exported="false" />
+
         <activity android:name=".EqualizerActivity" android:exported="false" />
+        <activity android:name=".DefaultViewActivity" android:exported="false" />
+        <activity android:name=".LogoActivity" android:exported="false" />
+        <activity android:name=".LyricsEditActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
 
         <!-- Other devices: browse, stream and copy from FTP servers and phones running NKT Share -->
         <activity
@@ -243,6 +278,18 @@
 
 
         <!-- Lets "Share" hand files to other apps -->
+        <!-- Shows NKT Media Player as a place in other apps' file pickers (read only) -->
+        <provider
+            android:name=".NktDocumentsProvider"
+            android:authorities="${applicationId}.documents"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter>
+                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+            </intent-filter>
+        </provider>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.files"

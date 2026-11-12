@@ -71,6 +71,8 @@ public final class Thumbs {
                 b = fetch(app, m, size);
                 saveDisk(disk, b);
             }
+            // "no picture" was remembered, but art may have been downloaded for it since
+            if (b == null && !m.video && !m.image && ArtStore.has(app, m)) b = ArtStore.load(app, m, size);
             final Bitmap got = b;
             CACHE.put(key, got == null ? NONE : got);
             if (got != null) MAIN.post(() -> { if (key.equals(v.getTag(R.id.thumb_key))) showBitmap(v, got); });
@@ -129,8 +131,25 @@ public final class Thumbs {
         v.setImageBitmap(b);
     }
 
-    @SuppressWarnings("deprecation")
+    /** The song's own art, or else the picture downloaded for it (Settings → ALBUM ART). */
     static Bitmap fetch(Context c, MediaInfo m, int size) {
+        Bitmap b = fetchOwn(c, m, size);
+        if (b == null && !m.video && !m.image && !m.other) b = ArtStore.load(c, m, size);
+        return b;
+    }
+
+    /** Art was just downloaded or removed: forget what was remembered as "no picture" for this song. */
+    public static void refresh(Context c, MediaInfo m) {
+        forget(m);
+        for (int size : new int[]{120, 256, 320, 720}) {
+            File f = diskFile(c, m, size);
+            if (f != null) //noinspection ResultOfMethodCallIgnored
+                f.delete();
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    private static Bitmap fetchOwn(Context c, MediaInfo m, int size) {
         try {
             if ("file".equals(m.uri.getScheme()) || m.hidden) return fromFile(m, size);
             if (Build.VERSION.SDK_INT >= 29) {

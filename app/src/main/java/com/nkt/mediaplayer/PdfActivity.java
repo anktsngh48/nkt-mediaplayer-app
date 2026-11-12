@@ -65,6 +65,13 @@ public class PdfActivity extends Activity {
         openPdf();
     }
 
+    @SuppressWarnings("deprecation")
+    @Override
+    public void onBackPressed() {
+        if (ExternalOpen.isExternal(getIntent()) && ExternalOpen.back(this, uri)) return;
+        super.onBackPressed();
+    }
+
     private void build() {
         int dp = Ui.dp(this, 1);
         FrameLayout root = new FrameLayout(this);
@@ -76,7 +83,7 @@ public class PdfActivity extends Activity {
         top.setPadding(4 * dp, 6 * dp, 6 * dp, 4 * dp);
         top.setBackgroundColor(getColor(R.color.bg));
         ImageButton back = button(R.drawable.ic_back, R.string.cd_back);
-        back.setOnClickListener(v -> finish());
+        back.setOnClickListener(v -> onBackPressed());
         top.addView(back);
         titleView = new TextView(this);
         titleView.setTextColor(getColor(R.color.text));

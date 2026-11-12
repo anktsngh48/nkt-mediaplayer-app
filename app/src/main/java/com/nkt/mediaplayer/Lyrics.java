@@ -115,6 +115,36 @@ public final class Lyrics {
         catch (Exception ignored) { }
     }
 
+    /** The copy kept on this phone (what the lyrics editor shows and saves), or null. */
+    public static String savedText(Context c, MediaInfo m) {
+        File f = cacheFile(c, m);
+        return f.exists() ? read(f) : null;
+    }
+
+    /** Keeps the edited lyrics; empty text removes the saved copy so the search starts over. */
+    public static void saveText(Context c, MediaInfo m, String text) {
+        if (text == null || text.trim().isEmpty()) forget(c, m); else save(c, m, text);
+    }
+
+    /** Lyrics as text: `[mm:ss.xx]words` for timed lines, plain lines otherwise. */
+    public static String toText(Result r) {
+        if (r == null) return "";
+        if (r.instrumental) return "[instrumental]";
+        StringBuilder b = new StringBuilder();
+        for (Line l : r.lines) {
+            if (b.length() > 0) b.append('\n');
+            if (l.ms >= 0) b.append(stamp(l.ms));
+            b.append(l.text);
+        }
+        return b.toString();
+    }
+
+    /** 83450 → "[01:23.45]" */
+    public static String stamp(long ms) {
+        if (ms < 0) ms = 0;
+        return String.format(Locale.US, "[%02d:%02d.%02d]", ms / 60000, (ms / 1000) % 60, (ms % 1000) / 10);
+    }
+
     public static void forget(Context c, MediaInfo m) {
         //noinspection ResultOfMethodCallIgnored
         cacheFile(c, m).delete();

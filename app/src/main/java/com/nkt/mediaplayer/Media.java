@@ -21,21 +21,15 @@ public final class Media {
 
     private Media() { }
 
-    static final Uri LOGO = Uri.parse("android.resource://com.nkt.mediaplayer/drawable/art_logo");
-
     public static MediaItem item(MediaInfo m) {
         MediaMetadata.Builder md = new MediaMetadata.Builder()
                 .setTitle(m.title)
                 .setArtist(m.artist.isEmpty() ? null : m.artist)
                 .setAlbumTitle(m.album.isEmpty() ? null : m.album)
                 .setMediaType(m.video ? MediaMetadata.MEDIA_TYPE_VIDEO : MediaMetadata.MEDIA_TYPE_MUSIC);
-        // Older phones: point the notification at the album art. Newer ones read it from the file itself.
-        if (!m.video && m.albumId > 0 && Build.VERSION.SDK_INT < 29) {
-            md.setArtworkUri(ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), m.albumId));
-        } else {
-            // lock screen & notification: the song's own art when it has some, otherwise the NKT Media Player logo
-            md.setArtworkUri(LOGO);
-        }
+        // lock screen & notification: the song's own art (or art found online for it) when it has some,
+        // otherwise the app logo - NotifArt turns this address into the picture
+        md.setArtworkUri(NotifArt.forSong(m));
         return new MediaItem.Builder()
                 .setMediaId(m.uri.toString())
                 .setUri(m.uri)

@@ -76,6 +76,97 @@
             android:layout_height="300dp"
             android:layout_marginTop="14dp">
 
+            <com.nkt.mediaplayer.VizView
+                android:id="@+id/np_viz"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:contentDescription="@string/cd_viz"
+                android:visibility="gone" />
+
+            <FrameLayout
+                android:id="@+id/np_viz_ovl"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:id="@+id/ovl_beat"
+                    android:layout_width="wrap_content"
+                    android:layout_height="30dp"
+                    android:layout_gravity="top|start"
+                    android:layout_margin="12dp"
+                    android:background="@drawable/bg_viz_chip"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp">
+
+                    <TextView
+                        android:id="@+id/ovl_beat_label"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:letterSpacing="0.18"
+                        android:text="@string/viz_beat"
+                        android:textColor="@color/muted"
+                        android:textSize="9sp" />
+
+                    <LinearLayout
+                        android:id="@+id/ovl_beat_dots"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:orientation="horizontal" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/ovl_bpm"
+                    android:layout_width="wrap_content"
+                    android:layout_height="30dp"
+                    android:layout_gravity="top|end"
+                    android:layout_margin="12dp"
+                    android:background="@drawable/bg_viz_chip"
+                    android:gravity="center"
+                    android:letterSpacing="0.18"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:textColor="@color/accent"
+                    android:textSize="9sp" />
+
+                <TextView
+                    android:id="@+id/ovl_sa"
+                    android:layout_width="wrap_content"
+                    android:layout_height="44dp"
+                    android:layout_gravity="bottom|start"
+                    android:layout_margin="12dp"
+                    android:background="@drawable/bg_viz_chip"
+                    android:drawableStart="@drawable/ic_tune"
+                    android:drawablePadding="8dp"
+                    android:drawableTint="@color/accent"
+                    android:gravity="center"
+                    android:letterSpacing="0.12"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="16dp"
+                    android:textColor="@color/accent"
+                    android:textSize="9.5sp" />
+
+                <TextView
+                    android:id="@+id/ovl_style"
+                    android:layout_width="wrap_content"
+                    android:layout_height="44dp"
+                    android:layout_gravity="bottom|end"
+                    android:layout_margin="12dp"
+                    android:background="@drawable/bg_viz_chip"
+                    android:drawableStart="@drawable/ic_refresh"
+                    android:drawablePadding="8dp"
+                    android:drawableTint="@color/accent"
+                    android:gravity="center"
+                    android:letterSpacing="0.12"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="16dp"
+                    android:textColor="@color/accent"
+                    android:textSize="9.5sp" />
+            </FrameLayout>
+
             <ImageView
                 android:id="@+id/np_art"
                 android:layout_width="280dp"
@@ -85,6 +176,26 @@
                 android:contentDescription="@null"
                 android:elevation="12dp"
                 android:outlineSpotShadowColor="@color/accent" />
+
+            <TextView
+                android:id="@+id/np_find_art"
+                android:layout_width="wrap_content"
+                android:layout_height="44dp"
+                android:layout_gravity="bottom|center_horizontal"
+                android:layout_marginBottom="62dp"
+                android:background="@drawable/bg_pill_btn"
+                android:drawableStart="@drawable/ic_download"
+                android:drawablePadding="8dp"
+                android:drawableTint="@color/accent"
+                android:elevation="14dp"
+                android:gravity="center"
+                android:letterSpacing="0.12"
+                android:paddingStart="18dp"
+                android:paddingEnd="20dp"
+                android:text="@string/find_art"
+                android:textColor="@color/accent"
+                android:textSize="10sp"
+                android:visibility="gone" />
 
             <LinearLayout
                 android:id="@+id/np_lyrics"
@@ -114,6 +225,23 @@
                     <ImageButton android:id="@+id/lyr_minus" style="@style/NKTBarButton" android:layout_width="36dp" android:layout_height="36dp" android:contentDescription="@string/lyr_later" android:src="@drawable/ic_minus" />
                     <ImageButton android:id="@+id/lyr_plus" style="@style/NKTBarButton" android:layout_width="36dp" android:layout_height="36dp" android:contentDescription="@string/lyr_sooner" android:src="@drawable/ic_plus" />
                     <ImageButton android:id="@+id/lyr_search" style="@style/NKTBarButton" android:layout_width="36dp" android:layout_height="36dp" android:contentDescription="@string/lyr_search_again" android:src="@drawable/ic_search" />
+                    <TextView
+                        android:id="@+id/lyr_edit"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:layout_marginStart="2dp"
+                        android:layout_marginEnd="2dp"
+                        android:background="@drawable/bg_viz_edit"
+                        android:drawableStart="@drawable/ic_edit"
+                        android:drawablePadding="5dp"
+                        android:drawableTint="@color/accent"
+                        android:gravity="center"
+                        android:letterSpacing="0.1"
+                        android:paddingStart="10dp"
+                        android:paddingEnd="10dp"
+                        android:text="@string/lyr_edit"
+                        android:textColor="@color/accent"
+                        android:textSize="9sp" />
                     <ImageButton android:id="@+id/lyr_close" style="@style/NKTBarButton" android:layout_width="36dp" android:layout_height="36dp" android:contentDescription="@string/cancel" android:src="@drawable/ic_close" />
                 </LinearLayout>
 
@@ -145,11 +273,19 @@
             </LinearLayout>
         </FrameLayout>
 
+        <!-- Which view the stage shows: Visualiser, Lyrics, Thumbnail (tap a dot) -->
+        <LinearLayout
+            android:id="@+id/np_dots"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:gravity="center"
+            android:orientation="horizontal" />
+
         <TextView
             android:id="@+id/np_title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="28dp"
+            android:layout_marginTop="2dp"
             android:ellipsize="end"
             android:gravity="center"
             android:maxLines="2"

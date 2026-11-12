@@ -61,6 +61,7 @@
     <string name="cd_back">Back</string>
     <string name="cd_link">Play a link</string>
     <string name="cd_play">Play or pause</string>
+    <string name="cd_pause">Pause</string>
     <string name="cd_next">Next</string>
     <string name="cd_prev">Previous</string>
     <string name="cd_shuffle">Shuffle</string>
@@ -289,7 +290,7 @@
     <string name="video_rotation">Video rotation</string>
     <string name="autonext">Play next video automatically</string>
     <string name="autonext_sub">When off, a video stops at the end</string>
-    <string name="keep_history">Keep history</string>
+    <string name="keep_history">Opened files</string>
     <string name="keep_history_sub">Audio, videos and photos you open, newest first (☰ → History)</string>
     <string name="nkt_share_sub">Share files with a computer or other devices on Wi-Fi</string>
     <string name="version_line">Version 1.0</string>
@@ -758,4 +759,95 @@
         <item quantity="one">%d video</item>
         <item quantity="other">%d videos</item>
     </plurals>
+
+    <!-- Now Playing views, album art, app logo -->
+    <string name="set_album_art">ALBUM ART</string>
+    <string name="set_appearance">APPEARANCE</string>
+    <string name="np_opens_with">Now Playing opens with</string>
+    <string name="np_opens_caps">NOW PLAYING OPENS WITH</string>
+    <string name="np_default_view_caps">DEFAULT VIEW</string>
+    <string name="np_viz_style_caps">VISUALISER STYLE</string>
+    <string name="np_view_viz">Visualiser</string>
+    <string name="np_view_viz_sub">Then Lyrics, then Thumbnail when you tap</string>
+    <string name="np_view_lyrics">Lyrics</string>
+    <string name="np_view_art">Thumbnail</string>
+    <string name="viz_windscreen">Windscreen</string>
+    <string name="viz_gamaka">Gamaka line</string>
+    <string name="dl_art">Download missing album art</string>
+    <string name="dl_art_sub">Songs without art get it from the internet</string>
+    <string name="app_logo">App logo</string>
+    <string name="app_logo_sub_custom">Custom logo · shown when a song has no album art</string>
+    <string name="app_logo_sub_default">NKT logo · shown when a song has no album art</string>
+    <string name="app_logo_caps">APP LOGO</string>
+    <string name="logo_default_caps">NKT DEFAULT</string>
+    <string name="logo_yours_caps">YOUR IMAGE</string>
+    <string name="logo_choose">CHOOSE FROM GALLERY</string>
+    <string name="logo_use_default">Use the NKT default again</string>
+    <string name="logo_hint">Pick a square picture; it is cropped to a square and saved inside the app. The tiny status-bar icon stays the white NKT mark: Android only allows one colour there.</string>
+    <string name="logo_saved">Logo saved</string>
+    <string name="logo_failed">Could not use that picture</string>
+
+    <!-- Now Playing: visualiser, find art, lyrics edit -->
+    <string name="cd_viz">Visualiser. Tap to show controls</string>
+    <string name="viz_beat">BEAT</string>
+    <string name="viz_bpm">%1$d BPM</string>
+    <string name="viz_bpm_unknown">— BPM</string>
+    <string name="viz_sa">SA · %1$s</string>
+    <string name="viz_sa_none">SA · —</string>
+    <string name="viz_sa_title">Sa (the home note)</string>
+    <string name="viz_sa_auto">Automatic</string>
+    <string name="viz_style_windscreen">WINDSCREEN</string>
+    <string name="viz_style_gamaka">GAMAKA</string>
+    <string name="find_art">FIND ALBUM ART</string>
+    <string name="lyr_edit">EDIT</string>
+    <string name="cd_show_viz">Show visualiser</string>
+    <string name="cd_show_lyrics">Show lyrics</string>
+    <string name="cd_show_art">Show thumbnail</string>
+
+    <!-- Find album art -->
+    <string name="art_title">FIND ALBUM ART</string>
+    <string name="art_results">RESULTS</string>
+    <string name="art_searching">Searching the internet…</string>
+    <string name="art_none">Nothing found. Tap the line above to change the title or artist.</string>
+    <string name="art_embed">Also save inside the song file</string>
+    <string name="art_embed_sub">Other players will show it too</string>
+    <string name="art_gallery">GALLERY</string>
+    <string name="art_use">USE THIS ART</string>
+    <string name="art_saved">Album art saved</string>
+    <string name="art_failed">Could not get that picture</string>
+
+    <!-- Lyrics editor -->
+    <string name="lyr_edit_title">EDIT LYRICS</string>
+    <string name="lyr_tab_text">TEXT</string>
+    <string name="lyr_tab_timing">TIMING</string>
+    <string name="lyr_save">SAVE</string>
+    <string name="lyr_saved">Lyrics saved</string>
+    <string name="lyr_edit_help">Lines that start with [mm:ss.xx] move with the song. If no line has a time, the lyrics show as plain text.</string>
+    <string name="lyr_undo">Undo</string>
+    <string name="lyr_redo">Redo</string>
+    <string name="lyr_paste">Paste</string>
+    <string name="lyr_online">Online</string>
+    <string name="lyr_nothing_online">Nothing found online</string>
+    <string name="lyr_stamp">STAMP THIS LINE</string>
+    <string name="lyr_fine">Fine tune the chosen line</string>
+    <string name="lyr_back5">−5 s</string>
+    <string name="lyr_fwd5">+5 s</string>
+    <string name="lyr_earlier">−0.1</string>
+    <string name="lyr_later">+0.1</string>
+    <string name="lyr_timing_empty">Type the lyrics in TEXT first, then give each line its time here.</string>
+    <string name="lyr_discard">Leave without saving?</string>
+    <string name="lyr_leave">Leave</string>
+    <string name="lyr_song_sub">%1$s  ·  %2$s</string>
+    <string name="lyr_synced_word">synced lyrics</string>
+    <string name="lyr_plain_word">plain lyrics</string>
+    <string name="lyr_none_word">no lyrics yet</string>
+
+    <!-- Home-screen widgets -->
+    <string name="widget_label">NKT MEDIA PLAYER</string>
+    <string name="widget_large_desc">Windscreen picture, song and player controls (4×4)</string>
+    <string name="widget_compact_desc">Windscreen picture and player controls (4×2)</string>
+    <string name="lyrics_none_widget">No lyrics found</string>
+    <string name="docs_need_access">To choose files from here, allow “All files access” for NKT Media Player in Settings.</string>
+    <string name="widget_idle">Nothing playing</string>
+    <string name="widget_idle_sub">Tap to open</string>
 </resources>

@@ -36,6 +36,8 @@ public class PlaybackService extends MediaSessionService {
     private ExoPlayer player;
     private final Handler h = new Handler(Looper.getMainLooper());
 
+    private boolean silent = false;        // swapping the picture of the current song is not a new song
+
     private long sleepAt = 0;              // clock time to stop, 0 = off
     private boolean sleepEndOfSong = false;
 
@@ -61,14 +63,17 @@ public class PlaybackService extends MediaSessionService {
         player.setSkipSilenceEnabled(Prefs.sp(this).getBoolean("skip_silence", false));
         player.addListener(new Player.Listener() {
             @Override public void onMediaItemTransition(MediaItem item, int reason) {
-                if (item == null) return;
+                if (item == null || silent) return;
                 Prefs.countPlay(PlaybackService.this, item.mediaId);
                 History.record(PlaybackService.this, Media.info(item, 0));
+                ArtFinder.auto(PlaybackService.this, Media.info(item, 0));
+                widgetsSoon();
                 applyKey();
                 saveQueue();
             }
             @Override public void onIsPlayingChanged(boolean playing) {
                 saveQueue();
+                widgetsSoon();
                 h.removeCallbacks(saveTick);
                 if (playing) h.postDelayed(saveTick, 5000);
             }
@@ -89,6 +94,7 @@ public class PlaybackService extends MediaSessionService {
 
         session = new MediaSession.Builder(this, player)
                 .setSessionActivity(tap)
+                .setBitmapLoader(new NotifArt(this))
                 .setCallback(new MediaSession.Callback() {
                     @Override
                     public ListenableFuture<List<MediaItem>> onAddMediaItems(
@@ -112,6 +118,70 @@ public class PlaybackService extends MediaSessionService {
         setMediaNotificationProvider(np);
         restoreQueue();
         instance = this;
+    }
+
+    /**
+     * The logo or art changed: show the new picture in the notification now. The current item is
+     * replaced with an identical copy, which makes the notification ask for its picture again.
+     */
+    public static void refreshArt() {
+        PlaybackService s = instance;
+        if (s == null || s.player == null) return;
+        s.h.post(() -> {
+            try {
+                ExoPlayer p = s.player;
+                if (p.getMediaItemCount() == 0 || p.isPlaying()) return;     // playing: the new picture shows from the next song
+                int i = p.getCurrentMediaItemIndex();
+                long pos = p.getCurrentPosition();
+                MediaItem cur = p.getMediaItemAt(i);
+                s.silent = true;
+                p.replaceMediaItem(i, cur.buildUpon().setMediaMetadata(cur.mediaMetadata.buildUpon()
+                        .setArtworkUri(cur.mediaMetadata.artworkUri == null ? null
+                                : cur.mediaMetadata.artworkUri.buildUpon().appendQueryParameter("r", String.valueOf(System.nanoTime())).build())
+                        .build()).build());
+                p.seekTo(i, pos);
+                s.h.postDelayed(() -> s.silent = false, 1500);
+            } catch (Throwable ignored) { s.silent = false; }
+        });
+    }
+
+    // ── Home-screen widgets ──
+
+    private final Runnable widgetRun = new Runnable() {
+        @Override public void run() {
+            WidgetUpdater.update(PlaybackService.this);
+            // keeps the progress line (and the lyric line) moving
+            if (player != null && player.isPlaying()) h.postDelayed(this, Prefs.npNow(PlaybackService.this) == 1 ? 4_000 : 10_000);
+        }
+    };
+
+    private void widgetsSoon() {
+        h.removeCallbacks(widgetRun);
+        h.postDelayed(widgetRun, 250);
+    }
+
+    public WidgetUpdater.Info widgetInfo() {
+        WidgetUpdater.Info i = new WidgetUpdater.Info();
+        if (player == null || player.getMediaItemCount() == 0) return i;
+        androidx.media3.common.MediaMetadata md = player.getMediaMetadata();
+        i.title = md.title == null ? "" : md.title.toString();
+        i.artist = md.artist == null ? "" : md.artist.toString();
+        i.playing = player.isPlaying();
+        i.posMs = Math.max(0, player.getCurrentPosition());
+        i.durMs = Math.max(0, player.getDuration());
+        MediaItem cur = player.getCurrentMediaItem();
+        if (cur != null) i.cur = Media.info(cur, i.durMs);
+        return i;
+    }
+
+    /** Previous / play-pause / next, from a widget. */
+    public void widgetCommand(String action) {
+        if (player == null) return;
+        if (WidgetUpdater.ACTION_PREV.equals(action)) player.seekToPrevious();
+        else if (WidgetUpdater.ACTION_NEXT.equals(action)) player.seekToNext();
+        else if (WidgetUpdater.ACTION_PLAY.equals(action)) {
+            if (player.isPlaying()) player.pause(); else Media.play(player);
+        }
     }
 
     @Override
