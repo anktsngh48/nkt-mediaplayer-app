@@ -55,6 +55,7 @@ public class NowPlayingActivity extends Activity {
     private TextView ovlBpm, ovlSa, ovlStyle;
     private static final int MODE_VIZ = 0, MODE_LYRICS = 1, MODE_ART = 2;
     private int mode = MODE_VIZ;
+    private int modeBeforeLyrics = -1;      // the view that was showing when lyrics were opened
     private boolean hasArt = false;
     private int artVersion = -1;
     private TextView title, artist, tCur, tDur, sleepChip, upNext, optFav, optSpeed;
@@ -454,7 +455,7 @@ public class NowPlayingActivity extends Activity {
         lyrAdapter = new LyricAdapter();
         lyrList.setAdapter(lyrAdapter);
         lyrList.setOnTouchListener((v, e) -> { lyrTouched = System.currentTimeMillis(); return false; });
-        findViewById(R.id.lyr_close).setOnClickListener(v -> setMode(MODE_ART));
+        findViewById(R.id.lyr_close).setOnClickListener(v -> closeLyrics());
         findViewById(R.id.lyr_minus).setOnClickListener(v -> nudge(-500));
         findViewById(R.id.lyr_plus).setOnClickListener(v -> nudge(500));
         findViewById(R.id.lyr_search).setOnClickListener(v -> searchAgain());
@@ -462,7 +463,14 @@ public class NowPlayingActivity extends Activity {
     }
 
     /** The ▸ Lyrics button in the options bar: lyrics on, or back to the thumbnail. */
-    private void toggleLyrics() { setMode(lyricsOpen() ? MODE_ART : MODE_LYRICS); }
+    private void toggleLyrics() { if (lyricsOpen()) closeLyrics(); else setMode(MODE_LYRICS); }
+
+    /** Lyrics off: back to whatever was open before (visualiser or thumbnail); if unknown, the album art. */
+    private void closeLyrics() {
+        int back = modeBeforeLyrics;
+        if (back < 0 || back == MODE_LYRICS) back = MODE_ART;      // unknown: the album art
+        setMode(back);
+    }
 
     // ── The stage: Visualiser → Lyrics → Thumbnail ───────────────────────────
 
@@ -536,6 +544,7 @@ public class NowPlayingActivity extends Activity {
     }
 
     private void setMode(int m) {
+        if (m == MODE_LYRICS && mode != MODE_LYRICS) modeBeforeLyrics = mode;
         mode = m;
         if (Prefs.npNow(this) != m) { Prefs.setNpNow(this, m); WidgetUpdater.update(this); }    // the widget shows the same view
         viz.setVisibility(m == MODE_VIZ ? View.VISIBLE : View.GONE);

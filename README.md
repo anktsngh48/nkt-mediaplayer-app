@@ -1,3 +1,21 @@
+# What is new in this version
+
+- **New app logo**: "NKT Media Player" wordmark in the app colours (cyan to violet on dark blue) in a circle: app icon, notification, lock screen, file pickers and widgets. Lyrics off in Now Playing returns to the previous view. The windscreen no longer has a rear-view mirror.
+
+- **Settings → ALBUM ART**: "Download missing album art" (on by default); "Now Playing opens with" (Visualiser, Lyrics or Thumbnail, and which visualiser).
+- **Notification and lock screen** show the song's album art, and the app logo when a song has none.
+- **Missing album art is downloaded** from the internet (iTunes, Deezer, Cover Art Archive). In Now Playing, "Find album art" lets you pick one yourself and optionally save it into the song file.
+- **Now Playing** flips Visualiser → Lyrics → Thumbnail with a tap. Visualisers: Windscreen (default) and Gamaka line. Tap the visualiser to see its details (style, Sa, beat, BPM).
+- **Lyrics can be edited** (text and timing) and are saved on the phone.
+- **Home-screen widgets** (4×3 and 4×2) that show the lyrics or the album art (the app logo when there is none) with previous / play-pause / next.
+- **Open with / Share**: NKT Media Player appears for music, video and PDF files; the file opens directly, and Back shows it in the folder explorer.
+- **File pickers** (Google Drive Upload, WhatsApp Document, email attachments…) now list NKT Media Player as a place to choose files from (read only; needs All files access).
+- **Own picture chooser**: changing album art or the app logo opens NKT's own picture grid (with "Other apps" for pictures stored elsewhere) instead of Android's gallery.
+- **Visualiser**: smoother Windscreen, a new "steady speed" Windscreen with a speed slider, and a Gamaka line that stays joined.
+- **Settings → INTERNET & PERMISSIONS**: "Do not use internet" switches off lyrics search, album-art download, online music and links; "Remove all permissions" gives a fresh start.
+- **Header**: the NKT Share and Links buttons are replaced by one mini-player button (both are still in the ☰ menu).
+- **Hidden files** are found much faster (same screens, same options; only the background work changed).
+
 # How to make the NKT Media Player app (APK) — step by step
 
 You only need a web browser and a GitHub account. No coding, nothing to install.

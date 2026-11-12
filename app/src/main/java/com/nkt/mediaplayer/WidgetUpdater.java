@@ -25,7 +25,7 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** Draws the home-screen widgets (4×3 and 4×2): the windscreen picture, the song, and previous / play-pause / next. */
+/** Draws the home-screen widgets (4×3 and 4×2): the album art or lyrics, the song, and previous / play-pause / next. */
 public final class WidgetUpdater {
 
     private WidgetUpdater() { }
@@ -55,16 +55,29 @@ public final class WidgetUpdater {
         // pictures (album art, lyrics) can take a moment to get: not on the main thread
         WORK.execute(() -> {
             try {
-                if (big.length > 0) {
-                    RemoteViews v = build(app, info, true, mode);
-                    for (int id : big) mgr.updateAppWidget(id, v);
+                for (int id : big) {                                   // the large one is drawn to its own size
+                    int[] sz = sizeDp(mgr, id, 288, 276);
+                    mgr.updateAppWidget(id, build(app, info, true, mode, sz[0], sz[1]));
                 }
                 if (small.length > 0) {
-                    RemoteViews v = build(app, info, false, mode);
+                    RemoteViews v = build(app, info, false, mode, 288, 150);
                     for (int id : small) mgr.updateAppWidget(id, v);
                 }
             } catch (Throwable ignored) { }
         });
+    }
+
+    /** The widget's size on the home screen in dp (what the launcher gave it), or the usual 4-wide size. */
+    private static int[] sizeDp(AppWidgetManager mgr, int id, int defW, int defH) {
+        int w = defW, h = defH;
+        try {
+            android.os.Bundle o = mgr.getAppWidgetOptions(id);
+            int ow = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0);
+            int oh = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0);
+            if (ow >= 120) w = ow;
+            if (oh >= 120) h = oh;
+        } catch (Throwable ignored) { }
+        return new int[]{w, h};
     }
 
     /** Nothing is playing yet (just after the phone started): the song that will carry on. */
@@ -87,15 +100,16 @@ public final class WidgetUpdater {
         return i;
     }
 
-    private static RemoteViews build(Context c, Info info, boolean large, int mode) {
+    private static RemoteViews build(Context c, Info info, boolean large, int mode, int wDp, int hDp) {
         RemoteViews v = new RemoteViews(c.getPackageName(), large ? R.layout.widget_large : R.layout.widget_compact);
         boolean idle = info.title.isEmpty();
         v.setTextViewText(R.id.w_title, idle ? c.getString(R.string.widget_idle) : info.title);
-        v.setTextViewText(R.id.w_artist, idle ? c.getString(R.string.widget_idle_sub) : info.artist);
+        String sub = idle ? c.getString(R.string.widget_idle_sub) : info.artist;
+        v.setTextViewText(R.id.w_artist, large && sub != null && !sub.isEmpty() ? "\u00B7 " + sub : sub);   // 4×3: title and artist share one row
         v.setImageViewResource(R.id.w_play, info.playing ? R.drawable.wg_pause : R.drawable.wg_play);
         v.setContentDescription(R.id.w_play, c.getString(info.playing ? R.string.cd_pause : R.string.cd_play));
-        if (large) v.setProgressBar(R.id.w_progress, 1000, info.durMs > 0 ? (int) (info.posMs * 1000 / info.durMs) : 0, false);
-        v.setImageViewBitmap(R.id.w_scene, scene(c, large, info, mode));
+        v.setProgressBar(R.id.w_progress, 1000, info.durMs > 0 ? (int) (info.posMs * 1000 / info.durMs) : 0, false);
+        v.setImageViewBitmap(R.id.w_scene, scene(c, large, info, mode, wDp, hDp));
 
         v.setOnClickPendingIntent(R.id.w_prev, command(c, ACTION_PREV));
         v.setOnClickPendingIntent(R.id.w_play, command(c, ACTION_PLAY));
@@ -112,60 +126,56 @@ public final class WidgetUpdater {
         return PendingIntent.getBroadcast(c, action.hashCode(), i, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
     }
 
-    /** What the player shows right now, as a still picture: the visualiser, the lyrics or the album art. */
-    private static Bitmap scene(Context c, boolean large, Info info, int mode) {
-        int w = large ? 400 : 264, h = w;                         // both are square pictures
+    /** What the widget shows: the lyrics, or the album art (the app logo if there is none). */
+    private static Bitmap scene(Context c, boolean large, Info info, int mode, int wDp, int hDp) {
+        float px = Math.min(c.getResources().getDisplayMetrics().density, 3f);        // bitmap pixels per dp
+        int w, h;
+        float[] radii;
+        if (large) {                                                  // edge to edge across the top; the rows below take about 98 dp
+            w = Math.round(wDp * px);
+            h = Math.round(Math.max(90, hDp - 98) * px);
+            float r = 27 * px;
+            radii = new float[]{r, r, r, r, 0, 0, 0, 0};
+        } else {                                                      // a square beside the song
+            w = h = Math.round(104 * px);
+            float r = 18 * px;
+            radii = new float[]{r, r, r, r, r, r, r, r};
+        }
         Bitmap b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
         Canvas cv = new Canvas(b);
-
-        // rounded corners: all four on the square picture (4×3), the left two beside the text (4×2)
-        float r = large ? 0.09f * w : 28f / 132f * w;
         Path clip = new Path();
-        float[] radii = large ? new float[]{r, r, r, r, r, r, r, r} : new float[]{r, r, 0, 0, 0, 0, r, r};
         clip.addRoundRect(new RectF(0, 0, w, h), radii, Path.Direction.CW);
         cv.clipPath(clip);
 
-        if (mode == 2) art(c, cv, w, h, info);
-        else if (mode == 1) lyrics(c, cv, w, h, info);
-        else if (Prefs.vizStyle(c) == VizView.GAMAKA) gamaka(c, cv, w, h);
-        else windscreen(c, cv, w, h, large, info);
+        if (mode == 1) lyrics(c, cv, w, h, info, large);          // lyrics, or the album art / app logo; never a visualiser
+        else art(c, cv, w, h, info);
         return b;
     }
 
-    private static void windscreen(Context c, Canvas cv, int w, int h, boolean large, Info info) {
-        float vx = large ? 60 : 92, vy = large ? 70 : 100, vw = large ? 228 : 164, vh = large ? 228 : 198;
-        float s = Math.max(w / vw, h / vh);                       // fill the area, keep the shape (the sides are cropped)
-        float tx = (w - vw * s) / 2f - vx * s, ty = (h - vh * s) - vy * s;
-        cv.translate(tx, ty);
-        cv.scale(s, s);
-        float left = -tx / s, right = (w - tx) / s;
-        float off = 1.3f + info.posMs / 1000f * (Prefs.vizStyle(c) == VizView.STEADY ? Prefs.vizSpeed(c) * VizView.SPEED_UNIT : 7f);
-        new WindscreenPainter().paint(cv, left, right, off, info.playing && Prefs.vizStyle(c) != VizView.STEADY ? 0.6f : 0f);
-    }
-
-    /** The Gamaka lanes (a still picture cannot show the moving line). */
-    private static void gamaka(Context c, Canvas cv, int w, int h) {
-        VizView v = new VizView(c);
-        v.setStyle(VizView.GAMAKA);
-        v.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY));
-        v.layout(0, 0, w, h);
-        v.draw(cv);
-    }
-
-    /** Album art (or the app logo when there is none), the way Now Playing shows it. */
+    /** Album art filling the area (cropped to fit), or the app logo on dark blue when the song has none. */
     private static void art(Context c, Canvas cv, int w, int h, Info info) {
-        cv.drawColor(0xFF0B1222);
-        Bitmap a = info.cur == null ? AppLogo.bitmap(c, 512) : NotifArt.bitmapFor(c, info.cur, 512);
-        if (a == null) return;
+        Bitmap a = info.cur == null ? null : NotifArt.artFor(c, info.cur);
         Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
-        cv.drawBitmap(a, null, new RectF(0, 0, w, h), p);          // the picture fills its square
+        if (a == null) {
+            cv.drawColor(0xFF0B1222);
+            Bitmap logo = AppLogo.bitmap(c, 512);
+            float s = Math.min(w, h) * 0.78f;
+            cv.drawBitmap(logo, null, new RectF((w - s) / 2f, (h - s) / 2f, (w + s) / 2f, (h + s) / 2f), p);
+            return;
+        }
+        cv.drawColor(0xFF0B1222);
+        float aw = a.getWidth(), ah = a.getHeight();
+        float sc = Math.max(w / aw, h / ah);                       // fill, keep the shape, crop the overflow
+        float sw = w / sc, sh = h / sc;
+        android.graphics.Rect src = new android.graphics.Rect((int) ((aw - sw) / 2), (int) ((ah - sh) / 2), (int) ((aw + sw) / 2), (int) ((ah + sh) / 2));
+        cv.drawBitmap(a, src, new RectF(0, 0, w, h), p);
     }
 
     // the lyrics of the song in view are kept so they are not looked up again at every refresh
     private static String lyricKey = "";
     private static Lyrics.Result lyricVal = new Lyrics.Result();
 
-    private static void lyrics(Context c, Canvas cv, int w, int h, Info info) {
+    private static void lyrics(Context c, Canvas cv, int w, int h, Info info, boolean large) {
         cv.drawColor(0xFF0B1222);
         Lyrics.Result res = null;
         if (info.cur != null) {
@@ -179,15 +189,16 @@ public final class WidgetUpdater {
             }
         }
         TextPaint dim = new TextPaint(Paint.ANTI_ALIAS_FLAG), hot = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-        float u = w / 360f;
-        dim.setColor(0xFF7F8CA6); dim.setTextSize(15 * u);
-        hot.setColor(0xFF00E5FF); hot.setTextSize(21 * u); hot.setTypeface(Typeface.DEFAULT_BOLD);
-        int tw = (int) (w - 36 * u);
+        float u = Math.min(c.getResources().getDisplayMetrics().density, 3f);      // one dp in bitmap pixels
+        float side = (large ? 16 : 8) * u;
+        dim.setColor(0xFF7F8CA6); dim.setTextSize((large ? 14 : 10.5f) * u);
+        hot.setColor(0xFF00E5FF); hot.setTextSize((large ? 18 : 12.5f) * u); hot.setTypeface(Typeface.DEFAULT_BOLD);
+        int tw = (int) (w - 2 * side);
 
         if (res == null || res.lines.isEmpty()) {
             TextPaint t = new TextPaint(dim);
             StaticLayout sl = layout(c.getString(R.string.lyrics_none_widget), t, tw);
-            cv.save(); cv.translate(18 * u, (h - sl.getHeight()) / 2f); sl.draw(cv); cv.restore();
+            cv.save(); cv.translate(side, (h - sl.getHeight()) / 2f); sl.draw(cv); cv.restore();
             return;
         }
         List<Lyrics.Line> L = res.lines;
@@ -196,20 +207,20 @@ public final class WidgetUpdater {
             long t = info.posMs + Lyrics.offset(c, info.cur);
             for (int i = 0; i < L.size(); i++) if (L.get(i).ms >= 0 && L.get(i).ms <= t) cur = i;
         }
-        // the line being sung in the middle; two lines before it and two after it (as far as they fit)
-        int from = Math.max(0, cur - 2), to = Math.min(L.size() - 1, cur + 2);
+        // the line being sung in the middle, one before it and one after it (as far as they fit)
+        int from = Math.max(0, cur - 1), to = Math.min(L.size() - 1, cur + 1);
         if (!res.synced) { from = 0; to = Math.min(L.size() - 1, 6); cur = -1; }
         List<StaticLayout> ls = new java.util.ArrayList<>();
-        float total = 0, gap = 8 * u;
+        float total = 0, gap = (large ? 8 : 4) * u;
         for (int i = from; i <= to; i++) {
             StaticLayout sl = layout(L.get(i).text, i == cur ? hot : dim, tw);
             ls.add(sl); total += sl.getHeight() + gap;
         }
         float y = (h - (total - gap)) / 2f;
-        if (y < 6 * u) y = 6 * u;
+        if (y < 4 * u) y = 4 * u;
         for (StaticLayout sl : ls) {
             if (y + sl.getHeight() > h) break;
-            cv.save(); cv.translate(18 * u, y); sl.draw(cv); cv.restore();
+            cv.save(); cv.translate(side, y); sl.draw(cv); cv.restore();
             y += sl.getHeight() + gap;
         }
     }

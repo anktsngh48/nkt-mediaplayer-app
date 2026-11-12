@@ -130,7 +130,7 @@ public class RowAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         h.sub.setText(r.sub == null ? "" : r.sub);
         if (!grid || !tile(r.type)) {
             // messages and actions (like "Turn on NKT Share on the other phone…") wrap instead of being cut off
-            boolean wrap = r.type == ACTION;
+            boolean wrap = r.type == ACTION || r.type == TOGGLE;
             h.title.setMaxLines(wrap ? 3 : 1);
             h.sub.setMaxLines(wrap ? 4 : 1);
         }

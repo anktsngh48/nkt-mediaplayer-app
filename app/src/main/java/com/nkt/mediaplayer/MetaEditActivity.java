@@ -77,15 +77,19 @@ public class MetaEditActivity extends Activity {
     private String path, name;
     private File work;                         // private copy that gets edited
     private TagIO.Data data;
-    private boolean artChanged = false, busy = false;
+    private boolean artChanged = false, busy = false, auto = false;
     private final EditText[] inputs = new EditText[TagIO.KEYS.length];
     private ImageView art;
     private TextView save;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        auto = getIntent().getBooleanExtra(EXTRA_AUTOSAVE, false) && getIntent().getStringExtra(EXTRA_ART) != null;
+        if (auto) setTheme(R.style.Theme_NKT_Translucent);           // saving a picked picture is silent: no screen shows
         super.onCreate(savedInstanceState);
+        if (auto) overridePendingTransition(0, 0);
         setContentView(R.layout.activity_meta_edit);
+        if (auto) findViewById(R.id.root).setVisibility(View.INVISIBLE);
         Ui.padForSystemBars(findViewById(R.id.root));
         ((TextView) findViewById(R.id.me_title)).setTypeface(Ui.orbitron(this));
         save = findViewById(R.id.me_save);
@@ -179,6 +183,19 @@ public class MetaEditActivity extends Activity {
         if (b != null) Thumbs.showBitmap(art, b); else Thumbs.showPlaceholder(art, R.drawable.ic_music);
     }
 
+    /** Something went wrong while saving: say so, and in silent mode close the invisible screen. */
+    private void fail(int msg) {
+        setBusy(false);
+        Ui.toast(this, msg);
+        if (auto) finish();
+    }
+
+    @Override
+    public void finish() {
+        super.finish();
+        if (auto) overridePendingTransition(0, 0);
+    }
+
     private void setBusy(boolean b) {
         busy = b;
         save.setEnabled(!b);
@@ -204,7 +221,7 @@ public class MetaEditActivity extends Activity {
             }).start();
         } else if (requestCode == REQ_WRITE) {
             if (resultCode == RESULT_OK) writeBack();
-            else { setBusy(false); Ui.toast(this, R.string.meta_no_permission); }
+            else { fail(R.string.meta_no_permission); }
         }
     }
 
@@ -243,7 +260,7 @@ public class MetaEditActivity extends Activity {
                 TagIO.write(work, data, artChanged);
                 ui.post(this::askAndWrite);
             } catch (Throwable t) {
-                ui.post(() -> { setBusy(false); Ui.toast(this, R.string.meta_cant_write); });
+                ui.post(() -> { fail(R.string.meta_cant_write); });
             }
         }).start();
     }
@@ -271,7 +288,7 @@ public class MetaEditActivity extends Activity {
         super.onRequestPermissionsResult(requestCode, permissions, results);
         if (requestCode != REQ_LEGACY) return;
         if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) writeBack();
-        else { setBusy(false); Ui.toast(this, R.string.meta_no_permission); }
+        else { fail(R.string.meta_no_permission); }
     }
 
     private void writeBack() {
@@ -291,11 +308,11 @@ public class MetaEditActivity extends Activity {
                     IntentSender is = ((RecoverableSecurityException) t).getUserAction().getActionIntent().getIntentSender();
                     ui.post(() -> {
                         try { startIntentSenderForResult(is, REQ_WRITE, null, 0, 0, 0); }
-                        catch (Exception e) { setBusy(false); Ui.toast(this, R.string.meta_no_permission); }
+                        catch (Exception e) { fail(R.string.meta_no_permission); }
                     });
                     return;
                 }
-                ui.post(() -> { setBusy(false); Ui.toast(this, R.string.meta_cant_write); });
+                ui.post(() -> { fail(R.string.meta_cant_write); });
             }
         }).start();
     }

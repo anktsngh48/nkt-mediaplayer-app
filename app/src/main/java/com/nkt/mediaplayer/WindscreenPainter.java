@@ -136,15 +136,7 @@ final class WindscreenPainter {
         cv.restore();
         cv.restore();                                           // end of bob
 
-        // rear-view mirror, dashboard and steering wheel (wheel on the right)
-        p.setStyle(Paint.Style.FILL);
-        p.setColor(0xFF05080F);
-        cv.drawRoundRect(148, 0, 200, 18, 6, 6, p);
-        p.setStyle(Paint.Style.STROKE);
-        p.setStrokeWidth(1f);
-        p.setColor(0x4D00E5FF);
-        cv.drawRoundRect(148, 0, 200, 18, 6, 6, p);
-
+        // dashboard and steering wheel (wheel on the right)
         path.reset();
         path.moveTo(L, 252); path.quadTo(174, 226, R, 252); path.lineTo(R, 298); path.lineTo(L, 298); path.close();
         p.setStyle(Paint.Style.FILL);
