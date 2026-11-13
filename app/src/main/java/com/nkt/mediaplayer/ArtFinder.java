@@ -42,7 +42,10 @@ public final class ArtFinder {
         try { itunes(t, a, out); } catch (Throwable ignored) { }
         try { deezer(t, a, out); } catch (Throwable ignored) { }
         try { archive(t, a, album == null ? "" : album.trim(), out); } catch (Throwable ignored) { }
-        return out;
+        List<Hit> uniq = new ArrayList<>();                          // songs of one album share a picture: show it once
+        java.util.HashSet<String> seen = new java.util.HashSet<>();
+        for (Hit h : out) if (seen.add(h.fullUrl)) uniq.add(h);
+        return uniq;
     }
 
     private static void itunes(String t, String a, List<Hit> out) throws Exception {

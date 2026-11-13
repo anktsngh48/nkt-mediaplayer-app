@@ -151,6 +151,8 @@ public final class ArtSheet {
         col.addView(img);
         col.addView(cap);
         col.setTag(img);
+        col.setClickable(true);
+        img.setClickable(false);
         col.setOnClickListener(x -> select(row, chosen, index));
         row.addView(col);
         new Thread(() -> {
@@ -164,14 +166,20 @@ public final class ArtSheet {
 
     private static void select(LinearLayout row, int[] chosen, int index) {
         chosen[0] = index;
+        float d = row.getResources().getDisplayMetrics().density;
         for (int i = 0; i < row.getChildCount(); i++) {
-            ImageView img = (ImageView) row.getChildAt(i).getTag();
+            View col = row.getChildAt(i);
+            ImageView img = (ImageView) col.getTag();
             if (img == null) continue;
+            boolean on = i == index;
+            // the ring is drawn OVER the picture (a background would be hidden behind it); the others are dimmed
             android.graphics.drawable.GradientDrawable g = new android.graphics.drawable.GradientDrawable();
-            g.setCornerRadius(img.getResources().getDisplayMetrics().density * 14);
-            g.setColor(0xFF111827);
-            g.setStroke(Math.round(img.getResources().getDisplayMetrics().density * (i == index ? 2 : 1)), i == index ? 0xFF00E5FF : 0x1F00E5FF);
-            img.setBackground(g);
+            g.setCornerRadius(d * 14);
+            g.setColor(android.graphics.Color.TRANSPARENT);
+            g.setStroke(Math.round(d * (on ? 3 : 1)), on ? 0xFF00E5FF : 0x2200E5FF);
+            img.setForeground(g);
+            img.setAlpha(on ? 1f : 0.55f);
+            col.setSelected(on);
         }
     }
 
