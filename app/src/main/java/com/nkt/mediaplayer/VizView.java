@@ -234,7 +234,7 @@ public class VizView extends View {
         else {
             if (auto != autoSeen) { autoSeen = auto; autoSince = now; }
             if (auto >= 0 && now - autoSince > 2500) saTarget = auto;              // steady for a while: believe it
-            else if (saTarget < 0 && hz > 0) saTarget = ((Math.round(12.0 * Math.log(hz / 261.6256) / Math.log(2.0)) % 12) + 12) % 12;
+            else if (saTarget < 0 && hz > 0) saTarget = (int) (((Math.round(12.0 * Math.log(hz / 261.6256) / Math.log(2.0)) % 12) + 12) % 12);
         }
         if (saTarget >= 0) {
             if (!haveSaF) { saF = saTarget; haveSaF = true; }
