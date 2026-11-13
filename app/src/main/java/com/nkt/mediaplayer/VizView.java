@@ -42,15 +42,25 @@ public class VizView extends View {
     private int beatIndex = 0;
 
     // sung note
-    private static final int HIST = 160;
+    private static final int HIST = 200;
     private final long[] hT = new long[HIST];
-    private final float[] hLane = new float[HIST];
+    private final float[] hAbs = new float[HIST];     // the sung note, in semitones above middle C; the lane is worked out when drawing
     private int hN = 0;
     private long lastSample = 0;
-    private float prevSemis = 0f;
-    private boolean haveSemis = false;
+    private boolean haveAbs = false;
+    private float absRaw = 0f;                         // the latest note heard
+    private float absHead = 0f;                        // the same, lightly smoothed: where the line's head is
+    private float candA = 0f;                          // a big leap, waiting to prove itself
+    private int candN = 0;
     private float headLane = 0f;
     private long voicedAt = 0;
+    private float saF = 0f;                            // the Sa the lanes are drawn against; glides when the Sa changes
+    private int saTarget = -1;
+    private boolean haveSaF = false;
+    private float octShift = 0f;
+    private boolean octInit = false, snapBase = false;
+    private int autoSeen = -2;
+    private long autoSince = 0;
 
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path path = new Path();
@@ -71,8 +81,7 @@ public class VizView extends View {
 
     public void setStyle(int s) {
         style = s == GAMAKA ? GAMAKA : s == STEADY ? STEADY : WINDSCREEN;
-        hN = 0;
-        haveLane = false;
+        resetLine();
         invalidate();
     }
 
@@ -199,46 +208,73 @@ public class VizView extends View {
         return 7;
     }
 
-    private boolean haveLane = false;
-    private int saUsed = -2;
+    private void resetLine() {
+        hN = 0; haveAbs = false; candN = 0; octInit = false; haveSaF = false; saTarget = -1;
+        autoSeen = -2; snapBase = true;
+    }
 
-    /** Takes the latest sung note into the line. Between notes the line holds its last height, so it never breaks. */
+    /**
+     * Takes the latest sung note into the line. The line does not restart in the middle of a song: when the Sa changes,
+     * everything glides to its new place. Notes are not changed, only smoothed a little; between notes the line holds its height.
+     */
     private void sample(long now) {
         if (now - lastSample < 16) return;
+        float dt = lastSample == 0 ? 0.016f : Math.min(0.1f, (now - lastSample) / 1000f);
         lastSample = now;
         if (seenSong != AudioAnalyzer.songNo) {                      // another song: its own key, its own line
             seenSong = AudioAnalyzer.songNo;
-            provSa = -1f; hN = 0; haveSemis = false; haveLane = false;
+            resetLine();
         }
-        int sa = saNow(getContext());
         float hz = AudioAnalyzer.pitchHz;
-        if (sa < 0 && hz > 0) {                                       // no Sa known yet: the first note heard stands in
-            if (provSa < 0) provSa = ((Math.round(12.0 * Math.log(hz / 261.6256) / Math.log(2.0)) % 12) + 12) % 12;
-            sa = (int) provSa;
+
+        // which note is Sa: the listener's choice; else the first note heard, then what the song settles on
+        int user = Prefs.saNote(getContext());
+        int auto = AudioAnalyzer.autoSa;
+        if (user >= 0) saTarget = user;
+        else {
+            if (auto != autoSeen) { autoSeen = auto; autoSince = now; }
+            if (auto >= 0 && now - autoSince > 2500) saTarget = auto;              // steady for a while: believe it
+            else if (saTarget < 0 && hz > 0) saTarget = ((Math.round(12.0 * Math.log(hz / 261.6256) / Math.log(2.0)) % 12) + 12) % 12;
         }
-        if (sa != saUsed) {                                           // a different Sa moves every lane: start the line again
-            if (saUsed != -2 && sa >= 0) { hN = 0; haveSemis = false; haveLane = false; }
-            saUsed = sa;
+        if (saTarget >= 0) {
+            if (!haveSaF) { saF = saTarget; haveSaF = true; }
+            float d = saTarget - saF;
+            d -= 12f * Math.round(d / 12f);                          // the short way round
+            saF += d * (1f - (float) Math.exp(-dt / 0.3f));
         }
-        if (hz > 0 && sa >= 0) {
-            float saHz = (float) (261.6256 * Math.pow(2.0, sa / 12.0));
-            float s = (float) (12.0 * Math.log(hz / saHz) / Math.log(2.0));
-            if (haveSemis) s -= 12f * Math.round((s - prevSemis) / 12f);          // stay near the last note
-            if (s < -2.5f || s > 14.5f) s = ((s % 12f) + 12f) % 12f;               // far away: bring it into the octave
-            prevSemis = s;
-            haveSemis = true;
-            float lane = laneOf(s);
-            headLane = haveLane ? headLane + (lane - headLane) * 0.5f : lane;      // a little smoothing
-            haveLane = true;
-            voicedAt = now;
+
+        if (hz > 0) {
+            float a = (float) (12.0 * Math.log(hz / 261.6256) / Math.log(2.0));
+            boolean take = true;
+            if (haveAbs) {
+                a -= 12f * Math.round((a - absRaw) / 12f);                           // stay near the last note
+                if (Math.abs(a - absRaw) > 3f) {                                     // a big leap: only if it holds for a moment
+                    if (candN > 0 && Math.abs(a - candA) < 1f) candN++; else { candN = 1; candA = a; }
+                    take = candN >= 3;
+                } else candN = 0;
+            }
+            if (take) {
+                absRaw = a;
+                candN = 0;
+                if (!haveAbs) { absHead = a; haveAbs = true; }
+                voicedAt = now;
+            }
         }
-        if (!haveLane) return;                                        // nothing sung yet
-        if (hN == HIST) { System.arraycopy(hT, 1, hT, 0, HIST - 1); System.arraycopy(hLane, 1, hLane, 0, HIST - 1); hN--; }
+        if (!haveAbs || !haveSaF) return;                             // nothing sung yet
+        absHead += (absRaw - absHead) * (1f - (float) Math.exp(-dt / 0.035f));     // a little smoothing
+
+        float s = absHead - saF + octShift;
+        if (!octInit || s < -4f || s > 16f) {                          // bring the line into the lanes (rare)
+            octShift += -12f * (float) Math.floor(s / 12f);
+            octInit = true;
+            snapBase = true;
+        }
+        headLane = laneOf(absHead - saF + octShift);
+        if (hN == HIST) { System.arraycopy(hT, 1, hT, 0, HIST - 1); System.arraycopy(hAbs, 1, hAbs, 0, HIST - 1); hN--; }
         hT[hN] = now;
-        hLane[hN++] = headLane;
+        hAbs[hN++] = absHead;
     }
 
-    private float provSa = -1f;
     private int seenSong = 0;
 
     private void drawGamaka(Canvas cv, long now, boolean playing) {
@@ -254,18 +290,19 @@ public class VizView extends View {
         cv.drawRect(0, 0, wu, hu, p);
         p.setShader(null);
 
-        boolean voiced = now - voicedAt < 600 && playing;
+        boolean voiced = now - voicedAt < 900 && playing;
         int curLane = voiced ? Math.round(headLane) : Integer.MIN_VALUE;
 
         // the swara column moves when the note goes above or below the eight lanes
         float dtg = lastGam == 0 ? 0f : Math.min(0.1f, (now - lastGam) / 1000f);
         lastGam = now;
-        float want = 0f;
-        if (haveLane) {
-            if (headLane > want + 6.4f) want = headLane - 6.4f;
-            if (headLane < want + 0.6f) want = headLane - 0.6f;
+        float want = baseNow;
+        if (haveAbs && haveSaF) {
+            if (headLane > want + 6.2f) want = headLane - 6.2f;
+            if (headLane < want + 0.8f) want = headLane - 0.8f;
         }
-        baseNow += (want - baseNow) * (1f - (float) Math.exp(-dtg / 0.25f));
+        if (snapBase) { baseNow = want; snapBase = false; }
+        else baseNow += (want - baseNow) * (1f - (float) Math.exp(-dtg / 0.12f));
 
         // "NOW SINGING"
         p.setTypeface(orb);
@@ -319,7 +356,7 @@ public class VizView extends View {
         for (int i = 0; i < hN; i++) {
             float x = HX + (hT[i] - now) / 1000f * PPS;
             if (x < -4) continue;                                     // already scrolled out on the left
-            float y = (7 - (hLane[i] - baseNow)) * LH + LH / 2;
+            float y = (7 - (laneOf(hAbs[i] - saF + octShift) - baseNow)) * LH + LH / 2;
             if (!pen) { path.moveTo(x, y); pen = true; }
             else path.quadTo(px, py, (px + x) / 2f, (py + y) / 2f);   // every point is joined, with soft corners
             px = x; py = y;
