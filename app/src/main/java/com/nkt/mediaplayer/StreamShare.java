@@ -35,11 +35,12 @@ final class StreamShare {
         boolean hidden = Prefs.showHidden(c);
         if (StreamPrefs.MODE_ALL.equals(StreamPrefs.shareMode(c))) {
             LibraryCache.Snapshot s = LibraryCache.load(c);
-            List<MediaInfo> a, v;
-            if (s != null) { a = s.audio; v = s.video; }
-            else { a = MediaLibrary.audio(c); v = MediaLibrary.video(c); }
+            List<MediaInfo> a, v, im;
+            if (s != null) { a = s.audio; v = s.video; im = s.images; }
+            else { a = MediaLibrary.audio(c); v = MediaLibrary.video(c); im = MediaLibrary.images(c); }
             for (MediaInfo m : a) if (hidden || !m.hidden) out.add(m);
             for (MediaInfo m : v) if (hidden || !m.hidden) out.add(m);
+            for (MediaInfo m : im) if (hidden || !m.hidden) out.add(m);
         } else {
             Set<String> seen = new HashSet<>();
             for (String p : StreamPrefs.picks(c)) walk(new File(p), hidden, out, seen, 0);
@@ -53,12 +54,13 @@ final class StreamShare {
     static int countAll(Context c) {
         boolean hidden = Prefs.showHidden(c);
         LibraryCache.Snapshot s = LibraryCache.load(c);
-        List<MediaInfo> a, v;
-        if (s != null) { a = s.audio; v = s.video; }
-        else { a = MediaLibrary.audio(c); v = MediaLibrary.video(c); }
+        List<MediaInfo> a, v, im;
+        if (s != null) { a = s.audio; v = s.video; im = s.images; }
+        else { a = MediaLibrary.audio(c); v = MediaLibrary.video(c); im = MediaLibrary.images(c); }
         int n = 0;
         for (MediaInfo m : a) if (hidden || !m.hidden) n++;
         for (MediaInfo m : v) if (hidden || !m.hidden) n++;
+        for (MediaInfo m : im) if (hidden || !m.hidden) n++;
         return n;
     }
 
@@ -73,7 +75,7 @@ final class StreamShare {
             for (File k : kids) walk(k, hidden, out, seen, depth + 1);
         } else {
             int k = MediaInfo.kindOf(name);
-            if (k != MediaInfo.AUDIO && k != MediaInfo.VIDEO) return;
+            if (k != MediaInfo.AUDIO && k != MediaInfo.VIDEO && k != MediaInfo.IMAGE) return;
             String path = f.getAbsolutePath();
             if (!seen.add(path)) return;
             out.add(MediaInfo.fromFile(f));

@@ -239,6 +239,7 @@ public class ViewerActivity extends Activity {
         playerView.setShutterBackgroundColor(0);
         playerView.setKeepContentOnPlayerReset(false);
         playerView.setPlayer(player);
+        StreamHub.onViewerPlayer(player);                 // Stream: a video between the photos is streamed like any other
         playBtn = new android.widget.ImageButton(this);
         playBtn.setBackgroundResource(R.drawable.bg_play_btn);
         playBtn.setImageResource(R.drawable.ic_play);
@@ -418,7 +419,7 @@ public class ViewerActivity extends Activity {
     protected void onDestroy() {
         pool.shutdownNow();
         StreamHub.photoGone();
-        if (player != null) { player.release(); player = null; }
+        if (player != null) { StreamHub.onViewerPlayer(null); player.release(); player = null; }
         super.onDestroy();
     }
 

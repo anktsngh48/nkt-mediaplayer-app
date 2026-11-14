@@ -25,7 +25,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Listen: the host's shared library. Tapping a song or video plays it here, on this phone only (not in step with the
+ * Listen: the host's shared library. Tapping a song, video or photo plays it here, on this phone only (not in step with the
  * host); BACK TO LIVE on the Listen screen goes back to following the host.
  */
 public class ListenLibraryActivity extends Activity {
@@ -37,15 +37,27 @@ public class ListenLibraryActivity extends Activity {
     private LinearLayout list;
     private TextView message;
     private EditText search;
-    private final TextView[] kindPill = new TextView[2];
-    private int kind = 0;          // 0 songs, 1 videos
+    private final TextView[] kindPill = new TextView[3];
+    private int kind = 0;          // 0 songs, 1 videos, 2 photos
+    private final List<String[]> shown = new ArrayList<>();      // what the list on screen holds, in order
     private boolean loaded = false;
+    private ScrollView sv;
+    // where you were, kept for the next time the library is opened during this listening
+    private static long lastStamp = 0;
+    private static int lastKind = 0;
+    private static String lastSearch = "";
+    private static final int[] lastScroll = new int[3];
 
     private int dp(float v) { return Ui.dp(this, v); }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        if (lastStamp != ListenService.startedAt) {        // a new connection: start from the top
+            lastStamp = ListenService.startedAt;
+            lastKind = 0; lastSearch = ""; java.util.Arrays.fill(lastScroll, 0);
+        }
+        kind = lastKind;
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(getColor(R.color.bg));
@@ -77,18 +89,19 @@ public class ListenLibraryActivity extends Activity {
         search.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         search.setBackground(stroked(0xFF111827, 0x1F00E5FF, 14));
         search.setPadding(dp(16), 0, dp(16), 0);
+        search.setText(lastSearch);
         search.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) { }
             @Override public void onTextChanged(CharSequence s, int a, int b, int c) { }
-            @Override public void afterTextChanged(Editable s) { draw(); }
+            @Override public void afterTextChanged(Editable s) { draw(); if (sv != null) sv.scrollTo(0, 0); }
         });
         LinearLayout.LayoutParams sl = new LinearLayout.LayoutParams(MATCH, dp(48));
         sl.topMargin = dp(4);
         root.addView(search, sl);
 
         LinearLayout pills = new LinearLayout(this);
-        String[] names = {getString(R.string.listen_library_songs), getString(R.string.listen_library_videos)};
-        for (int i = 0; i < 2; i++) {
+        String[] names = {getString(R.string.listen_library_songs), getString(R.string.listen_library_videos), getString(R.string.listen_library_photos)};
+        for (int i = 0; i < 3; i++) {
             final int k = i;
             TextView t = new TextView(this);
             t.setText(names[i]);
@@ -96,7 +109,7 @@ public class ListenLibraryActivity extends Activity {
             t.setTextSize(11);
             t.setLetterSpacing(0.08f);
             t.setTypeface(null, android.graphics.Typeface.BOLD);
-            t.setOnClickListener(v -> { kind = k; paintPills(); draw(); });
+            t.setOnClickListener(v -> { lastScroll[kind] = sv.getScrollY(); kind = k; paintPills(); draw(); restoreScroll(); });
             kindPill[i] = t;
             LinearLayout.LayoutParams pl = new LinearLayout.LayoutParams(0, dp(40), 1f);
             if (i > 0) pl.setMarginStart(dp(6));
@@ -111,7 +124,7 @@ public class ListenLibraryActivity extends Activity {
         message.setPadding(0, dp(18), 0, 0);
         root.addView(message, new LinearLayout.LayoutParams(MATCH, WRAP));
 
-        ScrollView sv = new ScrollView(this);
+        sv = new ScrollView(this);
         list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
         sv.addView(list, new ViewGroup.LayoutParams(MATCH, WRAP));
@@ -146,30 +159,32 @@ public class ListenLibraryActivity extends Activity {
                 message.setText(fine ? "" : getString(R.string.listen_library_off));
                 message.setVisibility(fine ? View.GONE : View.VISIBLE);
                 draw();
+                restoreScroll();
             });
         }, "nkt-listen-lib").start();
     }
 
     private void draw() {
         list.removeAllViews();
+        shown.clear();
         if (!loaded) return;
         String term = search.getText().toString().trim().toLowerCase();
-        int shown = 0;
+        int n = 0;
         for (String[] it : items) {
-            boolean video = "1".equals(it[4]);
-            if (video != (kind == 1)) continue;
+            if (!String.valueOf(kind).equals(it[4])) continue;
             if (!term.isEmpty() && !(it[1] + " " + it[2]).toLowerCase().contains(term)) continue;
-            if (++shown > 400) break;
-            list.addView(row(it));
+            if (++n > 400) break;
+            shown.add(new String[]{it[0], it[1], it[4]});
+            list.addView(row(it, shown.size() - 1));
         }
-        if (shown == 0 && message.getVisibility() != View.VISIBLE) {
+        if (n == 0 && message.getVisibility() != View.VISIBLE) {
             TextView none = text(getString(R.string.listen_library_empty), 13, R.color.muted, false);
             none.setPadding(0, dp(18), 0, 0);
             list.addView(none);
         }
     }
 
-    private View row(String[] it) {
+    private View row(String[] it, final int at) {
         LinearLayout r = new LinearLayout(this);
         r.setOrientation(LinearLayout.VERTICAL);
         r.setPadding(dp(14), dp(10), dp(14), dp(10));
@@ -180,13 +195,13 @@ public class ListenLibraryActivity extends Activity {
         r.addView(t);
         long sec = 0;
         try { sec = Long.parseLong(it[3]); } catch (Exception ignored) { }
-        String sub = (it[2].isEmpty() ? "" : it[2] + " · ") + Ui.time(sec * 1000);
+        String sub = (it[2].isEmpty() ? "" : it[2] + " · ") + ("2".equals(it[4]) ? getString(R.string.listen_library_photo) : Ui.time(sec * 1000));
         TextView s = text(sub, 12, R.color.muted, false);
         s.setSingleLine(true);
         s.setEllipsize(android.text.TextUtils.TruncateAt.END);
         r.addView(s);
         r.setOnClickListener(v -> {
-            ListenService.playOwn(this, it[0], it[1], "1".equals(it[4]));
+            ListenService.playOwn(this, new ArrayList<>(shown), at);         // previous and next move through this list
             finish();
         });
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(MATCH, WRAP);
@@ -196,7 +211,7 @@ public class ListenLibraryActivity extends Activity {
     }
 
     private void paintPills() {
-        for (int i = 0; i < 2; i++) {
+        for (int i = 0; i < 3; i++) {
             boolean on = i == kind;
             kindPill[i].setTextColor(on ? getColor(R.color.accent) : getColor(R.color.muted));
             kindPill[i].setBackground(on ? stroked(0x1A00E5FF, getColor(R.color.accent), 20) : stroked(0xFF111827, 0x1F00E5FF, 20));
@@ -224,5 +239,28 @@ public class ListenLibraryActivity extends Activity {
     protected void onResume() {
         super.onResume();
         if (!ListenService.running) finish();          // listening ended meanwhile
+        ui.post(watch);
     }
+
+    private void restoreScroll() {
+        final int y = lastScroll[kind];
+        sv.post(() -> sv.scrollTo(0, y));
+    }
+
+    @Override
+    protected void onPause() {
+        lastKind = kind;
+        lastSearch = search.getText().toString();
+        if (loaded) lastScroll[kind] = sv.getScrollY();
+        ui.removeCallbacks(watch);
+        super.onPause();
+    }
+
+    /** The host switched the library off while this list was open: it closes at once. */
+    private final Runnable watch = new Runnable() {
+        @Override public void run() {
+            if (!ListenService.running || !ListenService.libOn) { finish(); return; }
+            ui.postDelayed(this, 800);
+        }
+    };
 }

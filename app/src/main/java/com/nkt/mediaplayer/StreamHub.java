@@ -51,6 +51,8 @@ public final class StreamHub {
 
     /** The video player, while the video screen is open (set by PlayerActivity). */
     private static volatile ExoPlayer videoPlayer;
+    /** The photo viewer's own player, for the videos it plays between the photos (set by ViewerActivity). */
+    private static volatile ExoPlayer viewerPlayer;
 
     // ── What is playing right now ──
 
@@ -144,6 +146,8 @@ public final class StreamHub {
                 try { if (a != null && a.getVolume() == 0f) a.setVolume(1f); } catch (Throwable ignored) { }
                 ExoPlayer v = videoPlayer;
                 try { if (v != null && v.getVolume() == 0f) v.setVolume(1f); } catch (Throwable ignored) { }
+                ExoPlayer w = viewerPlayer;
+                try { if (w != null && w.getVolume() == 0f) w.setVolume(1f); } catch (Throwable ignored) { }
             }
         });
         setViz(false);
@@ -158,6 +162,18 @@ public final class StreamHub {
         if (running && !draining) main.post(() -> { attachAll(); capture(); });
     }
 
+    /** The photo viewer made its player (or let it go): a video that plays between the photos is streamed like any other. */
+    public static void onViewerPlayer(ExoPlayer p) {
+        viewerPlayer = p;
+        if (running && !draining) main.post(() -> { attachAll(); capture(); });
+    }
+
+    /** The player of the video screen if it is open, otherwise the photo viewer's. */
+    private static ExoPlayer vp() {
+        ExoPlayer v = videoPlayer;
+        return v != null ? v : viewerPlayer;
+    }
+
     private static ExoPlayer audioPlayer() {
         PlaybackService s = PlaybackService.instance;
         return s == null ? null : s.streamPlayer();
@@ -165,7 +181,7 @@ public final class StreamHub {
 
     private static Player active() {
         ExoPlayer a = audioPlayer();
-        ExoPlayer v = videoPlayer;
+        ExoPlayer v = vp();
         boolean aHas = a != null && a.getMediaItemCount() > 0;
         boolean vHas = v != null && v.getMediaItemCount() > 0;
         if (vHas && (v.getPlayWhenReady() || !aHas || !a.getPlayWhenReady())) return v;
@@ -198,7 +214,7 @@ public final class StreamHub {
 
     private static MediaInfo infoOf(Player p, MediaItem it, long dur) {
         MediaInfo mi = Media.info(it, dur);
-        if (p != videoPlayer || mi.video || mi.uri == null) return mi;
+        if ((p != videoPlayer && p != viewerPlayer) || mi.video || mi.uri == null) return mi;
         String key = mi.key();
         String t = it.mediaMetadata.title == null ? names.get(key) : it.mediaMetadata.title.toString();
         if (t == null) {
@@ -220,12 +236,12 @@ public final class StreamHub {
     }
 
     private static void attachAll() {
-        for (Player p : new Player[]{audioPlayer(), videoPlayer}) {
+        for (Player p : new Player[]{audioPlayer(), videoPlayer, viewerPlayer}) {
             if (p == null || attached.contains(p)) continue;
             try { p.addListener(events); attached.add(p); } catch (Throwable ignored) { }
         }
         for (int i = attached.size() - 1; i >= 0; i--) {                    // a released video player goes away by itself
-            if (attached.get(i) != audioPlayer() && attached.get(i) != videoPlayer) attached.remove(i);
+            if (attached.get(i) != audioPlayer() && attached.get(i) != videoPlayer && attached.get(i) != viewerPlayer) attached.remove(i);
         }
         applySilence();
     }
@@ -385,6 +401,8 @@ public final class StreamHub {
             try { if (a != null && a.getVolume() == 0f) a.setVolume(1f); } catch (Throwable ignored) { }
             ExoPlayer v = videoPlayer;
             try { if (v != null && v.getVolume() == 0f) v.setVolume(1f); } catch (Throwable ignored) { }
+            ExoPlayer w = viewerPlayer;
+            try { if (w != null && w.getVolume() == 0f) w.setVolume(1f); } catch (Throwable ignored) { }
         }
         setViz(false);
         bump();
@@ -459,6 +477,7 @@ public final class StreamHub {
             o.put("style", Prefs.vizStyle(c));      // 0 windscreen, 1 gamaka, 2 steady
             o.put("speedOpt", Prefs.vizSpeed(c));
             o.put("sa", Prefs.saNote(c));
+            if (StreamPrefs.hostVolOn(c)) o.put("hv", StreamPrefs.hostVol(c) / 100.0);     // listeners use this volume, only while it is on
             o.put("lib", StreamPrefs.libraryOn(c) && !draining);
             o.put("dl", StreamPrefs.allowDownloads(c) && !draining);
             o.put("q", new JSONArray(queueJson));
@@ -509,21 +528,10 @@ public final class StreamHub {
                 String id = Lyrics.idOf(m.key());
                 if (map.containsKey(id)) continue;
                 map.put(id, m);
-                arr.put(new JSONArray().put(id).put(m.title).put(m.artist).put(m.durationMs / 1000).put(m.video ? 1 : 0).put(m.size).put(m.folder));
+                arr.put(new JSONArray().put(id).put(m.title).put(m.artist).put(m.durationMs / 1000).put(m.image ? 2 : m.video ? 1 : 0).put(m.size).put(m.folder));     // kind: 0 song, 1 video, 2 photo
             }
-            JSONArray pls = new JSONArray();
-            try {
-                for (String name : Playlists.names(app)) {
-                    JSONArray ids = new JSONArray();
-                    for (MediaInfo m : Playlists.items(app, name)) {
-                        String id = Lyrics.idOf(m.key());
-                        if (map.containsKey(id)) ids.put(id);
-                    }
-                    if (ids.length() > 0) pls.put(new JSONObject().put("name", name).put("ids", ids));
-                }
-            } catch (Exception ignored) { }
             JSONObject o = new JSONObject();
-            try { o.put("items", arr); o.put("playlists", pls); } catch (Exception ignored) { }
+            try { o.put("items", arr); } catch (Exception ignored) { }
             libMap = map;
             libJson = o.toString();
             libFor = items;
@@ -710,12 +718,34 @@ public final class StreamHub {
     static byte[] photoJpeg(String id) {
         if (!running || draining || app == null || !StreamPrefs.share(app, 2)) return null;
         MediaInfo m = photoMap.get(id);
-        if (m == null) return null;
+        if (m == null) {                                      // not what the host is looking at: a photo from the shared library
+            if (!StreamPrefs.libraryOn(app)) return null;
+            m = libMap.get(id);
+            if (m == null) { library(); m = libMap.get(id); }
+            if (m == null || !m.image) return null;
+        } else if (!StreamPrefs.share(app, 2)) return null;
         byte[] b = photoCache.get(id);
         if (b != null) return b;
         b = StreamPhoto.jpeg(app, m, 1600);
         if (b != null) photoCache.put(id, b);
         return b;
+    }
+
+    /** True when this id can only be reached through the shared library (not the queue or the photo on show). */
+    static boolean viaLibraryOnly(String id) {
+        return id != null && !queueMap.containsKey(id) && !photoMap.containsKey(id) && libMap.containsKey(id);
+    }
+
+    /** The "let listeners pick their own" switch changed: everyone is told at once. */
+    public static void libraryChanged(Context c) {
+        if (app == null) app = c.getApplicationContext();
+        if (running) bump();
+    }
+
+    /** The host's "control the volume of listeners" switch or level changed: everyone follows at once. */
+    public static void hostVolumeChanged(Context c) {
+        if (app == null) app = c.getApplicationContext();
+        if (running) bump();
     }
 
     /** Streaming or keeping to this phone: songs 0, videos 1, photos 2. */
@@ -741,7 +771,7 @@ public final class StreamHub {
     static void applySilence() {
         if (app == null) return;
         boolean sil = running && !draining && StreamPrefs.silence(app) && !snap.priv;     // what is kept private is heard as usual
-        for (Player p : new Player[]{audioPlayer(), videoPlayer}) {
+        for (Player p : new Player[]{audioPlayer(), videoPlayer, viewerPlayer}) {
             if (p == null) continue;
             try {
                 if (sil) { if (p.getVolume() != 0f) p.setVolume(0f); }

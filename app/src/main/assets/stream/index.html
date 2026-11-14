@@ -59,6 +59,7 @@ a{text-decoration:none;color:inherit}
 /* viz */
 #vizBox{position:relative;height:380px;border-radius:16px;border:1px solid rgba(0,229,255,.25);background:#0B1222;overflow:hidden}
 #vizBox canvas{width:100%;height:100%;display:block}
+#beat,#bpm{display:none!important}
 #beat{position:absolute;left:14px;top:12px;display:flex;gap:6px}
 #beat i{width:12px;height:12px;border-radius:50%;background:#33405A;display:block}
 #beat i.on{background:#00E5FF}
@@ -112,7 +113,16 @@ a{text-decoration:none;color:inherit}
 #ph img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
 #ph .phTop{position:absolute;left:0;right:0;top:0;display:flex;align-items:center;gap:12px;padding:16px 18px;background:linear-gradient(to bottom,rgba(0,0,0,.72),transparent)}
 #ph .phTop .x{margin-left:auto;width:44px;height:44px;border-radius:50%;border:1px solid rgba(0,229,255,.35);background:rgba(5,8,15,.7);color:#00E5FF;font-size:22px;line-height:1;cursor:pointer;padding:0}
-#ph .phCap{position:absolute;left:0;right:0;bottom:0;padding:40px 20px max(18px,env(safe-area-inset-bottom));background:linear-gradient(to top,rgba(0,0,0,.85),transparent)}
+/* play controls for what you picked yourself */
+.pc{display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap}
+.pcb{height:44px;min-width:52px;padding:0 14px;border-radius:22px;border:1px solid rgba(0,229,255,.35);background:rgba(5,8,15,.7);color:#00E5FF;font-size:12px;font-weight:700;letter-spacing:.08em;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.locked{opacity:.4;pointer-events:none}
+.pcb:disabled{opacity:.35;cursor:default}
+#tv .pc{margin-top:max(8px,1vw)}
+#tv .pcb{height:max(40px,4.8vw);font-size:max(12px,1.5vw);border-width:2px}
+#ph .phCtl{position:absolute;left:0;right:0;bottom:104px;z-index:2;display:none}
+#ph.own .phCtl{display:flex}
+#ph .phCap{pointer-events:none;position:absolute;left:0;right:0;bottom:0;padding:40px 20px max(18px,env(safe-area-inset-bottom));background:linear-gradient(to top,rgba(0,0,0,.85),transparent)}
 #ph .phCap b{display:block;font-size:17px}
 #tv button{touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
 #tv:fullscreen .bt,#tv:-webkit-full-screen .bt{bottom:max(7vw,64px)}
@@ -159,9 +169,16 @@ a{text-decoration:none;color:inherit}
     <div class="logo">NKT STREAM</div>
     <div class="chip" id="hChip"><i></i><span id="hChipT">LIVE</span></div>
   </div>
-  <div class="row" style="gap:8px;margin-top:16px">
+  <div class="row" id="tabsRow" style="gap:8px;margin-top:16px">
     <button class="tab on" id="tabLive">LIVE</button>
     <button class="tab" id="tabLib" hidden>LIBRARY</button>
+  </div>
+
+  <!-- Waiting: the host is not playing anything -->
+  <div id="wait" style="display:none;flex-direction:column;align-items:center;flex:1">
+    <div class="art" id="waitArt" style="margin-top:28px;width:min(300px,80vw);height:min(300px,80vw)"></div>
+    <div class="chip warn" id="waitT" style="margin-top:22px;height:auto;min-height:28px;padding:8px 16px;white-space:normal;text-align:center;line-height:1.4">WAITING FOR THE HOST TO PLAY SOMETHING</div>
+    <button class="btn" id="stopBtn2" style="margin-top:auto;align-self:stretch">STOP LISTENING</button>
   </div>
 
   <!-- LIVE -->
@@ -188,6 +205,7 @@ a{text-decoration:none;color:inherit}
           <button class="round" id="volP" aria-label="Volume up" style="width:38px;height:38px;flex:none">+</button>
           <div id="volT" class="muted" style="width:26px;text-align:right;font-size:12px">70</div>
         </div>
+        <div id="hvNote" class="muted" hidden style="font-size:11px;letter-spacing:.06em;padding-bottom:6px">VOLUME IS SET BY THE HOST</div>
         <div style="height:1px;background:rgba(0,229,255,.12)"></div>
         <div class="row" style="padding-top:12px;justify-content:space-between"><div style="font-size:14px">Sync nudge</div><div id="nudT" style="font-size:13px;color:#00E5FF;font-weight:700">0 ms</div></div>
         <div class="row" style="margin-top:4px;gap:8px">
@@ -231,26 +249,29 @@ a{text-decoration:none;color:inherit}
         <button class="round" id="volP2" aria-label="Volume up" style="width:38px;height:38px;flex:none">+</button>
         <div id="volT2" class="muted" style="width:26px;text-align:right;font-size:12px">70</div>
       </div>
+      <div id="hvNote2" class="muted" hidden style="font-size:11px;letter-spacing:.06em;margin-top:4px">VOLUME IS SET BY THE HOST</div>
     </div>
   </div>
 
   <!-- LIBRARY -->
   <div id="lib" style="display:none;flex-direction:column;flex:1">
     <div style="position:relative;margin-top:12px"><svg style="position:absolute;left:14px;top:14px" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8A9AB2" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input id="search" placeholder="Search songs and videos" autocomplete="off"></div>
-    <div class="row" style="gap:8px;margin-top:12px" id="kinds"><button class="pill on" data-k="0">SONGS</button><button class="pill" data-k="1">VIDEOS</button><button class="pill" data-k="2">PLAYLISTS</button></div>
+    <div class="row" style="gap:8px;margin-top:12px" id="kinds"><button class="pill on" data-k="0">SONGS</button><button class="pill" data-k="1">VIDEOS</button><button class="pill" data-k="2">PHOTOS</button></div>
+    <div class="row" style="margin-top:8px"><button class="pill on" id="autoNext">AUTO-PLAY NEXT: ON</button></div>
     <div id="dlNote" class="muted" hidden style="margin-top:8px;font-size:12px">The host has allowed downloads. The arrow saves a copy to this device.</div>
     <div id="libList"></div>
     <div class="card" id="own" hidden style="margin-top:auto;margin-top:14px;padding:12px 14px;border-color:rgba(0,229,255,.25)">
       <div class="row" style="gap:12px"><div style="flex:1;min-width:0"><div id="oTitle" style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div><div class="muted" style="font-size:12px;margin-top:2px">Not synced with the host</div></div>
         <button class="btn" id="backLive" style="height:44px;padding:0 16px;font-size:11px;letter-spacing:.12em">BACK TO LIVE</button></div>
       <div class="bar" style="margin-top:8px"><b id="oBar" style="background:#7B61FF"></b></div>
+      <div class="pc" style="margin-top:12px"><button class="pcb" id="oPrev">PREV</button><button class="pcb" id="oBack">−10s</button><button class="pcb" id="oPlay">PAUSE</button><button class="pcb" id="oFwd">+10s</button><button class="pcb" id="oNext">NEXT</button></div>
     </div>
   </div>
 </div>
 
 <!-- Video: for a TV or a laptop -->
 <!-- Photo the host is showing -->
-<div id="ph"><img id="phImg" alt=""><div class="phTop"><div class="logo">NKT STREAM</div><div class="chip"><i></i><span id="phChipT">LIVE PHOTO</span></div><button class="x" id="phX" aria-label="Hide this photo">×</button></div><div class="phCap"><b id="phT"></b><span class="muted" id="phN" style="font-size:13px"></span></div></div>
+<div id="ph"><img id="phImg" alt=""><div class="phTop"><div class="logo">NKT STREAM</div><div class="chip"><i></i><span id="phChipT">LIVE PHOTO</span></div><button class="x" id="phX" aria-label="Hide this photo">×</button></div><div class="pc phCtl"><button class="pcb" id="phPrev">PREV</button><button class="pcb" id="phPlay">PAUSE</button><button class="pcb" id="phNext">NEXT</button></div><div class="phCap"><b id="phT"></b><span class="muted" id="phN" style="font-size:13px"></span></div></div>
 
 <div id="tv">
   <video id="vid" playsinline preload="auto"></video>
@@ -260,6 +281,7 @@ a{text-decoration:none;color:inherit}
     <div class="tb"><div style="min-width:0"><div class="ti" id="tvTitle"></div><div class="ar" id="tvArtist"></div></div><div class="chip" id="tvSync" style="flex:none"><span id="tvSyncT">IN SYNC</span></div></div>
     <div class="bar" role="progressbar" aria-label="Video position"><b id="tvBar"></b></div>
     <div class="tm"><span id="tvCur">0:00</span><span id="tvDur">0:00</span></div>
+    <div class="pc" id="tvOwn" style="display:none"><button class="pcb" id="tvPrev">PREV</button><button class="pcb" id="tvBack">−10s</button><button class="pcb" id="tvPlay">PAUSE</button><button class="pcb" id="tvFwd">+10s</button><button class="pcb" id="tvNext">NEXT</button></div>
     <div class="ctl">
       <div class="nud"><button id="tvVm" aria-label="Volume down">−</button><span style="padding:0 .8vw;display:flex;align-items:center;gap:1vw"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#00E5FF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/></svg> Volume <span class="vsl"><b id="tvVolF"></b></span> <span class="muted" id="tvVolT">70</span></span><button id="tvVp" aria-label="Volume up">+</button></div>
       <div class="nud"><button id="tvNm" aria-label="Move the sound back by 50 milliseconds">−</button><span style="padding:0 .8vw">Sync nudge <b id="tvNudT" style="color:#00E5FF">0 ms</b></span><button id="tvNp" aria-label="Move the sound forward by 50 milliseconds">+</button></div>
@@ -403,6 +425,9 @@ function onState(j) {
   $('#tapNote').textContent = j.has && !j.ok ? "The host is playing something that can't be streamed (for example a YouTube link)." : 'Your browser needs one tap before it can play sound.';
   // library tab
   libOn = !!j.lib;
+  var hv = typeof j.hv === 'number' ? Math.max(0, Math.min(1, j.hv)) : -1;
+  if (hv !== hostVol) { hostVol = hv; applyVol(); }
+  if (!libOn && own) closeOwn();               // the host switched the library off: it stops here at once
   $('#tabLib').hidden = !j.lib;
   $('#dlNote').hidden = !j.dl;
   if (!j.lib && tab === 'lib') goLive();
@@ -425,7 +450,9 @@ function unlock() {
 }
 function other(el) { return el === aud ? vid : aud; }
 function useEl(video) { var el = video ? vid : aud; if (curEl !== el) { try { curEl.pause(); } catch (x) {} } curEl = el; return el; }
-function applyVol() { aud.volume = volume; vid.volume = volume; }
+var hostVol = -1;                      // >= 0 while the host sets the volume for everyone
+function effVol() { return hostVol >= 0 ? hostVol : volume; }
+function applyVol() { var v = effVol(); aud.volume = v; vid.volume = v; }
 
 function ensureSource() {
   if (!listening || own) return;
@@ -449,7 +476,7 @@ function expected() {
 function setChips(text, warn) {
   ['#syncT', '#tvSyncT'].forEach(function (s) { $(s).textContent = text; });
   ['#syncChip', '#tvSync'].forEach(function (s) { $(s).classList.toggle('warn', !!warn); });
-  $('#hChipT').textContent = text === 'LIVE' ? 'LIVE' : (warn ? text : 'IN SYNC');
+  $('#hChipT').textContent = text === 'LIVE' ? 'LIVE' + (hostName ? ' FROM ' + String(hostName).toUpperCase() : '') : (warn ? text : 'IN SYNC');
   $('#hChip').classList.toggle('warn', !!warn);
 }
 function syncTick() {
@@ -506,7 +533,7 @@ function advanceQueue() {
   return false;
 }
 function onEnded() {
-  if (own) { closeOwn(); return; }
+  if (own) { if (autoNext && ownStep(1)) return; closeOwn(); return; }
   if (st.drain && listening) { if (!advanceQueue()) ended(drainEndMsg()); }
 }
 function drainEndMsg() { return st.drainAll ? 'The host stopped streaming and the queue has finished.' : 'The host stopped streaming. That was the last song.'; }
@@ -526,6 +553,7 @@ $('#tapBtn').onclick = function () {
 function stopAll() { listening = false; try { aud.pause(); vid.pause(); } catch (x) {} }
 function stopListening() { stopAll(); own = null; try { $('#ph').classList.remove('on'); } catch (x) {} tab = 'live'; show('tap'); }
 $('#stopBtn').onclick = stopListening;
+$('#stopBtn2').onclick = stopListening;
 $('#tvStop').onclick = function () { if (own) { closeOwn(); } else stopListening(); };
 
 function start() {
@@ -556,6 +584,7 @@ setInterval(hello, 4000);
 function render() {
   var tv = listening && ((tab === 'live' && st.has && st.ok && st.video && !own) || (own && own.video));
   renderPhoto();
+  updOwnBtns();
   var wasTv = $('#tv').classList.contains('on');
   $('#tv').classList.toggle('on', !!tv);
   if (tv && !wasTv) wake();
@@ -563,8 +592,16 @@ function render() {
   if (own && !own.video && tab === 'lib') { /* mini player is shown in the library */ }
   $('#tabLive').classList.toggle('on', tab === 'live');
   $('#tabLib').classList.toggle('on', tab === 'lib');
-  $('#live').style.display = tab === 'live' ? 'flex' : 'none';
+  var waiting = !!(listening && !own && tab === 'live' && !st.has && !tv);
+  $('#tabsRow').style.display = waiting ? 'none' : 'flex';
+  $('#wait').style.display = waiting ? 'flex' : 'none';
+  $('#live').style.display = tab === 'live' && !waiting ? 'flex' : 'none';
   $('#lib').style.display = tab === 'lib' ? 'flex' : 'none';
+  if (waiting) {
+    setArt($('#waitArt'), '', 104);
+    $('#waitT').textContent = st.priv ? 'THE HOST IS PLAYING SOMETHING PRIVATELY' : 'WAITING FOR THE HOST TO PLAY SOMETHING';
+    return;
+  }
   if (tv) { renderTv(); return; }
   if (tab === 'lib') { renderLibState(); return; }
   var vs = document.querySelectorAll('#views button');
@@ -583,8 +620,11 @@ function render() {
   var ss = document.querySelectorAll('#styles button');
   for (var k = 0; k < ss.length; k++) ss[k].classList.toggle('on', +ss[k].getAttribute('data-s') === style);
   if (view === 1) renderLyrics();
-  setSlider('#volSl', volume, 0, 1); $('#volT').textContent = Math.round(volume * 100);
-  setSlider('#volSl2', volume, 0, 1); $('#volT2').textContent = Math.round(volume * 100);
+  var ev = effVol(), lk = hostVol >= 0;
+  setSlider('#volSl', ev, 0, 1); $('#volT').textContent = Math.round(ev * 100);
+  setSlider('#volSl2', ev, 0, 1); $('#volT2').textContent = Math.round(ev * 100);
+  ['#volSl', '#volSl2', '#volM', '#volP', '#volM2', '#volP2'].forEach(function (k) { var e = $(k); e.classList.toggle('locked', lk); if (e.tagName === 'BUTTON') e.disabled = lk; });
+  ['#hvNote', '#hvNote2'].forEach(function (k) { $(k).hidden = !lk; });
   setSlider('#nudSl', nudge, -500, 500); $('#nudT').textContent = (nudge > 0 ? '+' : '') + nudge + ' ms';
 }
 function renderTv() {
@@ -595,7 +635,9 @@ function renderTv() {
   $('#tvSync').hidden = !!o;
   $('#tvStop').textContent = o ? 'BACK TO LIBRARY' : 'STOP LISTENING';
   $('#tvLib').style.display = libOn && !o ? 'flex' : 'none';
-  $('#tvVolF').style.width = Math.round(volume * 100) + '%'; $('#tvVolT').textContent = Math.round(volume * 100);
+  $('#tvOwn').style.display = o ? 'flex' : 'none';
+  $('#tvVolF').style.width = Math.round(effVol() * 100) + '%'; $('#tvVolT').textContent = Math.round(effVol() * 100);
+  $('#tvVm').disabled = $('#tvVp').disabled = hostVol >= 0;
   $('#tvNudT').textContent = (nudge > 0 ? '+' : '') + nudge + ' ms';
 }
 function setSlider(sel, v, min, max) {
@@ -618,7 +660,7 @@ function dragSlider(sel, min, max, set) {
     if (e.key === 'ArrowRight') { set(Math.min(max, parseFloat(el.getAttribute('aria-valuenow')) + step)); e.preventDefault(); }
   });
 }
-function setVolume(v) { volume = Math.max(0, Math.min(1, v)); store('vol', String(volume)); applyVol(); render(); }
+function setVolume(v) { if (hostVol >= 0) return; volume = Math.max(0, Math.min(1, v)); store('vol', String(volume)); applyVol(); render(); }
 function setNudge(v) { nudge = Math.max(-500, Math.min(500, Math.round(v / 10) * 10)); store('nudge', String(nudge)); render(); }
 dragSlider('#volSl', 0, 1, function (v) { setVolume(v); });
 dragSlider('#volSl2', 0, 1, function (v) { setVolume(v); });
@@ -986,20 +1028,35 @@ function drawGamaka(now, playing, d) {
 }
 
 // ── A photo the host is showing ──
+var slideT = 0, slidePlaying = true;
 function renderPhoto() {
-  var ph = st.photo;
+  var op = own && own.photo, ph = op ? { id: own.id, title: own.title, n: ownIdx() + 1, of: ownList.length } : st.photo;
   if (photoHidden && (!ph || ph.id !== photoHidden)) photoHidden = '';
-  var on = !!(listening && ph && photoHidden !== ph.id);
+  var on = !!(listening && ph && (op || photoHidden !== ph.id));
   $('#ph').classList.toggle('on', on);
+  $('#ph').classList.toggle('own', !!(on && op));
   if (on && shownPhoto !== ph.id) {
     shownPhoto = ph.id;
     $('#phImg').src = B + 'ph/' + ph.id + '?c=' + encodeURIComponent(C);
     $('#phT').textContent = ph.title || '';
     $('#phN').textContent = ph.of > 1 ? ph.n + ' of ' + ph.of : '';
+  } else if (on) { $('#phN').textContent = ph.of > 1 ? ph.n + ' of ' + ph.of : ''; }
+  if (on && op) {
+    $('#phPrev').disabled = ownIdx() <= 0;
+    $('#phNext').disabled = ownIdx() >= ownList.length - 1;
+    $('#phPlay').textContent = slidePlaying && autoNext ? 'PAUSE' : 'PLAY';
   }
-  if (!on && !ph) shownPhoto = '';
+  if (!on) { clearTimeout(slideT); if (!ph) shownPhoto = ''; }
 }
-$('#phX').onclick = function () { if (st.photo) photoHidden = st.photo.id; render(); };
+function slide() {
+  clearTimeout(slideT);
+  if (own && own.photo && autoNext && slidePlaying) slideT = setTimeout(function () { ownStep(1); }, 5000);
+}
+$('#phImg').onload = slide;
+$('#phPlay').onclick = function () { if (!autoNext) { autoNext = true; store('autonext', '1'); setAuto(); slidePlaying = true; } else slidePlaying = !slidePlaying; slide(); render(); };
+$('#phPrev').onclick = function () { ownStep(-1); };
+$('#phNext').onclick = function () { ownStep(1); };
+$('#phX').onclick = function () { if (own && own.photo) { closeOwn(); return; } if (st.photo) photoHidden = st.photo.id; render(); };
 $('#tvLib').onclick = function () { tab = 'lib'; libOpen(); render(); };
 
 // Drag a progress bar to seek: only for a song or video you picked yourself (the live one follows the host)
@@ -1019,15 +1076,32 @@ $('#tvLib').onclick = function () { tab = 'lib'; libOpen(); render(); };
 });
 
 // ── Library: pick your own songs and videos, not synced with the host ──
-var lib = { items: [], playlists: [] }, libLoaded = false, kind = 0, plOpen = null, q = '';
+var lib = { items: [] }, libLoaded = false, kind = 0, q = '', ownList = [], curShown = [], autoNext = store('autonext') !== '0';
+var libScroll = [0, 0, 0], libRestoring = false;      // where you were in each list (songs, videos, photos)
+function libRestore() {
+  libRestoring = true;
+  requestAnimationFrame(function () { window.scrollTo(0, libScroll[kind] || 0); requestAnimationFrame(function () { libRestoring = false; }); });
+}
+window.addEventListener('scroll', function () {
+  if (tab === 'lib' && !libRestoring && $('#lib').style.display !== 'none') libScroll[kind] = window.pageYOffset;
+}, { passive: true });
 function libOpen() {
-  if (libLoaded) { drawLib(); return; }
+  libRestoring = true;
+  if (libLoaded) { drawLib(); libRestore(); return; }
   api('api/library').then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (j) {
-    lib = { items: j.items || [], playlists: j.playlists || [] }; libLoaded = true; drawLib();
+    lib = { items: j.items || [] }; libLoaded = true; drawLib(); libRestore();
   }).catch(function () { $('#libList').innerHTML = '<div class="muted" style="padding:16px 4px;font-size:13px">The library isn\'t available right now.</div>'; });
 }
+function setAuto() { var b = $('#autoNext'); b.classList.toggle('on', autoNext); b.textContent = 'AUTO-PLAY NEXT: ' + (autoNext ? 'ON' : 'OFF'); }
+$('#autoNext').onclick = function () { autoNext = !autoNext; store('autonext', autoNext ? '1' : '0'); setAuto(); slide(); render(); };
+setAuto();
+function updOwnBtns() {
+  var oi = ownIdx();
+  ['#oPrev', '#tvPrev'].forEach(function (k) { $(k).disabled = oi <= 0; });
+  ['#oNext', '#tvNext'].forEach(function (k) { $(k).disabled = oi < 0 || oi >= ownList.length - 1; });
+}
 function renderLibState() {
-  $('#own').hidden = !own;
+  $('#own').hidden = !(own && !own.photo);
   $('#oTitle').textContent = own ? own.title : '';
   var ks = document.querySelectorAll('#kinds button');
   for (var i = 0; i < ks.length; i++) ks[i].classList.toggle('on', +ks[i].getAttribute('data-k') === kind);
@@ -1035,28 +1109,17 @@ function renderLibState() {
 }
 var byId = function (id) { for (var i = 0; i < lib.items.length; i++) if (lib.items[i][0] === id) return lib.items[i]; return null; };
 function drawLib() {
-  var box = $('#libList'), html = '', list;
+  var box = $('#libList'), html = '';
   if (!libLoaded) { box.innerHTML = '<div class="muted" style="padding:16px 4px;font-size:13px">Loading…</div>'; return; }
-  var term = q.toLowerCase();
-  if (kind === 2 && plOpen == null) {
-    lib.playlists.forEach(function (p, i) {
-      if (term && p.name.toLowerCase().indexOf(term) < 0) return;
-      html += '<button class="litem" data-pl="' + i + '"><div class="th">' + artSvgSmall() + '</div><div class="tx"><div class="a">' + esc(p.name) + '</div><div class="b">' + p.ids.length + ' items</div></div></button>';
-    });
-    box.innerHTML = html || '<div class="muted" style="padding:16px 4px;font-size:13px">No playlists to show</div>';
-    return;
-  }
-  if (kind === 2) {
-    var pl = lib.playlists[plOpen];
-    list = pl ? pl.ids.map(byId).filter(Boolean) : [];
-    html += '<button class="litem" data-plback="1"><div class="tx"><div class="a">‹ ' + esc(pl ? pl.name : '') + '</div></div></button>';
-  } else list = lib.items.filter(function (it) { return kind === 1 ? it[4] === 1 : it[4] === 0; });
-  var n = 0;
-  list.forEach(function (it) {
+  var term = q.toLowerCase(), n = 0;
+  curShown = [];
+  lib.items.forEach(function (it) {
+    if (it[4] !== kind) return;
     if (term && (it[1] + ' ' + it[2]).toLowerCase().indexOf(term) < 0) return;
     if (++n > 400) return;
+    curShown.push(it);
     var on = own && own.id === it[0];
-    html += '<div style="display:flex;align-items:center;gap:4px"><button class="litem' + (on ? ' on' : '') + '" data-id="' + it[0] + '"><div class="th">' + (on ? bars() : artSvgSmall()) + '</div><div class="tx"><div class="a">' + esc(it[1]) + '</div><div class="b">' + (on ? 'Your pick · playing on this device only' : esc((it[2] ? it[2] + ' · ' : '') + (it[4] ? esc(it[6] || 'video') + ' · ' : '') + fmt(it[3] * 1000))) + '</div></div></button>' +
+    html += '<div style="display:flex;align-items:center;gap:4px"><button class="litem' + (on ? ' on' : '') + '" data-id="' + it[0] + '"><div class="th">' + (on ? bars() : artSvgSmall()) + '</div><div class="tx"><div class="a">' + esc(it[1]) + '</div><div class="b">' + (on ? 'Your pick · on this device only' : esc((it[2] ? it[2] + ' · ' : '') + (it[4] === 1 ? esc(it[6] || 'video') + ' · ' : it[4] === 2 ? esc(it[6] || 'photo') : '') + (it[4] === 2 ? '' : fmt(it[3] * 1000)))) + '</div></div></button>' +
       (st.dl ? '<a class="dlb" aria-label="Download ' + esc(it[1]) + '" href="' + B + 'dl/' + it[0] + '?c=' + encodeURIComponent(C) + '" download><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00E5FF" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/></svg></a>' : '') + '</div>';
   });
   box.innerHTML = html || '<div class="muted" style="padding:16px 4px;font-size:13px">Nothing to show</div>';
@@ -1066,17 +1129,33 @@ function bars() { return '<svg width="20" height="20" viewBox="0 0 24 24" fill="
 $('#libList').onclick = function (e) {
   var b = e.target.closest ? e.target.closest('button') : null;
   if (!b) return;
-  if (b.hasAttribute('data-pl')) { plOpen = +b.getAttribute('data-pl'); drawLib(); return; }
-  if (b.hasAttribute('data-plback')) { plOpen = null; drawLib(); return; }
   var it = byId(b.getAttribute('data-id'));
-  if (it) playOwn(it);
+  if (it) { ownList = curShown.slice(); playOwn(it); }
 };
 var kb = document.querySelectorAll('#kinds button');
-for (var ki = 0; ki < kb.length; ki++) kb[ki].onclick = function () { kind = +this.getAttribute('data-k'); plOpen = null; renderLibState(); };
+for (var ki = 0; ki < kb.length; ki++) kb[ki].onclick = function () { libRestoring = true; kind = +this.getAttribute('data-k'); renderLibState(); libRestore(); };
 $('#search').oninput = function () { q = this.value; drawLib(); };
+function ownIdx() { if (!own) return -1; for (var i = 0; i < ownList.length; i++) if (ownList[i][0] === own.id) return i; return -1; }
+function ownStep(d) {
+  var i = ownIdx(), n = i + d;
+  if (i < 0 || n < 0 || n >= ownList.length) return false;
+  playOwn(ownList[n]);
+  return true;
+}
+function ownSeek(sec) { if (!own || own.photo) return; var d = curEl.duration || 0; curEl.currentTime = Math.max(0, Math.min(d > 0 ? d - 0.2 : 1e9, curEl.currentTime + sec)); }
+function ownToggle() { if (!own || own.photo) return; if (curEl.paused) { var pr = curEl.play(); if (pr && pr.catch) pr.catch(function () {}); } else curEl.pause(); }
 function playOwn(it) {
   try { curEl.pause(); } catch (x) {}
-  own = { id: it[0], title: it[1], video: it[4] === 1 };
+  clearTimeout(slideT);
+  var photo = it[4] === 2;
+  own = { id: it[0], title: it[1], video: it[4] === 1, photo: photo };
+  if (photo) {                                      // a photo: no sound of its own
+    try { aud.pause(); vid.pause(); } catch (x) {}
+    curId = null; aud.removeAttribute('data-src'); vid.removeAttribute('data-src');
+    slidePlaying = true;
+    render(); hello();
+    return;
+  }
   var el = useEl(own.video);
   other(el).pause();
   curId = null; el.removeAttribute('data-src');
@@ -1088,10 +1167,23 @@ function playOwn(it) {
 }
 function closeOwn() {
   own = null;
+  clearTimeout(slideT);
   try { curEl.pause(); } catch (x) {}
   curId = null; aud.removeAttribute('data-src'); vid.removeAttribute('data-src');
   render(); ensureSource(); syncTick(); hello();
 }
+['o', 'tv'].forEach(function (k) {
+  var ids = { o: ['#oPrev', '#oBack', '#oPlay', '#oFwd', '#oNext'], tv: ['#tvPrev', '#tvBack', '#tvPlay', '#tvFwd', '#tvNext'] }[k];
+  $(ids[0]).onclick = function () { ownStep(-1); };
+  $(ids[1]).onclick = function () { ownSeek(-10); };
+  $(ids[2]).onclick = ownToggle;
+  $(ids[3]).onclick = function () { ownSeek(10); };
+  $(ids[4]).onclick = function () { ownStep(1); };
+});
+[aud, vid].forEach(function (e) {
+  function lab() { var t = e.paused ? 'PLAY' : 'PAUSE'; $('#oPlay').textContent = t; $('#tvPlay').textContent = t; }
+  e.addEventListener('play', lab); e.addEventListener('pause', lab);
+});
 $('#backLive').onclick = function () { closeOwn(); goLive(); };
 aud.addEventListener('ended', onEnded);
 vid.addEventListener('ended', onEnded);

@@ -321,6 +321,7 @@ final class StreamServer {
         if (download && (!StreamPrefs.allowDownloads(c) || StreamHub.draining)) { text(out, 403, "text/plain", "Downloads are off"); return; }
         Src src = Src.of(c, m);
         if (src == null) { text(out, 404, "text/plain", "Not available"); return; }
+        final boolean viaLib = StreamHub.viaLibraryOnly(id);
         long len = src.length;
         long from = 0, to = len - 1;
         boolean partial = false;
@@ -356,6 +357,8 @@ final class StreamServer {
             byte[] buf = new byte[64 * 1024];
             long left = send;
             while (left != 0) {
+                if (viaLib && !StreamPrefs.libraryOn(c)) break;                 // the host switched the library off: stop sending now
+                if (download && !StreamPrefs.allowDownloads(c)) break;
                 int n = in.read(buf, 0, left < 0 ? buf.length : (int) Math.min(buf.length, left));
                 if (n <= 0) break;
                 out.write(buf, 0, n);
@@ -431,6 +434,12 @@ final class StreamServer {
                 case "mkv": return "video/x-matroska";
                 case "webm": return "video/webm";
                 case "3gp": return "video/3gpp";
+                case "jpg": case "jpeg": return "image/jpeg";
+                case "png": return "image/png";
+                case "webp": return "image/webp";
+                case "gif": return "image/gif";
+                case "heic": case "heif": return "image/heic";
+                case "bmp": return "image/bmp";
                 case "mov": return "video/quicktime";
                 default: break;
             }

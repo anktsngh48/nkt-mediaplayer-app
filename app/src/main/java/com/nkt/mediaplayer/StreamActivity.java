@@ -48,7 +48,9 @@ public class StreamActivity extends Activity {
     private TextView status, sub, address, button, intro, scanNote, keepNote, nowTitle, nowSub, nowHint;
     private TextView blockedSub, limitSub, sharedSub, silenceSub, listenHead, sectionNow;
     private View addressBox, shareBtn, transport, listenBox;
-    private Switch silence, library;
+    private Switch silence, library, hvolSw;
+    private android.widget.SeekBar hvolBar;
+    private TextView hvolT;
     private final Switch[] shareSw = new Switch[3];
     private final TextView[] shareSub = new TextView[3];
     private LinearLayout listenRows;
@@ -254,6 +256,40 @@ public class StreamActivity extends Activity {
         pb.addView(row(R.drawable.ic_mute, getString(R.string.stream_silence), silenceSub, silence, () -> silence.toggle()));
         silence.setChecked(StreamPrefs.silence(this));
         silence.setOnCheckedChangeListener((b, on) -> { StreamHub.setSilence(this, on); update(); });
+        hvolSw = new Switch(this);
+        hvolSw.setThumbTintList(android.content.res.ColorStateList.valueOf(getColor(R.color.accent)));
+        pb.addView(row(R.drawable.ic_devices, getString(R.string.stream_hvol), text(getString(R.string.stream_hvol_sub), 12, R.color.muted, false), hvolSw, () -> hvolSw.toggle()));
+        LinearLayout hvRow = new LinearLayout(this);
+        hvRow.setGravity(Gravity.CENTER_VERTICAL);
+        hvRow.setPadding(dp(16), 0, dp(16), dp(10));
+        hvolBar = new android.widget.SeekBar(this);
+        hvolBar.setMax(100);
+        hvolBar.setProgressTintList(android.content.res.ColorStateList.valueOf(getColor(R.color.accent)));
+        hvolBar.setThumbTintList(android.content.res.ColorStateList.valueOf(getColor(R.color.accent)));
+        hvolT = text("", 13, R.color.accent, true);
+        hvolT.setGravity(Gravity.END);
+        hvRow.addView(hvolBar, new LinearLayout.LayoutParams(0, dp(40), 1f));
+        hvRow.addView(hvolT, new LinearLayout.LayoutParams(dp(48), WRAP));
+        pb.addView(hvRow);
+        hvolSw.setChecked(StreamPrefs.hostVolOn(this));
+        hvolBar.setProgress(StreamPrefs.hostVol(this));
+        hvolT.setText(StreamPrefs.hostVol(this) + "%");
+        hvolBar.setEnabled(hvolSw.isChecked());
+        hvolBar.setAlpha(hvolSw.isChecked() ? 1f : 0.4f);
+        hvolSw.setOnCheckedChangeListener((b, on) -> {
+            StreamPrefs.setHostVolOn(this, on);
+            hvolBar.setEnabled(on);
+            hvolBar.setAlpha(on ? 1f : 0.4f);
+            StreamHub.hostVolumeChanged(this);
+        });
+        hvolBar.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(android.widget.SeekBar s, int v, boolean user) {
+                hvolT.setText(v + "%");
+                if (user && StreamPrefs.hostVol(StreamActivity.this) != v) { StreamPrefs.setHostVol(StreamActivity.this, v); StreamHub.hostVolumeChanged(StreamActivity.this); }
+            }
+            @Override public void onStartTrackingTouch(android.widget.SeekBar s) { }
+            @Override public void onStopTrackingTouch(android.widget.SeekBar s) { }
+        });
         limitSub = text("", 12, R.color.muted, false);
         pb.addView(row(R.drawable.ic_devices, getString(R.string.stream_limit), limitSub, chevron(), this::pickLimit));
         blockedSub = text("", 12, R.color.muted, false);
@@ -268,7 +304,7 @@ public class StreamActivity extends Activity {
         TextView libSub = text(getString(R.string.stream_pick_sub), 12, R.color.muted, false);
         lib.addView(row(R.drawable.ic_list, getString(R.string.stream_pick), libSub, library, () -> library.toggle()));
         library.setChecked(StreamPrefs.libraryOn(this));
-        library.setOnCheckedChangeListener((b, on) -> { StreamPrefs.setLibraryOn(this, on); update(); });
+        library.setOnCheckedChangeListener((b, on) -> { StreamPrefs.setLibraryOn(this, on); StreamHub.libraryChanged(this); update(); });
         sharedSub = text("", 12, R.color.muted, false);
         lib.addView(row(R.drawable.ic_folder, getString(R.string.stream_shared), sharedSub, chevron(),
                 () -> startActivity(new Intent(this, SharedLibraryActivity.class))));
@@ -296,6 +332,7 @@ public class StreamActivity extends Activity {
         super.onResume();
         silence.setChecked(StreamPrefs.silence(this));
         library.setChecked(StreamPrefs.libraryOn(this));
+        hvolSw.setChecked(StreamPrefs.hostVolOn(this));
         for (int k = 0; k < 3; k++) shareSw[k].setChecked(StreamPrefs.share(this, k));
         countAt = 0;
         ui.post(tick);

@@ -46,6 +46,7 @@ public class ListenService extends Service {
     public static final String ACTION_STOP = "com.nkt.mediaplayer.STOP_LISTEN";
     public static final String ACTION_OWN = "com.nkt.mediaplayer.OWN_LISTEN";
     public static final String ACTION_LIVE = "com.nkt.mediaplayer.LIVE_LISTEN";
+    public static final String ACTION_STEP = "com.nkt.mediaplayer.STEP_LISTEN";
     public static final String EXTRA_BASE = "base";
     public static final String EXTRA_COOKIE = "cookie";
     private static final String CHANNEL = "nkt_listen";
@@ -69,10 +70,37 @@ public class ListenService extends Service {
     public static volatile String photoId = "", photoTitle = "";
     public static volatile int photoN, photoOf;
 
+    /** What you picked: the list it came from ({id, title, kind: 0 song, 1 video, 2 photo}) and where you are in it. */
+    public static volatile java.util.List<String[]> ownQueue = new java.util.ArrayList<>();
+    public static volatile int ownIdx = -1, ownKind = 0;
+    /** The host set the volume for everyone (0..1), or -1 while each listener sets their own. */
+    public static volatile float hostVol = -1f;
+    /** Moves when the host switches the library off while you were playing a pick of your own. */
+    public static volatile long libOffAt = 0;
+    /** Changes with every new connection (the library screen forgets its place when it does). */
+    public static volatile long startedAt = 0;
+
     /** Plays one of the host's library items here (not synced). */
     public static void playOwn(android.content.Context c, String id, String title, boolean video) {
-        c.startService(new Intent(c, ListenService.class).setAction(ACTION_OWN).putExtra("id", id).putExtra("title", title).putExtra("video", video));
+        playOwn(c, java.util.Collections.singletonList(new String[]{id, title, video ? "1" : "0"}), 0);
     }
+
+    /** Plays item {@code index} of {@code queue} here (not synced); the others are what previous and next move through. */
+    public static void playOwn(android.content.Context c, java.util.List<String[]> queue, int index) {
+        ownQueue = new java.util.ArrayList<>(queue);
+        c.startService(new Intent(c, ListenService.class).setAction(ACTION_OWN).putExtra("index", index));
+    }
+
+    /** Previous (-1) or next (+1) in the list of your own picks. */
+    public static void step(android.content.Context c, int delta) {
+        c.startService(new Intent(c, ListenService.class).setAction(ACTION_STEP).putExtra("delta", delta));
+    }
+
+    public static boolean autoNext(android.content.Context c) { return Prefs.sp(c).getBoolean("listen_autonext", true); }
+    public static void setAutoNext(android.content.Context c, boolean on) { Prefs.sp(c).edit().putBoolean("listen_autonext", on).apply(); }
+
+    /** The photo on this screen: the one you picked, or the one the host is showing. */
+    public static String shownPhoto() { return own ? (ownKind == 2 ? ownId : "") : photoId; }
 
     /** Back to following the host. */
     public static void backToLive(android.content.Context c) {
@@ -153,13 +181,14 @@ public class ListenService extends Service {
     // ── Controls used by the screen ──
 
     public static void setVolume(android.content.Context c, float v) {
+        if (hostVol >= 0f) return;                 // the host is setting the volume
         v = Math.max(0f, Math.min(1f, v));
         Prefs.sp(c).edit().putFloat("listen_vol", v).apply();
         ExoPlayer p = player;
         if (p != null) p.setVolume(v);
     }
 
-    public static float volume(android.content.Context c) { return Prefs.sp(c).getFloat("listen_vol", 1f); }
+    public static float volume(android.content.Context c) { return hostVol >= 0f ? hostVol : Prefs.sp(c).getFloat("listen_vol", 1f); }
 
     public static void setNudge(android.content.Context c, int ms) {
         ms = Math.max(-500, Math.min(500, ms));
@@ -178,18 +207,49 @@ public class ListenService extends Service {
         c.startService(new Intent(c, ListenService.class).setAction(ACTION_STOP));
     }
 
-    private void startOwn(String pid, String ptitle, boolean pvideo) {
+    private boolean slideArmed = false;
+    private final Runnable slide = () -> {
+        slideArmed = false;
+        if (running && own && ownKind == 2 && autoNext(this) && ownIdx + 1 < ownQueue.size()) stepOwn(1);
+    };
+
+    private void startOwnAt(int i) {
+        java.util.List<String[]> q = ownQueue;
+        if (i < 0 || i >= q.size()) return;
+        String[] it = q.get(i);
+        int k = 0;
+        try { k = Integer.parseInt(it[2]); } catch (Throwable ignored) { }
+        ownIdx = i;
+        startOwn(it[0], it[1], k);
+    }
+
+    private void stepOwn(int d) {
+        if (!own) return;
+        int n = ownIdx + d;
+        if (n < 0 || n >= ownQueue.size()) return;
+        startOwnAt(n);
+    }
+
+    private void startOwn(String pid, String ptitle, int kind) {
         ExoPlayer p = player;
         if (p == null || !running) return;
+        main.removeCallbacks(slide);
+        slideArmed = false;
         own = true;
         ownId = pid;
+        ownKind = kind;
         loadedId = "own:" + pid;
-        title = ptitle; artist = ""; video = pvideo; durMs = 0; id = pid; has = true; art = null;
-        fetchArt(pid);
+        title = ptitle; artist = ""; video = kind == 1; durMs = 0; id = pid; has = true; art = null;
         p.setPlaybackSpeed(1f);
-        p.setMediaItem(MediaItem.fromUri(base + "/m/" + pid + "?c=" + cid));
-        p.prepare();
-        p.setPlayWhenReady(true);
+        if (kind == 2) {                           // a photo: nothing to play, it is shown by the screen
+            p.stop();
+            p.clearMediaItems();
+        } else {
+            fetchArt(pid);
+            p.setMediaItem(MediaItem.fromUri(base + "/m/" + pid + "?c=" + cid));
+            p.prepare();
+            p.setPlayWhenReady(true);
+        }
         status = getString(R.string.listen_own_status);
         notifyNow();
     }
@@ -198,6 +258,10 @@ public class ListenService extends Service {
         if (!own) return;
         own = false;
         ownId = "";
+        ownKind = 0;
+        ownIdx = -1;
+        main.removeCallbacks(slide);
+        slideArmed = false;
         loadedId = "";
         lastLoadAt = 0;
         art = null;
@@ -218,7 +282,11 @@ public class ListenService extends Service {
             return START_NOT_STICKY;
         }
         if (intent != null && ACTION_OWN.equals(intent.getAction())) {
-            if (running) startOwn(intent.getStringExtra("id"), intent.getStringExtra("title"), intent.getBooleanExtra("video", false));
+            if (running) startOwnAt(intent.getIntExtra("index", 0));
+            return START_NOT_STICKY;
+        }
+        if (intent != null && ACTION_STEP.equals(intent.getAction())) {
+            if (running) stepOwn(intent.getIntExtra("delta", 1));
             return START_NOT_STICKY;
         }
         if (intent != null && ACTION_LIVE.equals(intent.getAction())) {
@@ -247,12 +315,13 @@ public class ListenService extends Service {
     private void begin() {
         final int my = ++session;
         running = true;
+        startedAt = System.nanoTime();
         endNote = "";
         status = getString(R.string.listen_connecting);
         has = false; video = false; title = ""; artist = ""; id = ""; durMs = 0; art = null; host = "";
         stHas = false; stOk = false; stPlaying = false; loadedId = ""; ver = -1; syncErr = 0;
         drain = false; drainAll = false; drainQ = null; localQueue = false; anchorPending = false; viewTag = "art";
-        own = false; ownId = ""; priv = false; libOn = false; photoId = ""; photoTitle = ""; photoN = 0; photoOf = 0;
+        own = false; ownId = ""; ownKind = 0; ownIdx = -1; hostVol = -1f; priv = false; libOn = false; photoId = ""; photoTitle = ""; photoN = 0; photoOf = 0;
         hostView = 2; hostStyle = 0; hostSpeed = 40; hostSa = -1; hostLyr = false;
         baseUrl = base; cookieStr = cookie; clientId = cid;
         cid = Long.toString(System.nanoTime(), 36) + Integer.toString((int) (Math.random() * 100000), 36);
@@ -408,6 +477,13 @@ public class ListenService extends Service {
         host = j.optString("host", host);
         priv = j.optBoolean("priv");
         libOn = j.optBoolean("lib");
+        float hv = j.has("hv") ? (float) Math.max(0, Math.min(1, j.optDouble("hv", 0))) : -1f;
+        if (hv != hostVol) {
+            hostVol = hv;
+            ExoPlayer pv = player;
+            if (pv != null) pv.setVolume(volume(this));
+        }
+        if (!libOn && own) { libOffAt = System.currentTimeMillis(); leaveOwn(); }     // the host switched the library off: a pick of your own stops here at once
         JSONObject ph = j.optJSONObject("photo");
         if (ph != null) { photoId = ph.optString("id"); photoTitle = ph.optString("title"); photoN = ph.optInt("n"); photoOf = ph.optInt("of"); }
         else photoId = "";
@@ -505,8 +581,16 @@ public class ListenService extends Service {
         ExoPlayer p = player;
         if (p == null) return;
         if (own) {
-            int os = p.getPlaybackState();
             syncErr = 0;
+            if (ownKind == 2) {                    // a photo: moves on by itself after a while, if that is wanted
+                boolean want = autoNext(this) && ownIdx + 1 < ownQueue.size();
+                if (want && !slideArmed) { slideArmed = true; main.postDelayed(slide, 5000); }
+                else if (!want && slideArmed) { main.removeCallbacks(slide); slideArmed = false; }
+                status = getString(R.string.listen_own_status);
+                return;
+            }
+            int os = p.getPlaybackState();
+            if (os == Player.STATE_ENDED && autoNext(this) && ownIdx + 1 < ownQueue.size()) { stepOwn(1); return; }
             status = getString(os == Player.STATE_BUFFERING ? R.string.listen_buffering : os == Player.STATE_ENDED ? R.string.listen_own_done : R.string.listen_own_status);
             return;
         }

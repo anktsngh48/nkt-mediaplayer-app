@@ -93,6 +93,13 @@ final class StreamPrefs {
     static boolean libraryOn(Context c) { return Prefs.sp(c).getBoolean("stream_library", false); }
     static void setLibraryOn(Context c, boolean v) { Prefs.sp(c).edit().putBoolean("stream_library", v).apply(); }
 
+    // ── Volume set from this phone, only when switched on ──
+
+    static boolean hostVolOn(Context c) { return Prefs.sp(c).getBoolean("stream_hvol_on", false); }
+    static void setHostVolOn(Context c, boolean v) { Prefs.sp(c).edit().putBoolean("stream_hvol_on", v).apply(); }
+    static int hostVol(Context c) { return Prefs.sp(c).getInt("stream_hvol", 70); }
+    static void setHostVol(Context c, int pct) { Prefs.sp(c).edit().putInt("stream_hvol", Math.max(0, Math.min(100, pct))).apply(); }
+
     static boolean allowDownloads(Context c) { return Prefs.sp(c).getBoolean("stream_downloads", false); }
     static void setAllowDownloads(Context c, boolean v) { Prefs.sp(c).edit().putBoolean("stream_downloads", v).apply(); }
 
