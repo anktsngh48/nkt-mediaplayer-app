@@ -46,7 +46,7 @@ public class StreamActivity extends Activity {
 
     private ImageView icon, qr, nowArt, btnPlay;
     private TextView status, sub, address, button, intro, scanNote, keepNote, nowTitle, nowSub, nowHint;
-    private TextView limitSub, sharedSub, silenceSub, listenHead, sectionNow;
+    private TextView blockedSub, limitSub, sharedSub, silenceSub, listenHead, sectionNow;
     private View addressBox, shareBtn, transport, listenBox;
     private Switch silence, library;
     private LinearLayout listenRows;
@@ -158,7 +158,7 @@ public class StreamActivity extends Activity {
         button.setTextSize(14);
         button.setLetterSpacing(0.16f);
         button.setOnClickListener(v -> {
-            if (StreamService.running) StreamService.stop(this); else tryStart();
+            if (StreamService.running) askStop(); else tryStart();
             ui.postDelayed(this::update, 400);
         });
         card.addView(button, lp(MATCH, 54, 12, 0));
@@ -231,6 +231,8 @@ public class StreamActivity extends Activity {
         silence.setOnCheckedChangeListener((b, on) -> { StreamHub.setSilence(this, on); update(); });
         limitSub = text("", 12, R.color.muted, false);
         pb.addView(row(R.drawable.ic_devices, getString(R.string.stream_limit), limitSub, chevron(), this::pickLimit));
+        blockedSub = text("", 12, R.color.muted, false);
+        pb.addView(row(R.drawable.ic_mute, getString(R.string.stream_blocked), blockedSub, chevron(), this::showBlocked));
 
         // library for listeners
         col.addView(label(getString(R.string.stream_library_caps)), lp(MATCH, WRAP, 22, 0));
@@ -255,6 +257,13 @@ public class StreamActivity extends Activity {
         listenRows.setOrientation(LinearLayout.VERTICAL);
         ((LinearLayout) listenBox).addView(listenRows, lp(MATCH, WRAP, 8, 0));
         col.addView(listenBox, lp(MATCH, WRAP, 22, 0));
+
+        // the other way round: play another phone's Stream in this app
+        col.addView(label(getString(R.string.listen_caps)), lp(MATCH, WRAP, 22, 0));
+        LinearLayout lis = group();
+        col.addView(lis, lp(MATCH, WRAP, 8, 0));
+        lis.addView(row(R.drawable.ic_devices, getString(R.string.listen_to_other), text(getString(R.string.listen_to_other_sub), 12, R.color.muted, false),
+                chevron(), () -> startActivity(new Intent(this, ListenActivity.class))));
     }
 
     @Override
@@ -282,6 +291,63 @@ public class StreamActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIF);   // optional; streaming starts anyway
         StreamService.start(this);
+    }
+
+    /** KICK: remove for now (they can be brought back, and a new stream starts clean) or block for good. */
+    private void askKick(String id, String name) {
+        Dialogs.builder(this)
+                .setTitle(getString(R.string.stream_kick_title, name))
+                .setMessage(R.string.stream_kick_msg)
+                .setPositiveButton(R.string.stream_block_good, (d, w) -> { StreamHub.block(id); update(); })
+                .setNegativeButton(R.string.stream_remove_now, (d, w) -> { StreamHub.kick(id); update(); })
+                .setNeutralButton(R.string.cancel, null)
+                .show();
+    }
+
+    /** The devices blocked for good, with a way to let them back. Works with Stream on or off. */
+    private void showBlocked() {
+        final List<String[]> list = StreamPrefs.blocked(this);
+        if (list.isEmpty()) {
+            Dialogs.builder(this).setTitle(R.string.stream_blocked).setMessage(R.string.stream_blocked_none)
+                    .setPositiveButton(android.R.string.ok, null).show();
+            return;
+        }
+        final String[] labels = new String[list.size()];
+        for (int i = 0; i < labels.length; i++) labels[i] = (list.get(i)[1].isEmpty() ? getString(R.string.stream_unknown_device) : list.get(i)[1]) + " · " + list.get(i)[0];
+        final boolean[] on = new boolean[labels.length];
+        Dialogs.builder(this)
+                .setTitle(R.string.stream_blocked)
+                .setMultiChoiceItems(labels, on, (d, w, checked) -> on[w] = checked)
+                .setPositiveButton(R.string.stream_unblock_selected, (d, w) -> {
+                    for (int i = 0; i < on.length; i++) if (on[i]) StreamHub.unblock(this, list.get(i)[0]);
+                    update();
+                })
+                .setNegativeButton(R.string.cancel, null)
+                .show();
+    }
+
+    /** STOP: with listeners on a song, ask whether they may finish it or everything stops now. */
+    private void askStop() {
+        if (StreamService.draining || !StreamHub.canDrain()) {
+            StreamService.stop(this);
+            return;
+        }
+        final boolean song = StreamHub.canSong(), queue = StreamHub.canQueue();
+        final java.util.ArrayList<String> names = new java.util.ArrayList<>();
+        final java.util.ArrayList<Integer> acts = new java.util.ArrayList<>();      // 0 = this song, 1 = whole queue, 2 = stop now
+        if (song) { names.add(getString(R.string.stream_let_song)); acts.add(0); }
+        if (queue) { names.add(getString(R.string.stream_let_queue)); acts.add(1); }
+        names.add(getString(R.string.stream_stop_now)); acts.add(2);
+        Dialogs.builder(this)
+                .setTitle(R.string.stream_stop_title)
+                .setItems(names.toArray(new String[0]), (d, which) -> {
+                    int a = acts.get(which);
+                    if (a == 2) StreamService.stop(this);
+                    else StreamService.finishLast(this, a == 1);
+                    ui.postDelayed(this::update, 400);
+                })
+                .setNegativeButton(R.string.cancel, null)
+                .show();
     }
 
     // ── Edit the address ─────────────────────────────────────────────────────
@@ -424,8 +490,10 @@ public class StreamActivity extends Activity {
         View intro2 = ((View) status.getParent()).findViewWithTag("intro2");
         if (on) {
             int n = StreamHub.listenerCount();
-            status.setText(R.string.stream_on);
-            sub.setText(n > 0 ? getResources().getQuantityString(R.plurals.stream_listeners, n, n) : getString(R.string.stream_on_sub));
+            boolean fin = StreamService.draining;
+            status.setText(fin ? R.string.stream_finishing : R.string.stream_on);
+            sub.setText(fin ? getString(R.string.stream_finishing_sub, n)
+                    : n > 0 ? getResources().getQuantityString(R.plurals.stream_listeners, n, n) : getString(R.string.stream_on_sub));
             address.setText(addr == null ? getString(R.string.share_no_wifi) : addr);
             addressBox.setVisibility(View.VISIBLE);
             shareBtn.setVisibility(addr == null ? View.GONE : View.VISIBLE);
@@ -435,7 +503,7 @@ public class StreamActivity extends Activity {
             intro.setVisibility(View.GONE);
             if (intro2 != null) intro2.setVisibility(View.GONE);
             keepNote.setVisibility(View.VISIBLE);
-            button.setText(R.string.stop_caps);
+            button.setText(fin ? R.string.stream_stop_now_caps : R.string.stop_caps);
             button.setBackgroundResource(R.drawable.bg_stop_btn);
             button.setTextColor(0xFFFF4F6A);
         } else {
@@ -453,6 +521,9 @@ public class StreamActivity extends Activity {
             button.setBackgroundResource(R.drawable.bg_start_btn);
             button.setTextColor(getColor(R.color.bg));
         }
+
+        int nb = StreamPrefs.blocked(this).size();
+        blockedSub.setText(nb == 0 ? getString(R.string.stream_blocked_sub0) : getResources().getQuantityString(R.plurals.stream_blocked_n, nb, nb));
 
         // the song or video that is going out
         sectionNow.setText(on ? R.string.stream_now : R.string.stream_what);
@@ -543,9 +614,45 @@ public class StreamActivity extends Activity {
             kick.setTextColor(0xFFFF4F6A);
             kick.setBackground(stroked(0x14FF4F6A, 0x80FF4F6A, 22));
             kick.setPadding(dp(16), 0, dp(16), 0);
-            kick.setOnClickListener(v -> { StreamHub.kick(r[0]); update(); });
+            kick.setOnClickListener(v -> askKick(r[0], r[1]));
             item.addView(kick, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(44)));
             listenRows.addView(item, lp(MATCH, WRAP, 8, 0));
+        }
+
+        // devices that were kicked: they can be brought back
+        List<String[]> out = on ? StreamHub.kickedRows() : new java.util.ArrayList<>();
+        if (!out.isEmpty()) {
+            TextView head = label(getString(R.string.stream_kicked_caps, out.size()));
+            listenRows.addView(head, lp(MATCH, WRAP, 20, 0));
+            for (String[] r : out) {
+                LinearLayout item = new LinearLayout(this);
+                item.setGravity(Gravity.CENTER_VERTICAL);
+                item.setBackgroundResource(R.drawable.bg_row);
+                item.setPadding(dp(12), dp(10), dp(10), dp(10));
+                ImageView ic = new ImageView(this);
+                ic.setImageResource(R.drawable.ic_phone);
+                ic.setColorFilter(getColor(R.color.muted));
+                item.addView(ic, new LinearLayout.LayoutParams(dp(22), dp(22)));
+                LinearLayout t = new LinearLayout(this);
+                t.setOrientation(LinearLayout.VERTICAL);
+                t.addView(text(r[1], 14, R.color.text, true));
+                t.addView(text(r[2], 12, R.color.muted, false), lp(MATCH, WRAP, 2, 0));
+                LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+                tl.setMarginStart(dp(12));
+                item.addView(t, tl);
+                TextView back = new TextView(this);
+                back.setText(R.string.bring_back_caps);
+                back.setGravity(Gravity.CENTER);
+                back.setTextSize(11);
+                back.setLetterSpacing(0.14f);
+                back.setTypeface(null, android.graphics.Typeface.BOLD);
+                back.setTextColor(0xFF00E5FF);
+                back.setBackground(stroked(0x1400E5FF, 0x8000E5FF, 22));
+                back.setPadding(dp(16), 0, dp(16), 0);
+                back.setOnClickListener(v -> { StreamHub.unkick(r[0]); update(); });
+                item.addView(back, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(44)));
+                listenRows.addView(item, lp(MATCH, WRAP, 8, 0));
+            }
         }
     }
 

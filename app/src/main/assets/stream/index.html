@@ -81,6 +81,9 @@ a{text-decoration:none;color:inherit}
 #tv{position:fixed;inset:0;background:#000;z-index:20;display:none;overflow:hidden}
 #tv.on{display:block}
 #tv video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
+#tv .g1,#tv .g2,#tv .hd,#tv .bt{transition:opacity .35s}
+#tv.quiet .g1,#tv.quiet .g2,#tv.quiet .hd,#tv.quiet .bt{opacity:0;pointer-events:none}
+#tv.quiet{cursor:none}
 #tv .g1{position:absolute;left:0;right:0;top:0;height:28%;background:linear-gradient(to bottom,rgba(0,0,0,.7),transparent);pointer-events:none}
 #tv .g2{position:absolute;left:0;right:0;bottom:0;height:58%;background:linear-gradient(to top,rgba(0,0,0,.92),transparent);pointer-events:none}
 #tv .hd{position:absolute;left:5vw;right:5vw;top:3.4vw;display:flex;align-items:center;gap:1.6vw}
@@ -121,6 +124,7 @@ a{text-decoration:none;color:inherit}
   <div class="logo">NKT STREAM</div>
   <div id="msgT" class="orb" style="font-size:13px"></div>
   <div id="msgB" class="muted" style="font-size:13px;max-width:290px;line-height:1.5"></div>
+  <button class="btn" id="msgBtn" hidden style="padding:0 28px;margin-top:6px">TRY AGAIN</button>
 </div>
 
 <!-- Tap to listen -->
@@ -164,11 +168,12 @@ a{text-decoration:none;color:inherit}
       <div class="chip" id="syncChip" style="margin-top:12px"><span id="syncT">IN SYNC</span></div>
 
       <div class="card" style="align-self:stretch;margin-top:18px;padding:8px 14px 14px">
-        <div class="row" style="height:56px;gap:12px">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00E5FF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/></svg>
-          <div style="font-size:14px;width:56px">Volume</div>
+        <div class="row" style="height:56px;gap:8px">
+          <div style="font-size:14px;width:54px">Volume</div>
+          <button class="round" id="volM" aria-label="Volume down" style="width:38px;height:38px;flex:none">−</button>
           <div class="sl" id="volSl" role="slider" aria-label="Volume" aria-valuemin="0" aria-valuemax="100" tabindex="0"><div class="t"></div><div class="f"></div><div class="k"></div></div>
-          <div id="volT" class="muted" style="width:34px;text-align:right;font-size:12px">70</div>
+          <button class="round" id="volP" aria-label="Volume up" style="width:38px;height:38px;flex:none">+</button>
+          <div id="volT" class="muted" style="width:26px;text-align:right;font-size:12px">70</div>
         </div>
         <div style="height:1px;background:rgba(0,229,255,.12)"></div>
         <div class="row" style="padding-top:12px;justify-content:space-between"><div style="font-size:14px">Sync nudge</div><div id="nudT" style="font-size:13px;color:#00E5FF;font-weight:700">0 ms</div></div>
@@ -183,11 +188,11 @@ a{text-decoration:none;color:inherit}
       <div class="muted" id="foot" style="margin-top:auto;padding-top:20px;font-size:12px"></div>
     </div>
 
-    <div id="pLyr" hidden style="flex-direction:column;flex:1">
+    <div id="pLyr" style="display:none;flex-direction:column;flex:1">
       <div class="card" id="lyr" style="margin-top:14px"></div>
     </div>
 
-    <div id="pViz" hidden>
+    <div id="pViz" style="display:none">
       <div id="vizBox" style="margin-top:14px">
         <canvas id="cv"></canvas>
         <div id="beat"><i></i><i></i><i></i><i></i></div>
@@ -207,11 +212,17 @@ a{text-decoration:none;color:inherit}
     <div class="card" id="mini" hidden style="margin-top:auto;padding:12px 14px;margin-top:12px">
       <div class="row" style="gap:12px"><div style="flex:1;min-width:0"><div id="mTitle" style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div><div id="mArtist" class="muted" style="font-size:12px;margin-top:2px"></div></div><div id="mTime" class="muted" style="font-size:12px"></div></div>
       <div class="bar" style="margin-top:10px"><b id="mBar"></b></div>
+      <div class="row" style="margin-top:8px;gap:8px">
+        <button class="round" id="volM2" aria-label="Volume down" style="width:38px;height:38px;flex:none">−</button>
+        <div class="sl" id="volSl2" role="slider" aria-label="Volume" aria-valuemin="0" aria-valuemax="100" tabindex="0"><div class="t"></div><div class="f"></div><div class="k"></div></div>
+        <button class="round" id="volP2" aria-label="Volume up" style="width:38px;height:38px;flex:none">+</button>
+        <div id="volT2" class="muted" style="width:26px;text-align:right;font-size:12px">70</div>
+      </div>
     </div>
   </div>
 
   <!-- LIBRARY -->
-  <div id="lib" hidden style="flex-direction:column;flex:1">
+  <div id="lib" style="display:none;flex-direction:column;flex:1">
     <div style="position:relative;margin-top:12px"><svg style="position:absolute;left:14px;top:14px" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8A9AB2" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input id="search" placeholder="Search songs and videos" autocomplete="off"></div>
     <div class="row" style="gap:8px;margin-top:12px" id="kinds"><button class="pill on" data-k="0">SONGS</button><button class="pill" data-k="1">VIDEOS</button><button class="pill" data-k="2">PLAYLISTS</button></div>
     <div id="dlNote" class="muted" hidden style="margin-top:8px;font-size:12px">The host has allowed downloads. The arrow saves a copy to this device.</div>
@@ -234,7 +245,7 @@ a{text-decoration:none;color:inherit}
     <div class="bar" role="progressbar" aria-label="Video position"><b id="tvBar"></b></div>
     <div class="tm"><span id="tvCur">0:00</span><span id="tvDur">0:00</span></div>
     <div class="ctl">
-      <button class="stl" id="tvVol" aria-label="Volume"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#00E5FF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/></svg> Volume <span class="vsl"><b id="tvVolF"></b></span> <span class="muted" id="tvVolT">70</span></button>
+      <div class="nud"><button id="tvVm" aria-label="Volume down">−</button><span style="padding:0 .8vw;display:flex;align-items:center;gap:1vw"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#00E5FF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/></svg> Volume <span class="vsl"><b id="tvVolF"></b></span> <span class="muted" id="tvVolT">70</span></span><button id="tvVp" aria-label="Volume up">+</button></div>
       <div class="nud"><button id="tvNm" aria-label="Move the sound back by 50 milliseconds">−</button><span style="padding:0 .8vw">Sync nudge <b id="tvNudT" style="color:#00E5FF">0 ms</b></span><button id="tvNp" aria-label="Move the sound forward by 50 milliseconds">+</button></div>
       <button class="stl" id="tvFs"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#00E5FF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg> Full screen</button>
       <button class="stl stop" id="tvStop">STOP LISTENING</button>
@@ -278,7 +289,9 @@ function show(name) {
   ['pin', 'msg', 'tap', 'main'].forEach(function (n) { $('#s-' + n).classList.toggle('on', n === name); });
   if (name !== 'main') $('#tv').classList.remove('on');
 }
-function message(t, b) { $('#msgT').textContent = t; $('#msgB').textContent = b; show('msg'); }
+function message(t, b, retry) { $('#msgT').textContent = t; $('#msgB').textContent = b; $('#msgBtn').hidden = !retry; show('msg'); }
+$('#msgBtn').onclick = function () { location.reload(); };
+function ended(why) { polling = false; failAt = 0; stopAll(); own = null; message('STREAM ENDED', why || 'The host stopped streaming, or this device lost the Wi-Fi.', true); }
 function artSvg(sz) { return '<svg width="' + sz + '" height="' + sz + '" viewBox="0 0 24 24" fill="none" stroke="#00E5FF" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg>'; }
 function setArt(box, id, sz) {
   if (box.getAttribute('data-id') === (id || '')) return;
@@ -318,22 +331,42 @@ function calibrate(n) {
 function hostNow() { return Date.now() + offset; }
 
 // ── The state of the host's player (a long poll) ──
-var polling = false;
+var polling = false, failAt = 0, GRACE = 15000;      // a Wi-Fi hiccup is waited out for 15 s
 function poll() {
   if (polling) return;
   polling = true;
   (function loop() {
     api('api/state?v=' + ver, { cache: 'no-store' }).then(function (r) {
       if (r.status === 401) { polling = false; show('pin'); return null; }
-      if (r.status === 403) { polling = false; stopAll(); message('REMOVED', 'The host removed this device from the stream.'); return null; }
-      if (r.status === 503) { return sleep(3000).then(function () { message('STREAM IS FULL', 'The host has set a limit on listeners. This page will keep trying.'); loop(); return null; }); }
-      return r.json().then(function (j) { ver = j.v; onState(j); loop(); });
-    }).catch(function () { sleep(1500).then(loop); });
+      if (r.status === 403) { polling = false; stopAll(); message('REMOVED', 'The host removed this device from the stream. If they bring you back, tap try again.', true); return null; }
+      if (r.status === 503) {
+        return r.text().then(function (t) {
+          if (t.indexOf('over') >= 0) { polling = false; message('STREAM IS ENDING', 'The host is letting the last song finish and is not taking new listeners.'); return null; }
+          return sleep(3000).then(function () { message('STREAM IS FULL', 'The host has set a limit on listeners. This page will keep trying.'); loop(); return null; });
+        });
+      }
+      return r.json().then(function (j) {
+        failAt = 0;
+        if (j.on === false) { ended(); return; }
+        ver = j.v; onState(j); loop();
+      });
+    }).catch(function () {
+      if (!polling) return;
+      if (!failAt) failAt = Date.now();
+      if (Date.now() - failAt > GRACE) { ended(); return; }       // the host is really gone
+      setChips('RECONNECTING…', true);
+      sleep(1200).then(loop);
+    });
   })();
 }
 
 var firstState = true;
+var anchorPending = false;
 function onState(j) {
+  if (st.localQueue && j.drain) {           // the host has stopped and we are carrying on by ourselves: keep our own song
+    ['has', 'ok', 'id', 'title', 'artist', 'album', 'dur', 'pos', 'at', 'playing', 'speed', 'video', 'lyr', 'index'].forEach(function (k) { j[k] = st[k]; });
+    j.localQueue = true; j.drainAll = st.drainAll;
+  }
   var prevLib = st.lib;
   st = j;
   hostName = j.host || hostName;
@@ -348,7 +381,7 @@ function onState(j) {
   $('#tapArtist').textContent = j.has ? j.artist : 'It will start here by itself.';
   setArt($('#tapArt'), j.has ? j.id : '', 80);
   $('#tapHost').textContent = 'Connected to ' + hostName + ' · ' + location.host;
-  $('#foot').textContent = 'Connected to ' + hostName + ' · ' + location.hostname;
+  $('#foot').textContent = j.drain ? (j.drainAll ? 'The host stopped streaming. The queue plays on by itself and ends when it finishes.' : 'The host stopped streaming. This is the last song: it ends when it finishes.') : 'Connected to ' + hostName + ' · ' + location.hostname;
   $('#tapNote').textContent = j.has && !j.ok ? "The host is playing something that can't be streamed (for example a YouTube link)." : 'Your browser needs one tap before it can play sound.';
   // library tab
   $('#tabLib').hidden = !j.lib;
@@ -402,11 +435,14 @@ function setChips(text, warn) {
 }
 function syncTick() {
   if (!listening || own || stopped) return;
+  if (failAt) { setChips('RECONNECTING…', true); return; }
   if (!st.has) { setChips('LIVE', false); return; }
   if (!st.ok) { setChips("CAN'T STREAM THIS", true); return; }
   var el = curEl;
   if (el.getAttribute('data-src') !== st.id) { ensureSource(); return; }
+  if (anchorPending) { if (el.paused) { var p0 = el.play(); if (p0 && p0.catch) p0.catch(function () {}); } setChips('SYNCING…', true); return; }
   var exp = expected() + nudge, pos = el.currentTime * 1000;
+  if (st.dur && exp > st.dur) { return; }          // the song is over; the host's end comes next
   var err = pos - exp;
   syncErr = err;
   if (!st.playing) {
@@ -418,7 +454,7 @@ function syncTick() {
   if (el.paused) {
     if (el.readyState > 0) el.currentTime = Math.max(0, exp / 1000);
     var pr = el.play();
-    if (pr && pr.catch) pr.catch(function () { listening = false; show('tap'); });
+    if (pr && pr.catch) pr.catch(function (e) { if (e && e.name === 'NotAllowedError') { listening = false; show('tap'); } });
     setChips('SYNCING…', true);
     return;
   }
@@ -431,6 +467,31 @@ function syncTick() {
   else setChips('SYNCING…', true);
 }
 setInterval(syncTick, 400);
+
+// ── The host has stopped but let us carry on: play down its queue by ourselves ──
+function advanceQueue() {
+  if (!st.drain || !st.drainAll || !st.q || own) return false;
+  var i = -1, k, n;
+  for (k = 0; k < st.q.length; k++) if (st.q[k][0] === st.id) { i = k; break; }
+  if (i < 0) return false;
+  for (n = i + 1; n < st.q.length; n++) {
+    var it = st.q[n];
+    if (it[4] !== 1) continue;             // not something that can be streamed
+    st.id = it[0]; st.title = it[1]; st.artist = it[2]; st.video = it[3] === 1;
+    st.ok = true; st.has = true; st.dur = 0; st.pos = 0; st.at = hostNow(); st.speed = 1; st.playing = true; st.lyr = true; st.localQueue = true;
+    anchorPending = true;
+    ensureSource(); render();
+    var pr = curEl.play(); if (pr && pr.catch) pr.catch(function () {});
+    return true;
+  }
+  return false;
+}
+function onEnded() {
+  if (own) { closeOwn(); return; }
+  if (st.drain && listening) { if (!advanceQueue()) ended(drainEndMsg()); }
+}
+function drainEndMsg() { return st.drainAll ? 'The host stopped streaming and the queue has finished.' : 'The host stopped streaming. That was the last song.'; }
+function onBroken() { if (st.drain && listening && !own) { if (!advanceQueue()) ended(drainEndMsg()); } }
 
 // ── Start and stop ──
 $('#tapBtn').onclick = function () {
@@ -457,8 +518,8 @@ fetch(B + 'api/info', { cache: 'no-store' }).then(function (r) { return r.json()
   hostName = j.host || '';
   api('api/state', { cache: 'no-store' }).then(function (r) {
     if (r.status === 401) { show('pin'); return; }
-    if (r.status === 403) { message('REMOVED', 'The host removed this device from the stream.'); return; }
-    if (r.status === 503) { message('STREAM IS FULL', 'The host has set a limit on listeners. Try again in a moment.'); return; }
+    if (r.status === 403) { message('REMOVED', 'The host removed this device from the stream. If they bring you back, tap try again.', true); return; }
+    if (r.status === 503) { r.text().then(function (t) { if (t.indexOf('over') >= 0) message('STREAM IS ENDING', 'The host is letting the last song finish and is not taking new listeners.'); else message('STREAM IS FULL', 'The host has set a limit on listeners. Try again in a moment.'); }); return; }
     start();
   });
 }).catch(function () { message('CAN\'T REACH THE HOST', 'Check that this device is on the same Wi-Fi, and that streaming is still on.'); });
@@ -475,7 +536,9 @@ setInterval(hello, 4000);
 // ── What is on screen ──
 function render() {
   var tv = listening && tab === 'live' && ((st.has && st.ok && st.video && !own) || (own && own.video));
+  var wasTv = $('#tv').classList.contains('on');
   $('#tv').classList.toggle('on', !!tv);
+  if (tv && !wasTv) wake();
   $('#s-main').style.visibility = tv ? 'hidden' : 'visible';
   if (own && !own.video && tab === 'lib') { /* mini player is shown in the library */ }
   $('#tabLive').classList.toggle('on', tab === 'live');
@@ -501,6 +564,7 @@ function render() {
   for (var k = 0; k < ss.length; k++) ss[k].classList.toggle('on', +ss[k].getAttribute('data-s') === style);
   if (view === 1) renderLyrics();
   setSlider('#volSl', volume, 0, 1); $('#volT').textContent = Math.round(volume * 100);
+  setSlider('#volSl2', volume, 0, 1); $('#volT2').textContent = Math.round(volume * 100);
   setSlider('#nudSl', nudge, -500, 500); $('#nudT').textContent = (nudge > 0 ? '+' : '') + nudge + ' ms';
 }
 function renderTv() {
@@ -536,20 +600,46 @@ function dragSlider(sel, min, max, set) {
 function setVolume(v) { volume = Math.max(0, Math.min(1, v)); store('vol', String(volume)); applyVol(); render(); }
 function setNudge(v) { nudge = Math.max(-500, Math.min(500, Math.round(v / 10) * 10)); store('nudge', String(nudge)); render(); }
 dragSlider('#volSl', 0, 1, function (v) { setVolume(v); });
+dragSlider('#volSl2', 0, 1, function (v) { setVolume(v); });
 dragSlider('#nudSl', -500, 500, function (v) { setNudge(v); });
 $('#nudM').onclick = function () { setNudge(nudge - 50); };
 $('#nudP').onclick = function () { setNudge(nudge + 50); };
 $('#tvNm').onclick = function () { setNudge(nudge - 50); };
 $('#tvNp').onclick = function () { setNudge(nudge + 50); };
-$('#tvVol').onclick = function () { setVolume(volume >= 0.99 ? 0.1 : volume + 0.1); };
+$('#tvVm').onclick = function () { setVolume(volume - 0.1); };
+$('#tvVp').onclick = function () { setVolume(volume + 0.1); };
+$('#volM').onclick = function () { setVolume(volume - 0.1); };
+$('#volP').onclick = function () { setVolume(volume + 0.1); };
+$('#volM2').onclick = function () { setVolume(volume - 0.1); };
+$('#volP2').onclick = function () { setVolume(volume + 0.1); };
 $('#tvFs').onclick = function () {
   var e = $('#tv');
   try { if (document.fullscreenElement || document.webkitFullscreenElement) (document.exitFullscreen || document.webkitExitFullscreen).call(document); else (e.requestFullscreen || e.webkitRequestFullscreen).call(e); } catch (x) {}
 };
+var quietT = 0, unquietAt = 0;
+function wake() {
+  var tv = $('#tv');
+  if (tv.classList.contains('quiet')) unquietAt = Date.now();
+  tv.classList.remove('quiet');
+  clearTimeout(quietT);
+  quietT = setTimeout(function () {
+    var playingNow = own ? !vid.paused : (st.has && st.playing);
+    if (tv.classList.contains('on') && playingNow) tv.classList.add('quiet');
+  }, 3500);
+}
+$('#tv').addEventListener('pointermove', wake);
+var wasQuiet = false;
+$('#tv').addEventListener('pointerdown', function () { wasQuiet = $('#tv').classList.contains('quiet') || Date.now() - unquietAt < 700; });
+$('#tv').addEventListener('click', function (e) {
+  var tv = $('#tv');
+  if (wasQuiet) { wake(); return; }
+  if (e.target === vid || e.target.className === 'g1' || e.target.className === 'g2') { tv.classList.add('quiet'); clearTimeout(quietT); } else wake();
+});
 document.addEventListener('keydown', function (e) {
   if (!$('#tv').classList.contains('on')) return;
   if (e.key === 'ArrowUp') setVolume(volume + 0.05);
   if (e.key === 'ArrowDown') setVolume(volume - 0.05);
+  wake();
 });
 
 function goLive() { tab = 'live'; render(); }
@@ -566,7 +656,7 @@ setInterval(function () {
   if (!listening) return;
   var el = curEl, cur, dur;
   if (own) { cur = el.currentTime * 1000; dur = (el.duration || 0) * 1000; }
-  else { cur = st.has ? (st.playing && !el.paused ? el.currentTime * 1000 - nudge : expected()) : 0; dur = st.has ? st.dur : 0; }
+  else { cur = st.has ? (st.playing && !el.paused ? el.currentTime * 1000 - nudge : expected()) : 0; dur = st.has ? (st.dur || (el.duration > 0 ? el.duration * 1000 : 0)) : 0; }
   var pct = dur > 0 ? Math.max(0, Math.min(100, cur / dur * 100)) : 0;
   ['#aBar', '#mBar', '#tvBar', '#oBar'].forEach(function (s) { $(s).style.width = pct + '%'; });
   $('#aCur').textContent = fmt(cur); $('#aDur').textContent = fmt(dur);
@@ -942,8 +1032,15 @@ function closeOwn() {
   render(); ensureSource(); syncTick(); hello();
 }
 $('#backLive').onclick = function () { closeOwn(); goLive(); };
-aud.addEventListener('ended', function () { if (own) closeOwn(); });
-vid.addEventListener('ended', function () { if (own) closeOwn(); });
+aud.addEventListener('ended', onEnded);
+vid.addEventListener('ended', onEnded);
+aud.addEventListener('error', function () { if (aud.getAttribute('data-src')) onBroken(); });
+vid.addEventListener('error', function () { if (vid.getAttribute('data-src')) onBroken(); });
+[aud, vid].forEach(function (e) {
+  e.addEventListener('playing', function () {      // a song of the queue has really begun: its clock starts now
+    if (anchorPending && e === curEl) { st.pos = e.currentTime * 1000 - nudge; st.at = hostNow(); anchorPending = false; }
+  });
+});
 [aud, vid].forEach(function (e) { e.addEventListener('loadedmetadata', function () { if (!own && listening && st.has) e.currentTime = Math.max(0, (expected() + nudge) / 1000); }); });
 })();
 </script>

@@ -53,6 +53,7 @@
     <application
         android:name=".NktApp"
         android:allowBackup="false"
+        android:usesCleartextTraffic="true"
         android:requestLegacyExternalStorage="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
@@ -276,6 +277,15 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="User-started local Wi-Fi streaming of the playing song or video (web server) that runs until the user stops it" />
         </service>
+        <!-- Listen: plays another phone's Stream in this app, also with the screen off -->
+        <activity
+            android:name=".ListenActivity"
+            android:exported="false"
+            android:launchMode="singleTop" />
+        <service
+            android:name=".ListenService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
 
         <!-- NKT Share tile in the quick settings panel: tap to start / stop sharing -->
         <service

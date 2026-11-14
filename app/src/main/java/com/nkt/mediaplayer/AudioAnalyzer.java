@@ -45,9 +45,18 @@ public final class AudioAnalyzer {
     private static HandlerThread thread;
     private static Handler handler;
 
+    /**
+     * Listen sets this while a visualiser shows the HOST's beat and pitch (sent over Wi-Fi): then nothing is analysed
+     * here, and the Listen screen writes the results above itself.
+     */
+    public static volatile boolean external = false;
+    private static boolean startedExternal = false;
+
     /** A visualiser appeared. */
     public static synchronized void start() {
         if (users++ > 0) return;
+        if (external) { startedExternal = true; return; }
+        startedExternal = false;
         resetResults();
         thread = new HandlerThread("nkt-analysis", android.os.Process.THREAD_PRIORITY_BACKGROUND);
         thread.start();
@@ -58,6 +67,7 @@ public final class AudioAnalyzer {
     /** A visualiser went away. */
     public static synchronized void stop() {
         if (users == 0 || --users > 0) return;
+        if (startedExternal) { startedExternal = false; return; }
         if (handler != null) handler.removeCallbacksAndMessages(null);
         if (thread != null) thread.quit();
         thread = null;

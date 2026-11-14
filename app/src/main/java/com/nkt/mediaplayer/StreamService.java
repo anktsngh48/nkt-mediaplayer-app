@@ -22,10 +22,13 @@ import android.os.PowerManager;
 public class StreamService extends Service {
 
     public static final String ACTION_STOP = "com.nkt.mediaplayer.STOP_STREAM";
+    public static final String ACTION_FINISH = "com.nkt.mediaplayer.FINISH_STREAM";
     private static final String CHANNEL = "nkt_stream";
     private static final int NOTIF_ID = 43;
 
     public static volatile boolean running = false;
+    /** STOP was pressed with "let them finish": the listeners play the last song out, then it ends by itself. */
+    public static volatile boolean draining = false;
     public static volatile String error = null;
 
     private StreamServer server;
@@ -50,12 +53,25 @@ public class StreamService extends Service {
         c.startService(new Intent(c, StreamService.class).setAction(ACTION_STOP));
     }
 
+    /** Stop streaming, but let the listeners finish the song that is playing. */
+    public static void finishLast(Context c, boolean wholeQueue) {
+        c.startService(new Intent(c, StreamService.class).setAction(ACTION_FINISH).putExtra("all", wholeQueue));
+    }
+
     @Override public IBinder onBind(Intent intent) { return null; }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && ACTION_STOP.equals(intent.getAction())) {
             stopSelf();
+            return START_NOT_STICKY;
+        }
+        if (intent != null && ACTION_FINISH.equals(intent.getAction())) {
+            if (running && !draining && StreamHub.freeze(intent.getBooleanExtra("all", false))) {
+                draining = true;
+                shownListeners = -1;
+                try { getSystemService(NotificationManager.class).notify(NOTIF_ID, build()); } catch (Throwable ignored) { }
+            } else if (!draining) stopSelf();
             return START_NOT_STICKY;
         }
         goForeground();
@@ -76,7 +92,8 @@ public class StreamService extends Service {
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         String addr = address(this);
         int n = StreamHub.listenerCount();
-        String text = addr == null ? getString(R.string.share_no_wifi)
+        String text = draining ? getString(R.string.stream_draining_notif, StreamHub.listenerCount())
+                : addr == null ? getString(R.string.share_no_wifi)
                 : (n > 0 ? getResources().getQuantityString(R.plurals.stream_listeners, n, n) + " · " : "") + addr;
         Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(this, CHANNEL) : new Notification.Builder(this);
         b.setSmallIcon(R.drawable.ic_wifi)
@@ -98,10 +115,11 @@ public class StreamService extends Service {
     private final Runnable refresh = new Runnable() {
         @Override public void run() {
             if (!running) return;
-            if (StreamHub.listenerCount() != shownListeners) {
+            if (draining && StreamHub.drainDone()) { stopSelf(); return; }
+            if (draining || StreamHub.listenerCount() != shownListeners) {
                 try { getSystemService(NotificationManager.class).notify(NOTIF_ID, build()); } catch (Throwable ignored) { }
             }
-            ui.postDelayed(this, 3000);
+            ui.postDelayed(this, draining ? 1000 : 3000);
         }
     };
 
@@ -116,6 +134,7 @@ public class StreamService extends Service {
                 server = s;
                 StreamHub.begin(this);
                 running = true;
+                StreamNsd.register(this, port, name);
                 ui.post(this::holdLocks);
                 ui.post(refresh);
             } catch (Throwable t) {
@@ -145,11 +164,16 @@ public class StreamService extends Service {
     @Override
     public void onDestroy() {
         running = false;
+        draining = false;
         ui.removeCallbacksAndMessages(null);
         final StreamServer s = server;
         server = null;
-        if (s != null) s.stop();
-        StreamHub.end();
+        StreamNsd.unregister(this);
+        StreamHub.end();                                   // tells the listeners it is over first
+        if (s != null) new Thread(() -> {
+            try { Thread.sleep(400); } catch (InterruptedException ignored) { }
+            s.stop();
+        }, "nkt-stream-stop").start();
         try { if (wifiLock != null && wifiLock.isHeld()) wifiLock.release(); } catch (Exception ignored) { }
         try { if (wakeLock != null && wakeLock.isHeld()) wakeLock.release(); } catch (Exception ignored) { }
         super.onDestroy();

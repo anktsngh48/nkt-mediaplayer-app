@@ -43,6 +43,7 @@ final class StreamServer {
     private ServerSocket ss;
     private volatile boolean stopped = false;
     private final ExecutorService pool = Executors.newCachedThreadPool();
+    private final java.util.Set<Socket> open = java.util.Collections.newSetFromMap(new ConcurrentHashMap<>());
     private final String sessionKey;
     private byte[] page;
 
@@ -81,6 +82,8 @@ final class StreamServer {
     void stop() {
         stopped = true;
         try { if (ss != null) ss.close(); } catch (Throwable ignored) { }
+        for (Socket k : open) { try { k.close(); } catch (Throwable ignored) { } }     // a song being sent stops with the stream
+        open.clear();
         pool.shutdownNow();
     }
 
@@ -95,6 +98,7 @@ final class StreamServer {
     }
 
     private void handle(Socket s) {
+        open.add(s);
         try {
             s.setSoTimeout(25_000);
             s.setTcpNoDelay(true);
@@ -105,6 +109,7 @@ final class StreamServer {
             try { out.flush(); } catch (IOException ignored) { }
         } catch (Throwable ignored) {
         } finally {
+            open.remove(s);
             try { s.close(); } catch (Throwable ignored) { }
         }
     }
@@ -167,6 +172,7 @@ final class StreamServer {
         if (!"GET".equals(r.method) && !"POST".equals(r.method) && !"HEAD".equals(r.method)) { text(out, 405, "text/plain", "No"); return; }
         if (r.path.equals(base)) { redirect(out, base + "/"); return; }
         if (!r.path.startsWith(base + "/")) { text(out, 404, "text/plain", "Not found"); return; }
+        if (StreamHub.isBlocked(r.ip)) { text(out, 403, "text/plain", "Blocked by the host"); return; }
         String rel = r.path.substring(base.length() + 1);
 
         if (rel.isEmpty() || rel.equals("index.html")) { servePage(out); return; }
@@ -203,7 +209,7 @@ final class StreamServer {
         }
         if (rel.equals("api/lyrics")) { text(out, 200, "application/json", StreamHub.lyricsFor(r.q("id"))); return; }
         if (rel.equals("api/library")) {
-            if (!StreamPrefs.libraryOn(c)) { text(out, 403, "application/json", "{\"err\":\"off\"}"); return; }
+            if (!StreamPrefs.libraryOn(c) || StreamHub.draining) { text(out, 403, "application/json", "{\"err\":\"off\"}"); return; }
             text(out, 200, "application/json", StreamHub.library());
             return;
         }
@@ -237,7 +243,7 @@ final class StreamServer {
         StreamHub.Listener l = StreamHub.touch(cid, r.ip, r.h.get("user-agent"));
         if (l == null) {
             if (StreamHub.kickedOrBanned(cid, r.ip)) text(out, 403, "application/json", "{\"err\":\"kicked\"}");
-            else text(out, 503, "application/json", "{\"err\":\"full\"}");
+            else text(out, 503, "application/json", StreamHub.draining ? "{\"err\":\"over\"}" : "{\"err\":\"full\"}");
             return;
         }
         int have = -1;
@@ -300,7 +306,7 @@ final class StreamServer {
     private void media(Req r, OutputStream out, String id, boolean download) throws IOException {
         MediaInfo m = StreamHub.resolve(id);
         if (m == null) { text(out, 404, "text/plain", "Not available"); return; }
-        if (download && !StreamPrefs.allowDownloads(c)) { text(out, 403, "text/plain", "Downloads are off"); return; }
+        if (download && (!StreamPrefs.allowDownloads(c) || StreamHub.draining)) { text(out, 403, "text/plain", "Downloads are off"); return; }
         Src src = Src.of(c, m);
         if (src == null) { text(out, 404, "text/plain", "Not available"); return; }
         long len = src.length;

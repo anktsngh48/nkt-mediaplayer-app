@@ -105,4 +105,41 @@ final class StreamPrefs {
         for (String s : picks) a.put(s);
         Prefs.sp(c).edit().putString("stream_picks", a.toString()).apply();
     }
+
+    // ── Blocked for good: kept across streams, by the device's address on the network ──
+
+    /** Blocked devices as {address, name}. */
+    static java.util.List<String[]> blocked(Context c) {
+        java.util.List<String[]> out = new java.util.ArrayList<>();
+        try {
+            JSONArray a = new JSONArray(Prefs.sp(c).getString("stream_blocked", "[]"));
+            for (int i = 0; i < a.length(); i++) {
+                org.json.JSONObject o = a.getJSONObject(i);
+                out.add(new String[]{o.optString("ip"), o.optString("name")});
+            }
+        } catch (Exception ignored) { }
+        return out;
+    }
+
+    static void addBlocked(Context c, String ip, String name) {
+        if (ip == null || ip.isEmpty()) return;
+        java.util.List<String[]> list = blocked(c);
+        for (String[] e : list) if (e[0].equals(ip)) return;
+        list.add(new String[]{ip, name == null ? "" : name});
+        saveBlocked(c, list);
+    }
+
+    static void removeBlocked(Context c, String ip) {
+        java.util.List<String[]> list = blocked(c);
+        for (int i = list.size() - 1; i >= 0; i--) if (list.get(i)[0].equals(ip)) list.remove(i);
+        saveBlocked(c, list);
+    }
+
+    private static void saveBlocked(Context c, java.util.List<String[]> list) {
+        JSONArray a = new JSONArray();
+        try {
+            for (String[] e : list) a.put(new org.json.JSONObject().put("ip", e[0]).put("name", e[1]));
+        } catch (Exception ignored) { }
+        Prefs.sp(c).edit().putString("stream_blocked", a.toString()).apply();
+    }
 }

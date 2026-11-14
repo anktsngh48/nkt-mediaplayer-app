@@ -42,6 +42,11 @@ public final class StreamHub {
     private static final Object lock = new Object();
 
     public static volatile boolean running = false;
+    /** The host pressed STOP but let the listeners finish what is playing: nothing new is taken in or mirrored. */
+    public static volatile boolean draining = false;
+    /** While draining: true = listeners play the whole queue on, false = they only finish the current song. */
+    public static volatile boolean drainAll = false;
+    private static volatile long drainEndAt = 0;
     public static volatile String error = null;
 
     /** The video player, while the video screen is open (set by PlayerActivity). */
@@ -90,13 +95,20 @@ public final class StreamHub {
 
     private static final Map<String, Listener> listeners = new ConcurrentHashMap<>();
     private static final java.util.Set<String> bannedIps = java.util.Collections.newSetFromMap(new ConcurrentHashMap<>());
+    /** Blocked for good (saved); kept across streams. */
+    private static final java.util.Set<String> blockedIps = java.util.Collections.newSetFromMap(new ConcurrentHashMap<>());
 
     // ── Life cycle ──
 
     static void begin(Context c) {
         app = c.getApplicationContext();
+        draining = false;
+        drainAll = false;
+        drainEndAt = 0;
         listeners.clear();
         bannedIps.clear();
+        blockedIps.clear();
+        for (String[] b : StreamPrefs.blocked(app)) blockedIps.add(b[0]);
         error = null;
         lastSig = "";
         lastView = lastStyle = lastSpeedOpt = -1;
@@ -118,6 +130,7 @@ public final class StreamHub {
 
     static void end() {
         running = false;
+        draining = false;
         main.removeCallbacks(tick);
         main.post(() -> {
             for (Player p : attached) { try { p.removeListener(events); } catch (Throwable ignored) { } }
@@ -139,7 +152,7 @@ public final class StreamHub {
     /** The video screen opened (player) or closed (null). */
     public static void onVideoPlayer(ExoPlayer p) {
         videoPlayer = p;
-        if (running) main.post(() -> { attachAll(); capture(); });
+        if (running && !draining) main.post(() -> { attachAll(); capture(); });
     }
 
     private static ExoPlayer audioPlayer() {
@@ -176,6 +189,32 @@ public final class StreamHub {
     };
 
     private static boolean queueDirty = true;
+
+    /** What the video screen queues has no title or type of its own, so give it both. */
+    private static final Map<String, String> names = new HashMap<>();
+
+    private static MediaInfo infoOf(Player p, MediaItem it, long dur) {
+        MediaInfo mi = Media.info(it, dur);
+        if (p != videoPlayer || mi.video || mi.uri == null) return mi;
+        String key = mi.key();
+        String t = it.mediaMetadata.title == null ? names.get(key) : it.mediaMetadata.title.toString();
+        if (t == null) {
+            t = mi.uri.getLastPathSegment() == null ? "Video" : mi.uri.getLastPathSegment();
+            try {
+                if ("content".equals(mi.uri.getScheme())) {
+                    try (android.database.Cursor c = app.getContentResolver().query(mi.uri, new String[]{android.provider.OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+                        if (c != null && c.moveToFirst() && c.getString(0) != null) t = c.getString(0);
+                    }
+                }
+            } catch (Throwable ignored) { }
+            int dot = t.lastIndexOf('.');
+            if (dot > 0) t = t.substring(0, dot);
+            names.put(key, t);
+        }
+        MediaInfo v = new MediaInfo(mi.id, mi.uri, t, mi.artist, mi.album, -1, "", Math.max(0, dur), true);
+        v.path = mi.path; v.fileName = mi.fileName;
+        return v;
+    }
 
     private static void attachAll() {
         for (Player p : new Player[]{audioPlayer(), videoPlayer}) {
@@ -223,7 +262,7 @@ public final class StreamHub {
             long dur = p.getDuration();
             if (dur == C.TIME_UNSET || dur < 0) dur = 0;
             if (it != null) {
-                MediaInfo mi = Media.info(it, dur);
+                MediaInfo mi = infoOf(p, it, dur);
                 s.has = true;
                 s.id = Lyrics.idOf(mi.key());
                 s.title = mi.title;
@@ -235,7 +274,7 @@ public final class StreamHub {
                 s.ok = "content".equals(sc) || "file".equals(sc);
                 s.pos = Math.max(0, p.getCurrentPosition());
                 s.at = System.currentTimeMillis();
-                s.playing = p.isPlaying();
+                s.playing = p.getPlayWhenReady() && p.getPlaybackState() != Player.STATE_ENDED && p.getPlaybackState() != Player.STATE_IDLE;    // buffering after a seek still counts as playing
                 s.speed = p.getPlaybackParameters().speed;
                 s.index = p.getCurrentMediaItemIndex();
                 s.count = p.getMediaItemCount();
@@ -261,10 +300,11 @@ public final class StreamHub {
         int n = Math.min(p.getMediaItemCount(), 500);
         try {
             for (int i = 0; i < n; i++) {
-                MediaInfo mi = Media.info(p.getMediaItemAt(i), 0);
+                MediaInfo mi = infoOf(p, p.getMediaItemAt(i), 0);
                 String id = Lyrics.idOf(mi.key());
                 map.put(id, mi);
-                q.put(new JSONArray().put(id).put(mi.title).put(mi.artist).put(mi.video ? 1 : 0));
+                String sc = mi.uri == null ? "" : String.valueOf(mi.uri.getScheme());
+                q.put(new JSONArray().put(id).put(mi.title).put(mi.artist).put(mi.video ? 1 : 0).put("content".equals(sc) || "file".equals(sc) ? 1 : 0));
             }
         } catch (Throwable ignored) { }
         queueMap = map;
@@ -289,6 +329,69 @@ public final class StreamHub {
             } catch (Throwable ignored) { }
             if (id.equals(snap.id)) { lyricsJson = json; lyricsId = id; bump(); }
         }, "nkt-stream-lyrics").start();
+    }
+
+    // ── Stop, but let the listeners finish the song ──
+
+    /** Is there something a listener could be left to carry on with: more of the queue, or the rest of the song? */
+    static boolean canDrain() { return canSong() || canQueue(); }
+
+    private static boolean base() {
+        Snap s = snap;
+        return running && !draining && s.has && s.ok && listenerCount() > 0;
+    }
+
+    /** Is there still some of the current song to be left playing? */
+    static boolean canSong() {
+        Snap s = snap;
+        return base() && s.dur > 0 && s.pos < s.dur - 3000;
+    }
+
+    /** Is there more of the queue after this song? */
+    static boolean canQueue() {
+        Snap s = snap;
+        return base() && s.index + 1 < s.count;
+    }
+
+    /**
+     * Stops following the host's player (its pause, next and seek no longer reach the listeners) and freezes what is
+     * playing as a running clock. The listeners play that song out in step, then carry on down the queue each on their
+     * own. Returns false when there is nothing to carry on with. Main thread.
+     */
+    static boolean freeze(boolean whole) {
+        if (whole ? !canQueue() : !canSong()) return false;
+        drainAll = whole;
+        capture();
+        Snap s = snap;
+        if (!s.has) return false;
+        long now = System.currentTimeMillis();
+        s.pos = s.pos + (s.playing ? (long) ((now - s.at) * s.speed) : 0);
+        s.at = now;
+        s.playing = true;
+        drainEndAt = now + 6L * 3600_000L;                      // a safety limit; normally it ends when everyone has left
+        draining = true;
+        main.removeCallbacks(tick);
+        for (Player p : attached) { try { p.removeListener(events); } catch (Throwable ignored) { } }
+        attached.clear();
+        if (silenced) {                                         // the host's own phone is back to normal
+            silenced = false;
+            ExoPlayer a = audioPlayer();
+            try { if (a != null && a.getVolume() == 0f) a.setVolume(1f); } catch (Throwable ignored) { }
+            ExoPlayer v = videoPlayer;
+            try { if (v != null && v.getVolume() == 0f) v.setVolume(1f); } catch (Throwable ignored) { }
+        }
+        setViz(false);
+        bump();
+        return true;
+    }
+
+    /** True when it is time to switch off: nobody is left (they finished the queue or went away), or the safety limit. */
+    static boolean drainDone() {
+        if (!draining) return false;
+        long now = System.currentTimeMillis();
+        if (now > drainEndAt) return true;
+        for (Listener l : listeners.values()) if (!l.kicked && now - l.last < 25_000) return false;
+        return true;
     }
 
     // ── Versions, for the listeners' long poll ──
@@ -322,6 +425,9 @@ public final class StreamHub {
             o.put("v", version());
             o.put("now", System.currentTimeMillis());
             o.put("host", deviceName());
+            o.put("on", running);
+            o.put("drain", draining);
+            o.put("drainAll", draining && drainAll);
             o.put("has", s.has);
             if (s.has) {
                 o.put("id", s.id);
@@ -343,14 +449,41 @@ public final class StreamHub {
             o.put("style", Prefs.vizStyle(c));      // 0 windscreen, 1 gamaka, 2 steady
             o.put("speedOpt", Prefs.vizSpeed(c));
             o.put("sa", Prefs.saNote(c));
-            o.put("lib", StreamPrefs.libraryOn(c));
-            o.put("dl", StreamPrefs.allowDownloads(c));
+            o.put("lib", StreamPrefs.libraryOn(c) && !draining);
+            o.put("dl", StreamPrefs.allowDownloads(c) && !draining);
             o.put("q", new JSONArray(queueJson));
         } catch (Exception ignored) { }
         return o.toString();
     }
 
-    static String lyricsFor(String id) { return id != null && id.equals(lyricsId) ? lyricsJson : "{}"; }
+    private static final Map<String, String> lyricsCache = Collections.synchronizedMap(new LinkedHashMap<String, String>() {
+        @Override protected boolean removeEldestEntry(Map.Entry<String, String> e) { return size() > 30; }
+    });
+
+    static String lyricsFor(String id) {
+        if (id == null) return "{}";
+        if (id.equals(lyricsId)) return lyricsJson;
+        if (!draining) return "{}";
+        // the listeners are carrying on with the queue on their own: look up the lyrics of whatever they reach
+        String hit = lyricsCache.get(id);
+        if (hit != null) return hit;
+        MediaInfo m = queueMap.get(id);
+        if (m == null) return "{}";
+        String json = "{}";
+        try {
+            Lyrics.Result r = Lyrics.find(app, m, m.title, m.artist, m.album, m.durationMs);
+            JSONObject o = new JSONObject();
+            o.put("synced", r.synced);
+            o.put("instrumental", r.instrumental);
+            o.put("offset", Lyrics.offset(app, m));
+            JSONArray lines = new JSONArray();
+            for (Lyrics.Line l : r.lines) lines.put(new JSONArray().put(l.ms).put(l.text));
+            o.put("lines", lines);
+            json = o.toString();
+        } catch (Throwable ignored) { }
+        lyricsCache.put(id, json);
+        return json;
+    }
 
     // ── Library for listeners ──
 
@@ -391,6 +524,7 @@ public final class StreamHub {
     /** A song or video a listener may play: what is in the queue, or (when allowed) the shared library. */
     static MediaInfo resolve(String id) {
         if (id == null) return null;
+        if (draining) return queueMap.get(id);                 // only what was queued
         MediaInfo m = queueMap.get(id);
         if (m != null) return m;
         if (StreamPrefs.libraryOn(app)) {
@@ -533,7 +667,7 @@ public final class StreamHub {
     /** Volume 0 on the player: the stream carries on, this phone makes no sound. */
     static void applySilence() {
         if (app == null) return;
-        boolean sil = running && StreamPrefs.silence(app);
+        boolean sil = running && !draining && StreamPrefs.silence(app);
         for (Player p : new Player[]{audioPlayer(), videoPlayer}) {
             if (p == null) continue;
             try {
@@ -556,10 +690,11 @@ public final class StreamHub {
     /** Registers or refreshes a listener. Returns null when it may not listen (removed, or the limit is reached). */
     static Listener touch(String id, String ip, String agent) {
         if (id == null || id.isEmpty()) return null;
-        if (bannedIps.contains(ip)) return null;
+        if (bannedIps.contains(ip) || blockedIps.contains(ip)) return null;
         Listener l = listeners.get(id);
         long now = System.currentTimeMillis();
         if (l == null) {
+            if (draining) return null;
             int limit = StreamPrefs.limit(app);
             if (limit > 0 && activeCount() >= limit) return null;
             l = new Listener(id);
@@ -575,8 +710,10 @@ public final class StreamHub {
 
     static boolean kickedOrBanned(String id, String ip) {
         Listener l = id == null ? null : listeners.get(id);
-        return bannedIps.contains(ip) || (l != null && l.kicked);
+        return bannedIps.contains(ip) || blockedIps.contains(ip) || (l != null && l.kicked);
     }
+
+    static boolean isBlocked(String ip) { return ip != null && blockedIps.contains(ip); }
 
     static boolean limitReached(String id) {
         int limit = StreamPrefs.limit(app);
@@ -614,6 +751,46 @@ public final class StreamHub {
         bump();
     }
 
+    /** Removes a device and blocks its address for every stream from now on, until the host unblocks it. */
+    public static void block(String id) {
+        Listener l = listeners.get(id);
+        if (l == null || l.ip == null || l.ip.isEmpty()) return;
+        l.kicked = true;
+        blockedIps.add(l.ip);
+        if (app != null) StreamPrefs.addBlocked(app, l.ip, l.name);
+        bump();
+    }
+
+    /** Lets a blocked address in again (the next stream, or this one). */
+    public static void unblock(Context c, String ip) {
+        StreamPrefs.removeBlocked(c, ip);
+        blockedIps.remove(ip);
+        bannedIps.remove(ip);
+        for (Listener l : listeners.values()) if (ip.equals(l.ip)) l.kicked = false;
+        bump();
+    }
+
+    /** Devices the host removed: [id, name, ip]. */
+    public static List<String[]> kickedRows() {
+        List<Listener> list = new ArrayList<>();
+        for (Listener l : listeners.values()) if (l.kicked && !blockedIps.contains(l.ip)) list.add(l);
+        Collections.sort(list, (a, b) -> Long.compare(b.last, a.last));
+        List<String[]> out = new ArrayList<>();
+        for (Listener l : list) out.add(new String[]{l.id, l.name.isEmpty() ? "Browser" : l.name, l.ip});
+        return out;
+    }
+
+    /** Lets a kicked device back in. It has to open the link again. */
+    public static void unkick(String id) {
+        Listener l = listeners.get(id);
+        if (l == null) return;
+        l.kicked = false;
+        if (l.ip != null) bannedIps.remove(l.ip);
+        for (Listener o : listeners.values()) if (o != l && o.kicked && l.ip != null && l.ip.equals(o.ip)) o.kicked = false;
+        l.last = 0;
+        bump();
+    }
+
     // ── Names ──
 
     static String deviceName() {
@@ -628,6 +805,7 @@ public final class StreamHub {
 
     static String deviceOf(String ua) {
         if (ua == null) return "Browser";
+        if (ua.startsWith("NKT Listen")) return ua.replaceFirst("^NKT Listen \\(Android\\) ?", "NKT app · ");
         String os = ua.contains("iPhone") ? "iPhone" : ua.contains("iPad") ? "iPad" : ua.contains("CrKey") ? "Chromecast"
                 : ua.matches("(?i).*(smart-?tv|tizen|web0s|hbbtv|aft[a-z]|bravia).*") ? "TV"
                 : ua.contains("Android") ? "Android" : ua.contains("Windows") ? "Windows"
