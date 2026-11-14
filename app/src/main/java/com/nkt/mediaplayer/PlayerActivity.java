@@ -619,6 +619,8 @@ public class PlayerActivity extends Activity {
         if (!m.remote && !Downloads.isOnline(m)) { opts.add(getString(R.string.rename)); ids.add("rename"); }
         if (!m.remote && !Downloads.isOnline(m)) { opts.add(getString(R.string.delete_file)); ids.add("delete"); }
         opts.add(getString(R.string.properties)); ids.add("props");
+        String sl = StreamChip.menuLabel(this, 1);
+        if (sl != null) { opts.add(sl); ids.add("stream"); }
         if (Downloads.isOnline(m)) { opts.add(getString(R.string.download)); ids.add("download"); }
         Dialogs.builder(this)
                 .setTitle(m.title)
@@ -645,6 +647,7 @@ public class PlayerActivity extends Activity {
                         case "zoom": setZoom(!zoomed); break;
                         case "add": Dialogs.addToPlaylist(this, m); break;
                         case "share": Share.send(this, m); break;
+                        case "stream": StreamChip.toggle(this, 1); break;
                         case "props":
                             FileOps.properties(this, m, deleter, gone -> removeCurrent(), null);
                             break;

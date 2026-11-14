@@ -49,6 +49,8 @@ public class StreamActivity extends Activity {
     private TextView blockedSub, limitSub, sharedSub, silenceSub, listenHead, sectionNow;
     private View addressBox, shareBtn, transport, listenBox;
     private Switch silence, library;
+    private final Switch[] shareSw = new Switch[3];
+    private final TextView[] shareSub = new TextView[3];
     private LinearLayout listenRows;
     private String shownQr = "", shownArtId = "", sharedCount = "";
     private long countAt = 0;
@@ -219,6 +221,29 @@ public class StreamActivity extends Activity {
         nowHint = text(getString(R.string.stream_now_hint), 12, R.color.muted, false);
         now.addView(nowHint, lp(MATCH, WRAP, 8, 0));
 
+        // what goes out: songs, videos and photos can each be streamed or kept to this phone
+        col.addView(label(getString(R.string.stream_share_caps)), lp(MATCH, WRAP, 22, 0));
+        LinearLayout sh = group();
+        col.addView(sh, lp(MATCH, WRAP, 8, 0));
+        final int[] shIcons = {R.drawable.ic_music, R.drawable.ic_play, R.drawable.ic_image};
+        final int[] shNames = {R.string.stream_share_songs, R.string.stream_share_videos, R.string.stream_share_photos};
+        for (int k = 0; k < 3; k++) {
+            final int kind = k;
+            Switch sw = new Switch(this);
+            sw.setThumbTintList(android.content.res.ColorStateList.valueOf(getColor(R.color.accent)));
+            TextView ss = text("", 12, R.color.muted, false);
+            shareSw[k] = sw;
+            shareSub[k] = ss;
+            sh.addView(row(shIcons[k], getString(shNames[k]), ss, sw, sw::toggle));
+            sw.setChecked(StreamPrefs.share(this, k));
+            ss.setText(sw.isChecked() ? R.string.stream_share_sub_on : R.string.stream_share_sub_off);
+            sw.setOnCheckedChangeListener((b, on) -> {
+                StreamHub.setShare(this, kind, on);
+                shareSub[kind].setText(on ? R.string.stream_share_sub_on : R.string.stream_share_sub_off);
+                update();
+            });
+        }
+
         // playback
         col.addView(label(getString(R.string.stream_playback)), lp(MATCH, WRAP, 22, 0));
         LinearLayout pb = group();
@@ -271,6 +296,7 @@ public class StreamActivity extends Activity {
         super.onResume();
         silence.setChecked(StreamPrefs.silence(this));
         library.setChecked(StreamPrefs.libraryOn(this));
+        for (int k = 0; k < 3; k++) shareSw[k].setChecked(StreamPrefs.share(this, k));
         countAt = 0;
         ui.post(tick);
     }
@@ -546,8 +572,9 @@ public class StreamActivity extends Activity {
                 }).start();
             }
         } else {
-            nowTitle.setText(R.string.stream_nothing);
-            nowSub.setText(R.string.stream_what_sub);
+            boolean priv = StreamHub.running && StreamHub.nowPrivate();
+            nowTitle.setText(priv ? R.string.stream_private_now : R.string.stream_nothing);
+            nowSub.setText(priv ? R.string.stream_private_sub : R.string.stream_what_sub);
             if (!shownArtId.isEmpty()) {
                 shownArtId = "";
                 nowArt.setPadding(dp(14), dp(14), dp(14), dp(14));

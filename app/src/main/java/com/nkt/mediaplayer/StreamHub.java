@@ -58,7 +58,7 @@ public final class StreamHub {
         boolean has;
         String id = "", title = "", artist = "", album = "";
         long dur, pos, at;
-        boolean playing, video, ok;
+        boolean playing, video, ok, priv;
         float speed = 1f;
         int index, count;
     }
@@ -105,6 +105,9 @@ public final class StreamHub {
         draining = false;
         drainAll = false;
         drainEndAt = 0;
+        photo = null;
+        photoMap.clear();
+        photoCache.clear();
         listeners.clear();
         bannedIps.clear();
         blockedIps.clear();
@@ -263,6 +266,8 @@ public final class StreamHub {
             if (dur == C.TIME_UNSET || dur < 0) dur = 0;
             if (it != null) {
                 MediaInfo mi = infoOf(p, it, dur);
+                if (!StreamPrefs.share(app, mi.video ? 1 : 0)) s.priv = true;      // playing, but kept to the host
+                else {
                 s.has = true;
                 s.id = Lyrics.idOf(mi.key());
                 s.title = mi.title;
@@ -280,6 +285,7 @@ public final class StreamHub {
                 s.count = p.getMediaItemCount();
                 if (queueDirty || !queueMap.containsKey(s.id)) buildQueue(p);
                 if (s.ok && !s.id.equals(lyricsAsked)) fetchLyrics(s.id, mi);
+                }
             }
         }
         Snap old = snap;
@@ -288,8 +294,8 @@ public final class StreamHub {
                 + "|" + (old.playing == s.playing ? "" : "p") : "none";
         boolean moved = s.has && old.has && s.id.equals(old.id) && s.playing && old.playing
                 && Math.abs((s.pos - old.pos) - (s.at - old.at) * s.speed) > 400;     // a seek
-        if (!s.has || !old.has || !s.id.equals(old.id) || s.playing != old.playing || s.speed != old.speed
-                || s.count != old.count || moved) bump();
+        if (s.has != old.has || s.priv != old.priv || (s.has && (!s.id.equals(old.id) || s.playing != old.playing || s.speed != old.speed
+                || s.count != old.count || moved))) bump();
         lastSig = sig;
     }
 
@@ -429,6 +435,10 @@ public final class StreamHub {
             o.put("drain", draining);
             o.put("drainAll", draining && drainAll);
             o.put("has", s.has);
+            o.put("priv", s.priv);
+            PhotoShow ph = photo;
+            if (ph != null && !draining && StreamPrefs.share(c, 2))
+                o.put("photo", new JSONObject().put("id", ph.id).put("title", ph.title).put("n", ph.n).put("of", ph.of));
             if (s.has) {
                 o.put("id", s.id);
                 o.put("title", s.title);
@@ -649,6 +659,7 @@ public final class StreamHub {
     public static long nowPos() { Snap s = snap; return !s.has ? 0 : s.playing ? s.pos + Math.round((System.currentTimeMillis() - s.at) * s.speed) : s.pos; }
     public static long nowDur() { Snap s = snap; return s.has ? s.dur : 0; }
     public static boolean hasItem() { return snap.has; }
+    public static boolean nowPrivate() { return snap.priv; }
     public static boolean nowOk() { Snap s = snap; return !s.has || s.ok; }
 
     /** The picture for the Stream screen (small); not on the main thread. */
@@ -662,12 +673,74 @@ public final class StreamHub {
 
     public static String nowId() { return snap.id; }
 
+    // ── Photos ──
+
+    private static final class PhotoShow {
+        final String id, title;
+        final int n, of;
+        PhotoShow(String id, String title, int n, int of) { this.id = id; this.title = title; this.n = n; this.of = of; }
+    }
+
+    private static volatile PhotoShow photo = null;
+    private static final Map<String, MediaInfo> photoMap = Collections.synchronizedMap(new LinkedHashMap<String, MediaInfo>() {
+        @Override protected boolean removeEldestEntry(Map.Entry<String, MediaInfo> e) { return size() > 6; }
+    });
+    private static final Map<String, byte[]> photoCache = Collections.synchronizedMap(new LinkedHashMap<String, byte[]>(8, 0.75f, true) {
+        @Override protected boolean removeEldestEntry(Map.Entry<String, byte[]> e) { return size() > 4; }
+    });
+
+    /** The photo viewer is showing this photo ({@code n} of {@code of}). */
+    public static void photoShown(MediaInfo m, int n, int of) {
+        if (!running || m == null || m.uri == null) return;
+        String id = Lyrics.idOf(m.key());
+        photoMap.put(id, m);
+        String t = m.title == null || m.title.isEmpty() ? m.fileName : m.title;
+        photo = new PhotoShow(id, t == null ? "" : t, n, of);
+        bump();
+    }
+
+    /** The photo viewer was closed or left. */
+    public static void photoGone() {
+        if (photo == null) return;
+        photo = null;
+        if (running) bump();
+    }
+
+    /** The photo as a small JPEG. Not on the main thread. */
+    static byte[] photoJpeg(String id) {
+        if (!running || draining || app == null || !StreamPrefs.share(app, 2)) return null;
+        MediaInfo m = photoMap.get(id);
+        if (m == null) return null;
+        byte[] b = photoCache.get(id);
+        if (b != null) return b;
+        b = StreamPhoto.jpeg(app, m, 1600);
+        if (b != null) photoCache.put(id, b);
+        return b;
+    }
+
+    /** Streaming or keeping to this phone: songs 0, videos 1, photos 2. */
+    public static void setShare(Context c, int kind, boolean on) {
+        if (app == null) app = c.getApplicationContext();
+        StreamPrefs.setShare(c, kind, on);
+        if (running) main.post(() -> { capture(); applySilence(); bump(); });
+    }
+
+    /** Which kind the item on the player is (0 song, 1 video). */
+    public static int nowKind() {
+        Player p = active();
+        try {
+            MediaItem it = p == null ? null : p.getCurrentMediaItem();
+            if (it != null && infoOf(p, it, 0).video) return 1;
+        } catch (Throwable ignored) { }
+        return 0;
+    }
+
     // ── Silence this phone ──
 
     /** Volume 0 on the player: the stream carries on, this phone makes no sound. */
     static void applySilence() {
         if (app == null) return;
-        boolean sil = running && !draining && StreamPrefs.silence(app);
+        boolean sil = running && !draining && StreamPrefs.silence(app) && !snap.priv;     // what is kept private is heard as usual
         for (Player p : new Player[]{audioPlayer(), videoPlayer}) {
             if (p == null) continue;
             try {

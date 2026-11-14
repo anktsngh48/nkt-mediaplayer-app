@@ -44,6 +44,8 @@ import java.util.Locale;
 public class ListenService extends Service {
 
     public static final String ACTION_STOP = "com.nkt.mediaplayer.STOP_LISTEN";
+    public static final String ACTION_OWN = "com.nkt.mediaplayer.OWN_LISTEN";
+    public static final String ACTION_LIVE = "com.nkt.mediaplayer.LIVE_LISTEN";
     public static final String EXTRA_BASE = "base";
     public static final String EXTRA_COOKIE = "cookie";
     private static final String CHANNEL = "nkt_listen";
@@ -58,6 +60,49 @@ public class ListenService extends Service {
     public static volatile long durMs;
     public static volatile Bitmap art;
     public static volatile int nudgeMs;
+
+    /** A song or video picked from the host's library: played on this phone only, not in step with the host. */
+    public static volatile boolean own;
+    public static volatile String ownId = "";
+    /** The host is playing something it keeps to itself; the host's library is on; the photo the host is showing. */
+    public static volatile boolean priv, libOn;
+    public static volatile String photoId = "", photoTitle = "";
+    public static volatile int photoN, photoOf;
+
+    /** Plays one of the host's library items here (not synced). */
+    public static void playOwn(android.content.Context c, String id, String title, boolean video) {
+        c.startService(new Intent(c, ListenService.class).setAction(ACTION_OWN).putExtra("id", id).putExtra("title", title).putExtra("video", video));
+    }
+
+    /** Back to following the host. */
+    public static void backToLive(android.content.Context c) {
+        c.startService(new Intent(c, ListenService.class).setAction(ACTION_LIVE));
+    }
+
+    /** GET a picture or other bytes from the host (background threads only), or null. */
+    public static byte[] fetchBytes(String path, int readMs) {
+        try {
+            String b = baseUrl;
+            if (b.isEmpty()) return null;
+            HttpURLConnection c = (HttpURLConnection) new URL(b + path + (path.contains("?") ? "&" : "?") + "c=" + clientId).openConnection();
+            c.setConnectTimeout(5000);
+            c.setReadTimeout(readMs);
+            c.setUseCaches(false);
+            c.setRequestProperty("User-Agent", "NKT Listen (Android) " + Build.MODEL);
+            if (!cookieStr.isEmpty()) c.setRequestProperty("Cookie", cookieStr);
+            if (c.getResponseCode() != 200) { c.disconnect(); return null; }
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            try (InputStream in = c.getInputStream()) {
+                byte[] buf = new byte[16 * 1024];
+                int n;
+                while ((n = in.read(buf)) > 0) { out.write(buf, 0, n); if (out.size() > 16 * 1024 * 1024) break; }
+            }
+            c.disconnect();
+            return out.toByteArray();
+        } catch (Throwable t) {
+            return null;
+        }
+    }
 
     // The host's own view of the song, for the Listen screen (visualiser, lyrics, art)
     public static volatile int hostView = 2, hostStyle = 0, hostSpeed = 40, hostSa = -1;
@@ -133,6 +178,36 @@ public class ListenService extends Service {
         c.startService(new Intent(c, ListenService.class).setAction(ACTION_STOP));
     }
 
+    private void startOwn(String pid, String ptitle, boolean pvideo) {
+        ExoPlayer p = player;
+        if (p == null || !running) return;
+        own = true;
+        ownId = pid;
+        loadedId = "own:" + pid;
+        title = ptitle; artist = ""; video = pvideo; durMs = 0; id = pid; has = true; art = null;
+        fetchArt(pid);
+        p.setPlaybackSpeed(1f);
+        p.setMediaItem(MediaItem.fromUri(base + "/m/" + pid + "?c=" + cid));
+        p.prepare();
+        p.setPlayWhenReady(true);
+        status = getString(R.string.listen_own_status);
+        notifyNow();
+    }
+
+    private void leaveOwn() {
+        if (!own) return;
+        own = false;
+        ownId = "";
+        loadedId = "";
+        lastLoadAt = 0;
+        art = null;
+        ExoPlayer p = player;
+        if (p != null) { p.stop(); p.clearMediaItems(); p.setPlaybackSpeed(1f); }
+        title = stHas ? stTitle : ""; artist = stHas ? stArtist : ""; video = stHas && stVideo; durMs = stHas ? stDur : 0; id = stHas ? stId : ""; has = stHas;
+        notifyNow();
+        sync();
+    }
+
     // ── Life cycle ──
 
     @Override
@@ -140,6 +215,14 @@ public class ListenService extends Service {
         if (intent != null && ACTION_STOP.equals(intent.getAction())) {
             endNote = "";
             stopSelf();
+            return START_NOT_STICKY;
+        }
+        if (intent != null && ACTION_OWN.equals(intent.getAction())) {
+            if (running) startOwn(intent.getStringExtra("id"), intent.getStringExtra("title"), intent.getBooleanExtra("video", false));
+            return START_NOT_STICKY;
+        }
+        if (intent != null && ACTION_LIVE.equals(intent.getAction())) {
+            if (running) leaveOwn();
             return START_NOT_STICKY;
         }
         String b = intent == null ? null : intent.getStringExtra(EXTRA_BASE);
@@ -169,6 +252,7 @@ public class ListenService extends Service {
         has = false; video = false; title = ""; artist = ""; id = ""; durMs = 0; art = null; host = "";
         stHas = false; stOk = false; stPlaying = false; loadedId = ""; ver = -1; syncErr = 0;
         drain = false; drainAll = false; drainQ = null; localQueue = false; anchorPending = false; viewTag = "art";
+        own = false; ownId = ""; priv = false; libOn = false; photoId = ""; photoTitle = ""; photoN = 0; photoOf = 0;
         hostView = 2; hostStyle = 0; hostSpeed = 40; hostSa = -1; hostLyr = false;
         baseUrl = base; cookieStr = cookie; clientId = cid;
         cid = Long.toString(System.nanoTime(), 36) + Integer.toString((int) (Math.random() * 100000), 36);
@@ -187,6 +271,7 @@ public class ListenService extends Service {
         p.addListener(new Player.Listener() {
             @Override public void onPlayerError(PlaybackException e) {
                 ExoPlayer pp = player;
+                if (own) { status = getString(R.string.listen_cant_play); return; }
                 if (drain && pp != null && advanceQueue(pp)) return;       // on their own: skip what can't be played
                 status = getString(R.string.listen_cant_play);
                 loadedId = "";      // loaded again on the next tick
@@ -208,6 +293,7 @@ public class ListenService extends Service {
         running = false;
         baseUrl = "";
         drain = false;
+        own = false;
         main.removeCallbacksAndMessages(null);
         try { HttpURLConnection c = cur; if (c != null) c.disconnect(); } catch (Throwable ignored) { }
         ExoPlayer p = player;
@@ -307,7 +393,7 @@ public class ListenService extends Service {
                 HttpURLConnection c = open("/api/hello", 5000);
                 c.setRequestMethod("POST");
                 c.setDoOutput(true);
-                byte[] body = new JSONObject().put("c", cid).put("mode", "live").put("view", viewTag).put("sync", syncErr).toString().getBytes("UTF-8");
+                byte[] body = new JSONObject().put("c", cid).put("mode", own ? "own" : "live").put("own", own ? title : "").put("view", viewTag).put("sync", syncErr).toString().getBytes("UTF-8");
                 c.getOutputStream().write(body);
                 c.getResponseCode();
                 c.disconnect();
@@ -320,6 +406,11 @@ public class ListenService extends Service {
 
     private void onState(JSONObject j) {
         host = j.optString("host", host);
+        priv = j.optBoolean("priv");
+        libOn = j.optBoolean("lib");
+        JSONObject ph = j.optJSONObject("photo");
+        if (ph != null) { photoId = ph.optString("id"); photoTitle = ph.optString("title"); photoN = ph.optInt("n"); photoOf = ph.optInt("of"); }
+        else photoId = "";
         hostView = j.optInt("view", hostView);
         hostStyle = j.optInt("style", hostStyle);
         hostSpeed = j.optInt("speedOpt", hostSpeed);
@@ -341,10 +432,11 @@ public class ListenService extends Service {
             stPlaying = j.optBoolean("playing");
             stSpeed = (float) j.optDouble("speed", 1.0);
             stVideo = j.optBoolean("video");
-            title = stTitle; artist = stArtist; video = stVideo; durMs = stDur; id = stId;
-        } else {
+            if (!own) { title = stTitle; artist = stArtist; video = stVideo; durMs = stDur; id = stId; }
+        } else if (!own) {
             title = ""; artist = ""; video = false; durMs = 0; id = "";
         }
+        if (own) return;                          // playing a pick of its own: the host's song carries on without us
         has = stHas;
         ExoPlayer p = player;
         if (p == null) return;
@@ -412,6 +504,12 @@ public class ListenService extends Service {
     private void sync() {
         ExoPlayer p = player;
         if (p == null) return;
+        if (own) {
+            int os = p.getPlaybackState();
+            syncErr = 0;
+            status = getString(os == Player.STATE_BUFFERING ? R.string.listen_buffering : os == Player.STATE_ENDED ? R.string.listen_own_done : R.string.listen_own_status);
+            return;
+        }
         if (!stHas) { status = getString(R.string.listen_waiting); if (p.getPlayWhenReady()) p.setPlayWhenReady(false); return; }
         if (!stOk) { status = getString(R.string.listen_cant_stream); return; }
         if (loadedId.isEmpty()) { if (System.currentTimeMillis() - lastLoadAt > 5000) loadCurrent(p); return; }
@@ -463,7 +561,7 @@ public class ListenService extends Service {
                 if (c.getResponseCode() == 200) {
                     Bitmap b;
                     try (InputStream in = c.getInputStream()) { b = BitmapFactory.decodeStream(in); }
-                    if (b != null && forId.equals(loadedId)) {
+                    if (b != null && (forId.equals(loadedId) || (own && forId.equals(ownId)))) {
                         art = b;
                         main.post(this::notifyNowSafe);
                     }

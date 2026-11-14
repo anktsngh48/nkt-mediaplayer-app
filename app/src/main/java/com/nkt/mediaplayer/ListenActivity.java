@@ -4,6 +4,8 @@ import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ClipboardManager;
+import android.content.Intent;
+import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Color;
@@ -15,7 +17,10 @@ import android.os.Looper;
 import android.text.InputType;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.view.ViewGroup;
 import android.widget.EditText;
 import android.widget.FrameLayout;
@@ -69,13 +74,26 @@ public class ListenActivity extends Activity {
     private FrameLayout stage;
     private VizView viz;
     private ScrollView lyrScroll;
-    private LinearLayout lyrBox, viewPills, stylePills, followRow;
+    private LinearLayout lyrBox, viewPills, followRow, libRow;
+    private View libBtn, backLiveBtn, fsBtn;
+    private ImageView photoView;
+    private Bitmap photoBmp;
+    private String photoShownId = "", photoAsking = "";
     private final TextView[] lyrTv = new TextView[5];
-    private TextView bpmChip;
     private Switch followSw;
-    private final TextView[] viewPill = new TextView[3], stylePill = new TextView[3];
+    private final TextView[] viewPill = new TextView[3];
     private boolean follow = true;
-    private int localView = V_ART, localStyle = 0;
+    private int localView = V_ART;
+
+    // full screen for video and photos
+    private FrameLayout fsRoot;
+    private LinearLayout fsBar;
+    private View fsView;
+    private ViewGroup fsParent;
+    private int fsIndex;
+    private ViewGroup.LayoutParams fsLp;
+    private boolean fsVideo;
+    private final Runnable fsHide = () -> { if (fsBar != null) fsBar.setVisibility(View.GONE); };
 
     // lyrics of the song being shown
     private String lyrId = "", lyrAsking = "";
@@ -193,6 +211,16 @@ public class ListenActivity extends Activity {
         liveHost.setPadding(dp(12), dp(6), dp(12), dp(6));
         liveBox.addView(liveHost, new LinearLayout.LayoutParams(WRAP, WRAP));
 
+        libRow = new LinearLayout(this);
+        libBtn = outlined(getString(R.string.listen_library_caps), v -> startActivity(new Intent(this, ListenLibraryActivity.class)));
+        backLiveBtn = outlined(getString(R.string.listen_back_live_caps), v -> ListenService.backToLive(this));
+        libRow.addView(libBtn, new LinearLayout.LayoutParams(0, dp(46), 1f));
+        LinearLayout.LayoutParams bll = new LinearLayout.LayoutParams(0, dp(46), 1f);
+        bll.setMarginStart(dp(8));
+        libRow.addView(backLiveBtn, bll);
+        libRow.setVisibility(View.GONE);
+        liveBox.addView(libRow, lp(MATCH, WRAP, 14, 0));
+
         viewPills = new LinearLayout(this);
         String[] vn = {getString(R.string.listen_view_viz), getString(R.string.listen_view_lyr), getString(R.string.listen_view_art)};
         for (int i = 0; i < 3; i++) {
@@ -217,16 +245,13 @@ public class ListenActivity extends Activity {
         viz = new VizView(this);
         viz.setVisibility(View.GONE);
         stage.addView(viz, new FrameLayout.LayoutParams(MATCH, MATCH));
-        bpmChip = text("", 11, R.color.accent, true);
-        bpmChip.setLetterSpacing(0.1f);
-        bpmChip.setBackground(stroked(0xB305080F, 0x4000E5FF, 12));
-        bpmChip.setPadding(dp(10), dp(4), dp(10), dp(4));
-        bpmChip.setVisibility(View.GONE);
-        FrameLayout.LayoutParams bl = new FrameLayout.LayoutParams(WRAP, WRAP);
-        bl.gravity = Gravity.TOP | Gravity.END;
-        bl.topMargin = dp(8);
-        bl.setMarginEnd(dp(10));
-        stage.addView(bpmChip, bl);
+        photoView = new ImageView(this);
+        photoView.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        photoView.setBackground(rounded(0xFF000000, 18));
+        photoView.setClipToOutline(true);
+        photoView.setVisibility(View.GONE);
+        photoView.setOnClickListener(v -> { if (photoBmp != null) enterFullscreen(photoView, false); });
+        stage.addView(photoView, new FrameLayout.LayoutParams(MATCH, MATCH));
         lyrScroll = new ScrollView(this);
         lyrScroll.setBackground(stroked(0xFF111827, 0x1F00E5FF, 16));
         lyrScroll.setFillViewport(true);
@@ -247,7 +272,11 @@ public class ListenActivity extends Activity {
         videoView.setUseController(false);
         videoView.setBackgroundColor(Color.BLACK);
         videoView.setVisibility(View.GONE);
+        videoView.setOnClickListener(v -> enterFullscreen(videoView, true));
         liveBox.addView(videoView, lp(MATCH, 220, 18, 0));
+        fsBtn = outlined(getString(R.string.listen_full_caps), v -> enterFullscreen(videoView, true));
+        fsBtn.setVisibility(View.GONE);
+        liveBox.addView(fsBtn, lp(MATCH, 44, 10, 0));
 
         liveTitle = text("", 20, R.color.text, true);
         liveTitle.setGravity(Gravity.CENTER);
@@ -266,13 +295,24 @@ public class ListenActivity extends Activity {
         bar.setMax(1000);
         bar.setProgressTintList(android.content.res.ColorStateList.valueOf(getColor(R.color.accent)));
         bar.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF33405A));
-        liveBox.addView(bar, lp(MATCH, 6, 18, 0));
+        bar.setPadding(0, dp(11), 0, dp(11));
+        bar.setOnTouchListener((v, e) -> {                 // a pick of your own can be dragged; the host's song follows the host
+            if (!ListenService.own) return false;
+            ExoPlayer pp = ListenService.player;
+            long d = pp == null ? 0 : pp.getDuration();
+            if (d > 0 && e.getActionMasked() != MotionEvent.ACTION_CANCEL) {
+                if (e.getActionMasked() == MotionEvent.ACTION_DOWN) v.getParent().requestDisallowInterceptTouchEvent(true);
+                pp.seekTo((long) (d * Math.max(0f, Math.min(1f, e.getX() / Math.max(1, v.getWidth())))));
+            }
+            return true;
+        });
+        liveBox.addView(bar, lp(MATCH, 28, 7, 0));
         LinearLayout times = new LinearLayout(this);
         tCur = text("0:00", 12, R.color.muted, false);
         tDur = text("0:00", 12, R.color.muted, false);
         times.addView(tCur, new LinearLayout.LayoutParams(0, WRAP, 1f));
         times.addView(tDur);
-        liveBox.addView(times, lp(MATCH, WRAP, 6, 0));
+        liveBox.addView(times, lp(MATCH, WRAP, 0, 0));
 
         LinearLayout ctl = group();
         liveBox.addView(ctl, lp(MATCH, WRAP, 18, 0));
@@ -281,18 +321,6 @@ public class ListenActivity extends Activity {
         nudT = text("", 14, R.color.accent, true);
         ctl.addView(stepRow(getString(R.string.listen_nudge), nudT, () -> stepNudge(-50), () -> stepNudge(50)));
         liveBox.addView(text(getString(R.string.listen_nudge_hint), 12, R.color.muted, false), lp(MATCH, WRAP, 8, 0));
-
-        stylePills = new LinearLayout(this);
-        String[] sn = {getString(R.string.listen_style_wind), getString(R.string.listen_style_steady), getString(R.string.listen_style_gamaka)};
-        final int[] sv = {VizView.WINDSCREEN, VizView.STEADY, VizView.GAMAKA};
-        for (int i = 0; i < 3; i++) {
-            final int style = sv[i];
-            stylePill[i] = pill(sn[i], () -> { localStyle = style; follow = false; update(); });
-            LinearLayout.LayoutParams pl = new LinearLayout.LayoutParams(0, dp(40), 1f);
-            if (i > 0) pl.setMarginStart(dp(6));
-            stylePills.addView(stylePill[i], pl);
-        }
-        liveBox.addView(stylePills, lp(MATCH, WRAP, 14, 0));
 
         followRow = new LinearLayout(this);
         followRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -318,6 +346,111 @@ public class ListenActivity extends Activity {
         stop.setBackground(stroked(0x14FF4F6A, 0x80FF4F6A, 27));
         stop.setOnClickListener(v -> ListenService.stop(this));
         liveBox.addView(stop, lp(MATCH, 54, 20, 0));
+    }
+
+    // ── Full screen: the video (landscape, with volume and sync) or the host's photo ──
+
+    private void enterFullscreen(View v, boolean video) {
+        if (fsView != null || v == null || !(v.getParent() instanceof ViewGroup)) return;
+        fsView = v;
+        fsVideo = video;
+        fsParent = (ViewGroup) v.getParent();
+        fsIndex = fsParent.indexOfChild(v);
+        fsLp = v.getLayoutParams();
+        fsParent.removeView(v);
+        fsRoot = new FrameLayout(this);
+        fsRoot.setBackgroundColor(Color.BLACK);
+        fsRoot.addView(v, new FrameLayout.LayoutParams(MATCH, MATCH));
+        fsBar = new LinearLayout(this);
+        fsBar.setGravity(Gravity.CENTER);
+        fsBar.setBackgroundColor(0x99000000);
+        fsBar.setPadding(dp(12), dp(10), dp(12), dp(10));
+        fsBar.addView(outlined(getString(R.string.listen_exit_full_caps), x -> exitFullscreen()), new LinearLayout.LayoutParams(0, dp(44), 1.3f));
+        if (video) {
+            String[] names = {"VOL −", "VOL +", "SYNC −", "SYNC +"};
+            for (int i = 0; i < 4; i++) {
+                final int k = i;
+                LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(0, dp(44), 1f);
+                l.setMarginStart(dp(8));
+                fsBar.addView(outlined(names[i], x -> {
+                    if (k == 0) stepVolume(-0.1f); else if (k == 1) stepVolume(0.1f); else if (k == 2) stepNudge(-50); else stepNudge(50);
+                    showFsBar();
+                }), l);
+            }
+        }
+        FrameLayout.LayoutParams bp = new FrameLayout.LayoutParams(MATCH, WRAP);
+        bp.gravity = Gravity.BOTTOM;
+        fsRoot.addView(fsBar, bp);
+        v.setOnClickListener(x -> showFsBar());
+        addContentView(fsRoot, new ViewGroup.LayoutParams(MATCH, MATCH));
+        if (video) setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+        immersive(true);
+        showFsBar();
+    }
+
+    private void exitFullscreen() {
+        View v = fsView;
+        if (v == null) return;
+        ui.removeCallbacks(fsHide);
+        fsView = null;
+        fsRoot.removeView(v);
+        if (fsRoot.getParent() instanceof ViewGroup) ((ViewGroup) fsRoot.getParent()).removeView(fsRoot);
+        fsParent.addView(v, fsIndex, fsLp);
+        final boolean video = fsVideo;
+        v.setOnClickListener(x -> { if (video || photoBmp != null) enterFullscreen(v, video); });
+        fsRoot = null;
+        fsBar = null;
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+        immersive(false);
+    }
+
+    private void showFsBar() {
+        if (fsBar == null) return;
+        fsBar.setVisibility(View.VISIBLE);
+        ui.removeCallbacks(fsHide);
+        ui.postDelayed(fsHide, 3500);
+    }
+
+    @SuppressWarnings("deprecation")
+    private void immersive(boolean on) {
+        if (Build.VERSION.SDK_INT >= 30) {
+            WindowInsetsController c = getWindow().getInsetsController();
+            if (c == null) return;
+            if (on) {
+                c.hide(WindowInsets.Type.systemBars());
+                c.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            } else c.show(WindowInsets.Type.systemBars());
+        } else {
+            getWindow().getDecorView().setSystemUiVisibility(on
+                    ? View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    : View.SYSTEM_UI_FLAG_VISIBLE);
+        }
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (fsView != null) { exitFullscreen(); return; }
+        super.onBackPressed();
+    }
+
+    // ── The photo the host is showing ──
+
+    private void loadPhoto(final String pid) {
+        if (pid.equals(photoShownId) || pid.equals(photoAsking)) return;
+        photoAsking = pid;
+        new Thread(() -> {
+            byte[] b = ListenService.fetchBytes("/ph/" + pid, 20000);
+            final Bitmap bmp = b == null ? null : android.graphics.BitmapFactory.decodeByteArray(b, 0, b.length);
+            ui.post(() -> {
+                if (!pid.equals(photoAsking)) return;
+                photoAsking = "";
+                if (bmp != null && pid.equals(ListenService.photoId)) {
+                    photoBmp = bmp;
+                    photoShownId = pid;
+                    photoView.setImageBitmap(bmp);
+                }
+            });
+        }, "nkt-listen-photo").start();
     }
 
     @Override
@@ -347,6 +480,7 @@ public class ListenActivity extends Activity {
         AudioAnalyzer.external = false;
         if (finder != null) { finder.stop(); finder = null; }
         found.clear();
+        exitFullscreen();
         if (videoView != null) videoView.setPlayer(null);     // sound carries on without the picture
         attached = null;
         super.onPause();
@@ -669,32 +803,43 @@ public class ListenActivity extends Activity {
         liveStatus.setBackground(good ? stroked(0x1F00E5A0, 0x6600E5A0, 16) : stroked(0x1AFFC850, 0x66FFC850, 16));
 
         boolean vid = has && ListenService.video;
+        boolean own = ListenService.own;
+        boolean photoOn = !own && !ListenService.photoId.isEmpty();
+        boolean tabs = !vid && !own && !photoOn;              // the view tabs are for the host's song
         ExoPlayer p = ListenService.player;
         videoView.setVisibility(vid ? View.VISIBLE : View.GONE);
         stage.setVisibility(vid ? View.GONE : View.VISIBLE);
-        viewPills.setVisibility(vid ? View.GONE : View.VISIBLE);
-        followRow.setVisibility(vid ? View.GONE : View.VISIBLE);
-        int v = follow ? ListenService.hostView : localView;
+        viewPills.setVisibility(tabs ? View.VISIBLE : View.GONE);
+        followRow.setVisibility(tabs ? View.VISIBLE : View.GONE);
+        libRow.setVisibility(ListenService.libOn || own ? View.VISIBLE : View.GONE);
+        libBtn.setVisibility(ListenService.libOn || own ? View.VISIBLE : View.GONE);
+        backLiveBtn.setVisibility(own ? View.VISIBLE : View.GONE);
+        if (!own && !has && photoOn) {                          // only a photo is being shown
+            liveTitle.setText(ListenService.photoTitle);
+            liveArtist.setText(ListenService.photoOf > 1 ? getString(R.string.listen_photo_n, ListenService.photoN, ListenService.photoOf) : "");
+        } else if (!has && ListenService.priv) {
+            liveTitle.setText(R.string.listen_private);
+            liveArtist.setText(R.string.listen_private_sub);
+        }
+        int v = own ? V_ART : follow ? ListenService.hostView : localView;
         if (v < 0 || v > 2) v = V_ART;
-        int style = follow ? ListenService.hostStyle : localStyle;
+        int style = ListenService.hostStyle;
         if (followSw.isChecked() != follow) followSw.setChecked(follow);
-        art.setVisibility(v == V_ART ? View.VISIBLE : View.GONE);
-        lyrScroll.setVisibility(v == V_LYR ? View.VISIBLE : View.GONE);
-        boolean showViz = v == V_VIZ && !vid;
+        photoView.setVisibility(photoOn ? View.VISIBLE : View.GONE);
+        art.setVisibility(!photoOn && v == V_ART ? View.VISIBLE : View.GONE);
+        lyrScroll.setVisibility(!photoOn && v == V_LYR ? View.VISIBLE : View.GONE);
+        boolean showViz = !photoOn && v == V_VIZ && !vid && !own;
         viz.setVisibility(showViz ? View.VISIBLE : View.GONE);
-        bpmChip.setVisibility(showViz ? View.VISIBLE : View.GONE);
-        stylePills.setVisibility(showViz ? View.VISIBLE : View.GONE);
         if (viz.getStyle() != style) viz.setStyle(style);
         viz.setSteadySpeed(ListenService.hostSpeed);
         for (int i = 0; i < 3; i++) setPill(viewPill[i], i == v);
-        setPill(stylePill[0], style == VizView.WINDSCREEN);
-        setPill(stylePill[1], style == VizView.STEADY);
-        setPill(stylePill[2], style == VizView.GAMAKA);
-        ListenService.viewTag = vid ? "art" : v == V_VIZ ? "viz" : v == V_LYR ? "lyr" : "art";
-        bpmChip.setText(vizBpm > 0 ? getString(R.string.listen_bpm, vizBpm) : getString(R.string.listen_bpm_none));
+        ListenService.viewTag = vid || own || photoOn ? "art" : v == V_VIZ ? "viz" : v == V_LYR ? "lyr" : "art";
         if (showViz && has && !vizPolling) startVizPolling();
         if (!showViz) vizPolling = false;
-        if (v == V_LYR) drawLyrics(p);
+        if (v == V_LYR && !photoOn && !own) drawLyrics(p);
+        if (photoOn) loadPhoto(ListenService.photoId);
+        if (fsView != null && ((fsVideo && !vid) || (!fsVideo && !photoOn))) exitFullscreen();
+        fsBtn.setVisibility(vid ? View.VISIBLE : View.GONE);
         if (vid && p != attached) { videoView.setPlayer(p); attached = p; }
         if (!vid && attached != null) { videoView.setPlayer(null); attached = null; }
 

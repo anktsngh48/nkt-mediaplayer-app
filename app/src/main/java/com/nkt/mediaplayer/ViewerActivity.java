@@ -192,6 +192,8 @@ public class ViewerActivity extends Activity {
         opts.add(getString(R.string.cut)); ids.add("cut");
         if (m.image) { opts.add(getString(R.string.set_wallpaper)); ids.add("wall"); }
         opts.add(getString(R.string.properties)); ids.add("props");
+        String sl = m.video ? null : StreamChip.menuLabel(this, 2);
+        if (sl != null) { opts.add(sl); ids.add("stream"); }
         Dialogs.builder(this).setTitle(m.title).setItems(opts.toArray(new String[0]), (d, w) -> {
             List<MediaInfo> one = new ArrayList<>();
             one.add(m);
@@ -200,6 +202,7 @@ public class ViewerActivity extends Activity {
                 case "copy": FileJobs.put(this, one, false, null); break;
                 case "cut": FileJobs.put(this, one, true, null); break;
                 case "wall": Wallpapers.set(this, m); break;
+                case "stream": StreamChip.toggle(this, 2); break;
                 default: FileOps.properties(this, m, deleter, gone -> removeItem(current), null);
             }
         }).show();
@@ -344,6 +347,13 @@ public class ViewerActivity extends Activity {
     protected void onPause() {
         super.onPause();
         if (player != null) player.pause();
+        StreamHub.photoGone();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (items != null && !items.isEmpty() && current < items.size() && !items.get(current).video) StreamHub.photoShown(items.get(current), current + 1, items.size());
     }
 
     @SuppressWarnings("deprecation")
@@ -374,6 +384,7 @@ public class ViewerActivity extends Activity {
         seekRow.setVisibility(m.video ? View.VISIBLE : View.GONE);
         if (m.video) { seek.setProgress(0); posText.setText("0:00"); durText.setText(m.durationMs > 0 ? Ui.time(m.durationMs) : "0:00"); }
         if (!m.key().equals(recorded)) { recorded = m.key(); History.record(this, m); }
+        if (m.video) StreamHub.photoGone(); else StreamHub.photoShown(m, current + 1, items.size());     // Stream: show this photo to listeners
         title.setText(m.dateMs > 0
                 ? DateFormat.getMediumDateFormat(this).format(new Date(m.dateMs)) + ", " + DateFormat.getTimeFormat(this).format(new Date(m.dateMs))
                 : m.fileName);
@@ -406,6 +417,7 @@ public class ViewerActivity extends Activity {
     @Override
     protected void onDestroy() {
         pool.shutdownNow();
+        StreamHub.photoGone();
         if (player != null) { player.release(); player = null; }
         super.onDestroy();
     }

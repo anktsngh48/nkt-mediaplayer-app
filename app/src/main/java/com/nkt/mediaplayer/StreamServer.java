@@ -171,6 +171,11 @@ final class StreamServer {
     private void route(Req r, OutputStream out) throws IOException {
         if (!"GET".equals(r.method) && !"POST".equals(r.method) && !"HEAD".equals(r.method)) { text(out, 405, "text/plain", "No"); return; }
         if (r.path.equals(base)) { redirect(out, base + "/"); return; }
+        if (r.path.length() >= base.length() && r.path.regionMatches(true, 0, base, 0, base.length())
+                && (r.path.length() == base.length() || r.path.charAt(base.length()) == '/')) {
+            redirect(out, base + r.path.substring(base.length()) + (r.path.length() == base.length() ? "/" : ""));     // "nkt" typed for "NKT"
+            return;
+        }
         if (!r.path.startsWith(base + "/")) { text(out, 404, "text/plain", "Not found"); return; }
         if (StreamHub.isBlocked(r.ip)) { text(out, 403, "text/plain", "Blocked by the host"); return; }
         String rel = r.path.substring(base.length() + 1);
@@ -217,6 +222,13 @@ final class StreamServer {
             byte[] b = StreamHub.artJpeg(rel.substring(4));
             if (b == null) { text(out, 404, "text/plain", "No picture"); return; }
             head(out, 200, "image/jpeg", b.length, "Cache-Control: private, max-age=60\r\n");
+            if (!"HEAD".equals(r.method)) out.write(b);
+            return;
+        }
+        if (rel.startsWith("ph/")) {
+            byte[] b = StreamHub.photoJpeg(rel.substring(3));
+            if (b == null) { text(out, 404, "text/plain", "No photo"); return; }
+            head(out, 200, "image/jpeg", b.length, "Cache-Control: private, max-age=300\r\n");
             if (!"HEAD".equals(r.method)) out.write(b);
             return;
         }

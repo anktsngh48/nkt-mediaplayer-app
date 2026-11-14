@@ -14,13 +14,16 @@ final class StreamPrefs {
     private StreamPrefs() { }
 
     static final int DEFAULT_PORT = 8765;
+    static final String DEFAULT_NAME = "NKT";
     static final String MODE_ALL = "all", MODE_CHOOSE = "choose";
 
     // ── Address: http://<wifi address>:<port>/<name> ──
 
     static String name(Context c) {
-        String n = Prefs.sp(c).getString("stream_name", null);
-        if (n == null || n.isEmpty()) n = randomName(c);
+        android.content.SharedPreferences sp = Prefs.sp(c);
+        String n = sp.getString("stream_name", null);
+        // never chosen by the user (empty, or one of the random names older versions made up): the default is NKT
+        if (n == null || n.isEmpty() || (!sp.getBoolean("stream_name_set", false) && n.matches("[a-hjkmnp-z2-9]{4}"))) return DEFAULT_NAME;
         return n;
     }
 
@@ -41,7 +44,12 @@ final class StreamPrefs {
         return b.toString();
     }
 
-    static void setName(Context c, String n) { Prefs.sp(c).edit().putString("stream_name", n).apply(); }
+    // ── What is shared: 0 songs, 1 videos, 2 photos (off = only on this phone) ──
+
+    static boolean share(Context c, int kind) { return Prefs.sp(c).getBoolean("stream_share_" + kind, true); }
+    static void setShare(Context c, int kind, boolean on) { Prefs.sp(c).edit().putBoolean("stream_share_" + kind, on).apply(); }
+
+    static void setName(Context c, String n) { Prefs.sp(c).edit().putString("stream_name", n).putBoolean("stream_name_set", true).apply(); }
 
     static int port(Context c) { return Prefs.sp(c).getInt("stream_port", DEFAULT_PORT); }
     static void setPort(Context c, int p) { Prefs.sp(c).edit().putInt("stream_port", p).apply(); }

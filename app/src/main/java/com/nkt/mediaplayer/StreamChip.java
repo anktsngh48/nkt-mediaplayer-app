@@ -1,6 +1,7 @@
 package com.nkt.mediaplayer;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
@@ -18,6 +19,22 @@ import android.widget.TextView;
 final class StreamChip {
 
     private StreamChip() { }
+
+    /** "songs", "videos" or "photos". */
+    static String kindName(Context c, int kind) { return c.getString(kind == 2 ? R.string.stream_kind_photos : kind == 1 ? R.string.stream_kind_videos : R.string.stream_kind_songs); }
+
+    /** The menu line for streaming or keeping this kind to this phone; null when Stream is off. */
+    static String menuLabel(Context c, int kind) {
+        if (!StreamService.running) return null;
+        return c.getString(StreamPrefs.share(c, kind) ? R.string.stream_menu_private : R.string.stream_menu_share, kindName(c, kind));
+    }
+
+    /** Switches one kind between streamed and only on this phone, and says so. */
+    static void toggle(Context c, int kind) {
+        boolean on = !StreamPrefs.share(c, kind);
+        StreamHub.setShare(c, kind, on);
+        Ui.toast(c, c.getString(on ? R.string.stream_now_shared : R.string.stream_now_private, kindName(c, kind)));
+    }
 
     static void attach(Activity a) {
         View sleep = a.findViewById(R.id.np_sleep);
@@ -45,6 +62,19 @@ final class StreamChip {
         lp.topMargin = 10 * dp;
         parent.addView(chip, parent.indexOfChild(sleep) + 1, lp);
 
+        // a second chip: this kind of thing is streamed, or kept to this phone (tap to switch)
+        TextView share = new TextView(a);
+        share.setTextSize(11);
+        share.setLetterSpacing(0.1f);
+        share.setTypeface(null, android.graphics.Typeface.BOLD);
+        share.setGravity(Gravity.CENTER);
+        share.setPadding(12 * dp, 0, 12 * dp, 0);
+        share.setVisibility(View.GONE);
+        share.setOnClickListener(v -> toggle(a, StreamHub.nowKind()));
+        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, 28 * dp);
+        slp.topMargin = 8 * dp;
+        parent.addView(share, parent.indexOfChild(chip) + 1, slp);
+
         final Handler h = new Handler(Looper.getMainLooper());
         final Runnable[] run = new Runnable[1];
         run[0] = () -> {
@@ -55,7 +85,13 @@ final class StreamChip {
                 if (StreamPrefs.silence(a)) b.append(" · ").append(a.getString(R.string.stream_chip_silent));
                 chip.setText(b.toString());
                 chip.setVisibility(View.VISIBLE);
-            } else chip.setVisibility(View.GONE);
+                int kind = StreamHub.nowKind();
+                boolean on = StreamPrefs.share(a, kind);
+                share.setText(a.getString(on ? R.string.stream_chip_sharing : R.string.stream_chip_only_me, kindName(a, kind).toUpperCase()));
+                share.setTextColor(a.getColor(on ? R.color.success : R.color.muted));
+                share.setBackground(on ? a.getDrawable(R.drawable.bg_running) : a.getDrawable(R.drawable.bg_round_btn));
+                share.setVisibility(View.VISIBLE);
+            } else { chip.setVisibility(View.GONE); share.setVisibility(View.GONE); }
             h.postDelayed(run[0], 1000);
         };
         chip.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {

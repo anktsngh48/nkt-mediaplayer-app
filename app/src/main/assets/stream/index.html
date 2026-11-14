@@ -104,6 +104,19 @@ a{text-decoration:none;color:inherit}
 #tv .nud button:focus-visible{outline:3px solid #00E5FF;box-shadow:0 0 0 6px rgba(0,229,255,.3)}
 #tv .vsl{width:max(70px,11.7vw);height:6px;border-radius:3px;background:#33405A;position:relative;display:block}
 #tv .vsl b{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:#00E5FF}
+/* a bar you can drag to seek (only for what you picked yourself) */
+.bar::after{content:"";position:absolute;left:0;right:0;top:-14px;bottom:-14px}
+.bar.seekable{cursor:pointer;touch-action:none}
+#ph{position:fixed;inset:0;background:#000;z-index:25;display:none}
+#ph.on{display:block}
+#ph img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
+#ph .phTop{position:absolute;left:0;right:0;top:0;display:flex;align-items:center;gap:12px;padding:16px 18px;background:linear-gradient(to bottom,rgba(0,0,0,.72),transparent)}
+#ph .phTop .x{margin-left:auto;width:44px;height:44px;border-radius:50%;border:1px solid rgba(0,229,255,.35);background:rgba(5,8,15,.7);color:#00E5FF;font-size:22px;line-height:1;cursor:pointer;padding:0}
+#ph .phCap{position:absolute;left:0;right:0;bottom:0;padding:40px 20px max(18px,env(safe-area-inset-bottom));background:linear-gradient(to top,rgba(0,0,0,.85),transparent)}
+#ph .phCap b{display:block;font-size:17px}
+#tv button{touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+#tv:fullscreen .bt,#tv:-webkit-full-screen .bt{bottom:max(7vw,64px)}
+#tv:fullscreen .hd,#tv:-webkit-full-screen .hd{top:max(5vw,30px)}
 #tv .stl.sel{border:3px solid #00E5FF;box-shadow:0 0 0 5px rgba(0,229,255,.3)}
 </style>
 </head>
@@ -236,6 +249,9 @@ a{text-decoration:none;color:inherit}
 </div>
 
 <!-- Video: for a TV or a laptop -->
+<!-- Photo the host is showing -->
+<div id="ph"><img id="phImg" alt=""><div class="phTop"><div class="logo">NKT STREAM</div><div class="chip"><i></i><span id="phChipT">LIVE PHOTO</span></div><button class="x" id="phX" aria-label="Hide this photo">×</button></div><div class="phCap"><b id="phT"></b><span class="muted" id="phN" style="font-size:13px"></span></div></div>
+
 <div id="tv">
   <video id="vid" playsinline preload="auto"></video>
   <div class="g1"></div><div class="g2"></div>
@@ -247,7 +263,8 @@ a{text-decoration:none;color:inherit}
     <div class="ctl">
       <div class="nud"><button id="tvVm" aria-label="Volume down">−</button><span style="padding:0 .8vw;display:flex;align-items:center;gap:1vw"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#00E5FF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/></svg> Volume <span class="vsl"><b id="tvVolF"></b></span> <span class="muted" id="tvVolT">70</span></span><button id="tvVp" aria-label="Volume up">+</button></div>
       <div class="nud"><button id="tvNm" aria-label="Move the sound back by 50 milliseconds">−</button><span style="padding:0 .8vw">Sync nudge <b id="tvNudT" style="color:#00E5FF">0 ms</b></span><button id="tvNp" aria-label="Move the sound forward by 50 milliseconds">+</button></div>
-      <button class="stl" id="tvFs"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#00E5FF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg> Full screen</button>
+      <button class="stl" id="tvFs"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#00E5FF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg> <span id="tvFsT">Full screen</span></button>
+      <button class="stl" id="tvLib" style="display:none">LIBRARY</button>
       <button class="stl stop" id="tvStop">STOP LISTENING</button>
     </div>
   </div>
@@ -278,6 +295,7 @@ function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function 
 var aud = $('#aud'), vid = $('#vid');
 var st = { has: false }, ver = -1, offset = 0, listening = false, stopped = false;
 var view = 0, follow = true, style = 0, styleLocal = null, tab = 'live';
+var libOn = false, photoHidden = '', shownPhoto = '';
 var own = null;                      // a song the listener picked from the library
 var curId = null, curEl = aud, lyrFor = null, lyrData = null;
 var nudge = parseInt(store('nudge') || '0', 10) || 0;
@@ -291,7 +309,7 @@ function show(name) {
 }
 function message(t, b, retry) { $('#msgT').textContent = t; $('#msgB').textContent = b; $('#msgBtn').hidden = !retry; show('msg'); }
 $('#msgBtn').onclick = function () { location.reload(); };
-function ended(why) { polling = false; failAt = 0; stopAll(); own = null; message('STREAM ENDED', why || 'The host stopped streaming, or this device lost the Wi-Fi.', true); }
+function ended(why) { polling = false; failAt = 0; stopAll(); own = null; try { $('#ph').classList.remove('on'); } catch (x) {} message('STREAM ENDED', why || 'The host stopped streaming, or this device lost the Wi-Fi.', true); }
 function artSvg(sz) { return '<svg width="' + sz + '" height="' + sz + '" viewBox="0 0 24 24" fill="none" stroke="#00E5FF" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg>'; }
 function setArt(box, id, sz) {
   if (box.getAttribute('data-id') === (id || '')) return;
@@ -377,13 +395,14 @@ function onState(j) {
   }
   // the tap screen
   $('#tapLive').textContent = 'LIVE FROM ' + String(hostName).toUpperCase();
-  $('#tapTitle').textContent = j.has ? j.title : 'Nothing playing yet';
-  $('#tapArtist').textContent = j.has ? j.artist : 'It will start here by itself.';
+  $('#tapTitle').textContent = j.has ? j.title : (j.priv ? 'The host is playing something privately' : 'Nothing playing yet');
+  $('#tapArtist').textContent = j.has ? j.artist : (j.priv ? 'It is not being shared.' : 'It will start here by itself.');
   setArt($('#tapArt'), j.has ? j.id : '', 80);
   $('#tapHost').textContent = 'Connected to ' + hostName + ' · ' + location.host;
   $('#foot').textContent = j.drain ? (j.drainAll ? 'The host stopped streaming. The queue plays on by itself and ends when it finishes.' : 'The host stopped streaming. This is the last song: it ends when it finishes.') : 'Connected to ' + hostName + ' · ' + location.hostname;
   $('#tapNote').textContent = j.has && !j.ok ? "The host is playing something that can't be streamed (for example a YouTube link)." : 'Your browser needs one tap before it can play sound.';
   // library tab
+  libOn = !!j.lib;
   $('#tabLib').hidden = !j.lib;
   $('#dlNote').hidden = !j.dl;
   if (!j.lib && tab === 'lib') goLive();
@@ -505,7 +524,7 @@ $('#tapBtn').onclick = function () {
   hello();
 };
 function stopAll() { listening = false; try { aud.pause(); vid.pause(); } catch (x) {} }
-function stopListening() { stopAll(); own = null; tab = 'live'; show('tap'); }
+function stopListening() { stopAll(); own = null; try { $('#ph').classList.remove('on'); } catch (x) {} tab = 'live'; show('tap'); }
 $('#stopBtn').onclick = stopListening;
 $('#tvStop').onclick = function () { if (own) { closeOwn(); } else stopListening(); };
 
@@ -535,7 +554,8 @@ setInterval(hello, 4000);
 
 // ── What is on screen ──
 function render() {
-  var tv = listening && tab === 'live' && ((st.has && st.ok && st.video && !own) || (own && own.video));
+  var tv = listening && ((tab === 'live' && st.has && st.ok && st.video && !own) || (own && own.video));
+  renderPhoto();
   var wasTv = $('#tv').classList.contains('on');
   $('#tv').classList.toggle('on', !!tv);
   if (tv && !wasTv) wake();
@@ -556,7 +576,7 @@ function render() {
   $('#follow').style.display = view === 2 ? 'none' : 'flex';
   $('#mini').hidden = view === 2;
   $('#followSw').setAttribute('aria-checked', follow ? 'true' : 'false');
-  var title = st.has ? st.title : 'Nothing playing yet', artist = st.has ? st.artist : 'It will start here by itself.';
+  var title = st.has ? st.title : (st.priv ? 'The host is playing something privately' : 'Nothing playing yet'), artist = st.has ? st.artist : (st.priv ? 'It is not being shared.' : 'It will start here by itself.');
   $('#aTitle').textContent = title; $('#aArtist').textContent = artist;
   $('#mTitle').textContent = title; $('#mArtist').textContent = artist;
   setArt($('#bigArt'), st.has ? st.id : '', 104);
@@ -574,6 +594,7 @@ function renderTv() {
   $('#tvLive').textContent = 'LIVE FROM ' + String(hostName).toUpperCase();
   $('#tvSync').hidden = !!o;
   $('#tvStop').textContent = o ? 'BACK TO LIBRARY' : 'STOP LISTENING';
+  $('#tvLib').style.display = libOn && !o ? 'flex' : 'none';
   $('#tvVolF').style.width = Math.round(volume * 100) + '%'; $('#tvVolT').textContent = Math.round(volume * 100);
   $('#tvNudT').textContent = (nudge > 0 ? '+' : '') + nudge + ' ms';
 }
@@ -616,6 +637,13 @@ $('#tvFs').onclick = function () {
   var e = $('#tv');
   try { if (document.fullscreenElement || document.webkitFullscreenElement) (document.exitFullscreen || document.webkitExitFullscreen).call(document); else (e.requestFullscreen || e.webkitRequestFullscreen).call(e); } catch (x) {}
 };
+function fsOn() { return !!(document.fullscreenElement || document.webkitFullscreenElement); }
+function fsChanged() {
+  $('#tvFsT').textContent = fsOn() ? 'Exit full screen' : 'Full screen';
+  wake();                                    // the controls come back when the screen changes size
+}
+document.addEventListener('fullscreenchange', fsChanged);
+document.addEventListener('webkitfullscreenchange', fsChanged);
 var quietT = 0, unquietAt = 0;
 function wake() {
   var tv = $('#tv');
@@ -667,7 +695,7 @@ setInterval(function () {
 // ── Lyrics ──
 function renderLyrics() {
   var box = $('#lyr');
-  if (!st.has) { box.className = 'card'; box.innerHTML = '<div class="l1">Nothing playing yet</div>'; return; }
+  if (!st.has) { box.className = 'card'; box.innerHTML = '<div class="l1">' + (st.priv ? 'Playing privately' : 'Nothing playing yet') + '</div>'; return; }
   if (!st.lyr) { box.className = 'card'; box.innerHTML = '<div class="l1">Looking for lyrics…</div>'; return; }
   if (lyrFor !== st.id) {
     lyrFor = st.id; lyrData = null; lastLyr = -2;
@@ -956,6 +984,39 @@ function drawGamaka(now, playing, d) {
   cx.restore();
   cx.restore();
 }
+
+// ── A photo the host is showing ──
+function renderPhoto() {
+  var ph = st.photo;
+  if (photoHidden && (!ph || ph.id !== photoHidden)) photoHidden = '';
+  var on = !!(listening && ph && photoHidden !== ph.id);
+  $('#ph').classList.toggle('on', on);
+  if (on && shownPhoto !== ph.id) {
+    shownPhoto = ph.id;
+    $('#phImg').src = B + 'ph/' + ph.id + '?c=' + encodeURIComponent(C);
+    $('#phT').textContent = ph.title || '';
+    $('#phN').textContent = ph.of > 1 ? ph.n + ' of ' + ph.of : '';
+  }
+  if (!on && !ph) shownPhoto = '';
+}
+$('#phX').onclick = function () { if (st.photo) photoHidden = st.photo.id; render(); };
+$('#tvLib').onclick = function () { tab = 'lib'; libOpen(); render(); };
+
+// Drag a progress bar to seek: only for a song or video you picked yourself (the live one follows the host)
+['#aBar', '#mBar', '#tvBar', '#oBar'].forEach(function (sel) {
+  var bar = $(sel).parentNode, down = false;
+  bar.classList.add('seekable');
+  function at(e) {
+    if (!own || !listening) return;
+    var r = bar.getBoundingClientRect(), d = curEl.duration;
+    if (!(d > 0) || !(r.width > 0)) return;
+    curEl.currentTime = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * d;
+  }
+  bar.addEventListener('pointerdown', function (e) { if (!own) return; down = true; try { bar.setPointerCapture(e.pointerId); } catch (x) {} at(e); });
+  bar.addEventListener('pointermove', function (e) { if (down) at(e); });
+  bar.addEventListener('pointerup', function () { down = false; });
+  bar.addEventListener('pointercancel', function () { down = false; });
+});
 
 // ── Library: pick your own songs and videos, not synced with the host ──
 var lib = { items: [], playlists: [] }, libLoaded = false, kind = 0, plOpen = null, q = '';

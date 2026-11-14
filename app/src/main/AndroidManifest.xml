@@ -281,7 +281,11 @@
         <activity
             android:name=".ListenActivity"
             android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
             android:launchMode="singleTop" />
+        <activity
+            android:name=".ListenLibraryActivity"
+            android:exported="false" />
         <service
             android:name=".ListenService"
             android:exported="false"
