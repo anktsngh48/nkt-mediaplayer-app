@@ -171,7 +171,7 @@ final class StreamServer {
     private void route(Req r, OutputStream out) throws IOException {
         if (!"GET".equals(r.method) && !"POST".equals(r.method) && !"HEAD".equals(r.method)) { text(out, 405, "text/plain", "No"); return; }
         if (r.path.equals(base)) { redirect(out, base + "/"); return; }
-        if (r.path.length() >= base.length() && r.path.regionMatches(true, 0, base, 0, base.length())
+        if (!r.path.startsWith(base) && r.path.length() >= base.length() && r.path.regionMatches(true, 0, base, 0, base.length())
                 && (r.path.length() == base.length() || r.path.charAt(base.length()) == '/')) {
             redirect(out, base + r.path.substring(base.length()) + (r.path.length() == base.length() ? "/" : ""));     // "nkt" typed for "NKT"
             return;
