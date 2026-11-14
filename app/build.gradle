@@ -72,4 +72,6 @@ dependencies {
     implementation 'org.apache.ftpserver:ftpserver-core:1.2.0'
     // Other devices: FTP client to browse, stream and copy from other phones and computers
     implementation 'commons-net:commons-net:3.11.1'
+    // Stream: draws the QR code for the other device to scan
+    implementation 'com.google.zxing:core:3.5.3'
 }

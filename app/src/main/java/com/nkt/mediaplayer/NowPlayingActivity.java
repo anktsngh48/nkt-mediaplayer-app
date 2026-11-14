@@ -81,6 +81,7 @@ public class NowPlayingActivity extends Activity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_now_playing);
         Ui.padForSystemBars(findViewById(R.id.root));
+        StreamChip.attach(this);
 
         art = findViewById(R.id.np_art);
         art.setClipToOutline(true);
@@ -348,6 +349,7 @@ public class NowPlayingActivity extends Activity {
             opts.add(getString(R.string.set_as_ringtone)); ids.add("ringtone");
         }
         opts.add(getString(R.string.share)); ids.add("share");
+        opts.add(getString(R.string.stream_to_devices)); ids.add("stream");
         if (Downloads.isOnline(m)) { opts.add(getString(R.string.download)); ids.add("download"); }
         boolean local = m.uri != null && ("content".equals(m.uri.getScheme()) || "file".equals(m.uri.getScheme()));
         if (local) { opts.add(getString(R.string.rename)); ids.add("rename"); }
@@ -361,6 +363,7 @@ public class NowPlayingActivity extends Activity {
                         case "edit": MetaEditActivity.open(this, m); break;
                         case "ringtone": Ringtones.set(this, m); break;
                         case "share": Share.send(this, m); break;
+                        case "stream": startActivity(new android.content.Intent(this, StreamActivity.class)); break;
                         case "download": Downloads.start(this, m.uri, m.title); break;
                         case "details": FileOps.properties(this, m, deleter, gone -> dropCurrent(), null); break;
                         case "rename": FileOps.rename(this, m, null); break;

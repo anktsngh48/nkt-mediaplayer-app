@@ -184,6 +184,9 @@ public class PlaybackService extends MediaSessionService {
         }
     }
 
+    /** The music player, for Stream (what is playing, and "Silence this phone"). */
+    public ExoPlayer streamPlayer() { return player; }
+
     @Override
     public MediaSession onGetSession(MediaSession.ControllerInfo controllerInfo) {
         return session;

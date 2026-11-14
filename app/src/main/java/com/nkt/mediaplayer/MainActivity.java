@@ -372,6 +372,10 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
             closeDrawer();
             startActivity(new Intent(this, NktShareActivity.class));
         }, null));
+        drawerItems.addView(menuRow(R.drawable.ic_wifi, getString(R.string.stream), getString(R.string.stream_long), false, false, () -> {
+            closeDrawer();
+            startActivity(new Intent(this, StreamActivity.class));
+        }, null));
         drawerItems.addView(menuRow(R.drawable.ic_settings, getString(R.string.menu_settings), null, page == SETTINGS, false, () -> {
             closeDrawer();
             setPage(SETTINGS);

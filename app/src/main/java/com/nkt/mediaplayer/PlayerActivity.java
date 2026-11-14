@@ -175,6 +175,7 @@ public class PlayerActivity extends Activity {
         KaraokeProcessor.enabled = Prefs.karaoke(this);
         KaraokeProcessor.strength = Prefs.karaokeStrength(this);
         player = Players.build(this, false);
+        StreamHub.onVideoPlayer(player);
         applyVideoEnd();
         playerView.setPlayer(player);
         player.addListener(new Player.Listener() {
@@ -796,7 +797,7 @@ public class PlayerActivity extends Activity {
     @Override
     protected void onDestroy() {
         ui.removeCallbacksAndMessages(null);
-        if (player != null) { player.release(); player = null; }
+        if (player != null) { StreamHub.onVideoPlayer(null); player.release(); player = null; }
         super.onDestroy();
     }
 

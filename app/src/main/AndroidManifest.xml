@@ -262,6 +262,21 @@
                 android:value="User-started local Wi-Fi file sharing (FTP server) that runs until the user stops it" />
         </service>
 
+        <!-- Stream: let other devices listen or watch along (screens and the service that keeps it running) -->
+        <activity
+            android:name=".StreamActivity"
+            android:exported="false"
+            android:launchMode="singleTop" />
+        <activity android:name=".SharedLibraryActivity" android:exported="false" />
+        <service
+            android:name=".StreamService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-started local Wi-Fi streaming of the playing song or video (web server) that runs until the user stops it" />
+        </service>
+
         <!-- NKT Share tile in the quick settings panel: tap to start / stop sharing -->
         <service
             android:name=".NktShareTile"

@@ -856,4 +856,109 @@
     <string name="pick_image_empty">No pictures found on this phone.</string>
     <string name="widget_idle">Nothing playing</string>
     <string name="widget_idle_sub">Tap to open</string>
+
+    <!-- Stream: let other devices listen or watch along -->
+    <string name="stream">Stream</string>
+    <string name="stream_caps">STREAM</string>
+    <string name="stream_long">Let other devices listen or watch along</string>
+    <string name="stream_to_devices">Stream to devices</string>
+    <string name="stream_notif_title">Streaming is on</string>
+    <string name="stream_failed">Couldn\'t start streaming. Try another port in the address, or try again.</string>
+    <string name="stream_on">Streaming is ON</string>
+    <string name="stream_on_sub">Waiting for a device to connect</string>
+    <string name="stream_off">Streaming is OFF</string>
+    <string name="stream_off_sub">Tap START, then scan the code on the other device</string>
+    <string name="stream_intro">Anyone on the same Wi-Fi, or on your hotspot, can listen or watch in a browser. No app needed.</string>
+    <string name="stream_intro2">They see your album art, lyrics and visualiser, and hear the original song, without equalizer or karaoke. Streaming stays on until you press STOP.</string>
+    <string name="stream_scan">Scan with the other device\'s camera</string>
+    <string name="stream_share_link">SHARE LINK</string>
+    <string name="stream_edit_address">Edit address</string>
+    <string name="stream_keeps">Streaming keeps running when you leave this screen. Stop it here or from the notification.</string>
+    <string name="stream_what">WHAT WILL BE STREAMED</string>
+    <string name="stream_now">NOW STREAMING</string>
+    <string name="stream_now_hint">Pause, skip or seek here, on Now Playing or from the notification, and every listener follows. Listeners also get the album art, lyrics and visualiser you have on screen.</string>
+    <string name="stream_what_sub">The song or video, with its album art, lyrics and visualiser</string>
+    <string name="stream_nothing">Nothing playing</string>
+    <string name="stream_cant">This one can\'t be streamed</string>
+    <string name="stream_playback">PLAYBACK</string>
+    <string name="stream_silence">Silence this phone</string>
+    <string name="stream_silence_off">Keep streaming, but no sound from this phone</string>
+    <string name="stream_silence_on">This phone is silent. Listeners still hear everything.</string>
+    <string name="stream_limit">Most listeners at once</string>
+    <string name="stream_no_limit">No limit</string>
+    <string name="stream_library_caps">LIBRARY FOR LISTENERS</string>
+    <string name="stream_pick">Let listeners pick their own</string>
+    <string name="stream_pick_sub">They can browse and play songs and videos on their own device</string>
+    <string name="stream_shared">Shared with listeners</string>
+    <string name="stream_shared_sub">%1$s · %2$s · %3$s</string>
+    <string name="stream_all_kinds">Audio and Videos</string>
+    <string name="stream_chosen">Chosen files and folders</string>
+    <string name="stream_dl_on">downloads on</string>
+    <string name="stream_dl_off">downloads off</string>
+    <string name="stream_listening_caps">LISTENING NOW · %d</string>
+    <string name="kick_caps">KICK</string>
+    <string name="stream_chip_on">STREAMING</string>
+    <string name="stream_chip_silent">PHONE SILENT</string>
+    <plurals name="stream_listeners">
+        <item quantity="one">%d device listening</item>
+        <item quantity="other">%d devices listening</item>
+    </plurals>
+    <plurals name="stream_items">
+        <item quantity="one">%d item</item>
+        <item quantity="other">%d items</item>
+    </plurals>
+    <plurals name="stream_folders">
+        <item quantity="one">%d folder</item>
+        <item quantity="other">%d folders</item>
+    </plurals>
+    <plurals name="stream_files">
+        <item quantity="one">%d file</item>
+        <item quantity="other">%d files</item>
+    </plurals>
+    <plurals name="stream_chip_listening">
+        <item quantity="one">%d LISTENING</item>
+        <item quantity="other">%d LISTENING</item>
+    </plurals>
+
+    <!-- Stream: edit address -->
+    <string name="stream_edit_title">EDIT ADDRESS</string>
+    <string name="stream_name_caps">NAME</string>
+    <string name="stream_port_caps">PORT</string>
+    <string name="stream_new_address_caps">NEW ADDRESS</string>
+    <string name="stream_ip_note">The numbers at the start come from your Wi-Fi and can\'t be changed.</string>
+    <string name="stream_pin">Ask for a PIN</string>
+    <string name="stream_pin_sub">Listeners type 4 digits before they hear anything</string>
+    <string name="stream_guess_warn">Short or common names are easy to guess. Anyone on this Wi-Fi who guesses it can listen. Use a longer name or turn on the PIN.</string>
+    <string name="stream_restart_note">Saving restarts the stream. Listeners need the new link or QR code.</string>
+    <string name="stream_random_name">Pick a random name</string>
+    <string name="stream_bad_name">The name can have letters, numbers, - and _ only</string>
+    <string name="stream_bad_port">The port must be between 1024 and 65535</string>
+    <string name="stream_bad_pin">The PIN is 4 digits</string>
+
+    <!-- Stream: shared with listeners -->
+    <string name="stream_shared_caps">SHARED WITH LISTENERS</string>
+    <string name="stream_shared_intro">Listeners can play these on their own device, at their own pace. Your phone only stores and serves the files.</string>
+    <string name="stream_allow_dl">Allow downloads</string>
+    <string name="stream_allow_dl_sub">Off: listeners can only play and watch. On: they can save copies to their device.</string>
+    <string name="stream_what_to_share">WHAT TO SHARE</string>
+    <string name="stream_everything">Everything in Audio and Videos</string>
+    <string name="stream_only_choose">Only what I choose</string>
+    <string name="stream_only_choose_sub">Browse your phone and tick files and folders</string>
+    <string name="stream_browse_caps">BROWSE YOUR PHONE</string>
+    <string name="stream_need_access">Tap here to allow access, so you can browse your phone</string>
+    <string name="stream_access_text">So you can pick files and folders to share, turn on \u201CAllow access to manage all files\u201D for NKT Media Player on the next screen, then come back.</string>
+    <string name="stream_up">Up one folder</string>
+    <string name="stream_counting">Counting…</string>
+    <string name="stream_phone">Phone</string>
+    <string name="stream_select_all">Select all in this folder</string>
+    <string name="stream_n_of">%1$d of %2$d</string>
+    <string name="stream_empty_folder">No songs or videos here</string>
+    <string name="stream_whole_folder">Whole folder</string>
+    <string name="stream_some_items">Some items</string>
+    <string name="stream_not_shared">Not shared</string>
+    <string name="stream_items_word">items</string>
+    <string name="stream_selected">%1$s and %2$s selected</string>
+    <string name="stream_about_shared">About %d items are shared</string>
+    <string name="stream_done_caps">DONE</string>
+    <string name="stream_hidden_tag">HIDDEN</string>
 </resources>
