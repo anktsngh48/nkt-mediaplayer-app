@@ -225,6 +225,13 @@ final class StreamServer {
             if (!"HEAD".equals(r.method)) out.write(b);
             return;
         }
+        if (rel.startsWith("th/")) {
+            byte[] b = StreamHub.thumbJpeg(rel.substring(3));
+            if (b == null) { text(out, 404, "text/plain", "No picture"); return; }
+            head(out, 200, "image/jpeg", b.length, "Cache-Control: private, max-age=600\r\n");
+            if (!"HEAD".equals(r.method)) out.write(b);
+            return;
+        }
         if (rel.startsWith("ph/")) {
             byte[] b = StreamHub.photoJpeg(rel.substring(3));
             if (b == null) { text(out, 404, "text/plain", "No photo"); return; }
@@ -316,10 +323,15 @@ final class StreamServer {
     // ── Songs and videos ─────────────────────────────────────────────────────
 
     private void media(Req r, OutputStream out, String id, boolean download) throws IOException {
-        MediaInfo m = StreamHub.resolve(id);
+        MediaInfo m = download ? StreamHub.resolveDownload(id) : StreamHub.resolve(id);
         if (m == null) { text(out, 404, "text/plain", "Not available"); return; }
         if (download && (!StreamPrefs.allowDownloads(c) || StreamHub.draining)) { text(out, 403, "text/plain", "Downloads are off"); return; }
-        Src src = Src.of(c, m);
+        Src src = null;
+        if (!download && m.video && StreamPrefs.audioOnly(c) && id.equals(StreamHub.liveId())) {          // "only audio for videos": send just the sound
+            File af = StreamHub.audioOnlyFile(m, id);
+            if (af != null) src = Src.ofFile(af, "audio/mp4");
+        }
+        if (src == null) src = Src.of(c, m);
         if (src == null) { text(out, 404, "text/plain", "Not available"); return; }
         final boolean viaLib = StreamHub.viaLibraryOnly(id);
         long len = src.length;
@@ -374,6 +386,15 @@ final class StreamServer {
         private File file;
         private Uri uri;
         private ContentResolver cr;
+
+        static Src ofFile(File f, String mime) {
+            Src s = new Src();
+            s.file = f;
+            s.length = f.length();
+            s.name = f.getName();
+            s.mime = mime;
+            return s;
+        }
 
         static Src of(Context c, MediaInfo m) {
             try {

@@ -60,7 +60,7 @@ public final class StreamHub {
         boolean has;
         String id = "", title = "", artist = "", album = "";
         long dur, pos, at;
-        boolean playing, video, ok, priv;
+        boolean playing, video, ok, priv, ao;      // ao: a video that goes out as sound only
         float speed = 1f;
         int index, count;
     }
@@ -255,7 +255,9 @@ public final class StreamHub {
                 Context c = app;
                 int view = Prefs.npNow(c), style = Prefs.vizStyle(c), sp = Prefs.vizSpeed(c), sa = Prefs.saNote(c);
                 boolean lib = StreamPrefs.libraryOn(c), dl = StreamPrefs.allowDownloads(c);
-                boolean changed = view != lastView || style != lastStyle || sp != lastSpeedOpt || sa != lastSa || lib != lastLib || dl != lastDl;
+                int hv = StreamPrefs.hostVolOn(c) ? sysVolPct() : -1;        // the volume buttons of this phone reach listeners within half a second
+                boolean changed = view != lastView || style != lastStyle || sp != lastSpeedOpt || sa != lastSa || lib != lastLib || dl != lastDl || hv != lastHv;
+                lastHv = hv;
                 lastView = view; lastStyle = style; lastSpeedOpt = sp; lastSa = sa; lastLib = lib; lastDl = dl;
                 applySilence();
                 if (++n % 20 == 0) { capture(); changed = true; }                // every ~10 s: a fresh anchor for everyone
@@ -290,9 +292,11 @@ public final class StreamHub {
                 s.artist = mi.artist;
                 s.album = mi.album;
                 s.dur = dur;
-                s.video = mi.video;
+                s.video = mi.video && !StreamPrefs.audioOnly(app);          // "only audio for videos": the listeners treat it like a song
                 String sc = mi.uri == null ? "" : String.valueOf(mi.uri.getScheme());
                 s.ok = "content".equals(sc) || "file".equals(sc);
+                s.ao = mi.video && !s.video;
+                if (s.ao && s.ok) prepareAudio(mi, s.id);
                 s.pos = Math.max(0, p.getCurrentPosition());
                 s.at = System.currentTimeMillis();
                 s.playing = p.getPlayWhenReady() && p.getPlaybackState() != Player.STATE_ENDED && p.getPlaybackState() != Player.STATE_IDLE;    // buffering after a seek still counts as playing
@@ -473,11 +477,11 @@ public final class StreamHub {
                 o.put("count", s.count);
                 o.put("lyr", s.id.equals(lyricsId));
             }
-            o.put("view", Prefs.npNow(c));          // 0 visualiser, 1 lyrics, 2 art: what the host is looking at
+            o.put("view", s.has && s.ao ? 2 : Prefs.npNow(c));          // 0 visualiser, 1 lyrics, 2 art: what the host is looking at
             o.put("style", Prefs.vizStyle(c));      // 0 windscreen, 1 gamaka, 2 steady
             o.put("speedOpt", Prefs.vizSpeed(c));
             o.put("sa", Prefs.saNote(c));
-            if (StreamPrefs.hostVolOn(c)) o.put("hv", StreamPrefs.hostVol(c) / 100.0);     // listeners use this volume, only while it is on
+            if (StreamPrefs.hostVolOn(c)) o.put("hv", sysVolPct() / 100.0);     // this phone's own volume, followed by every listener
             o.put("lib", StreamPrefs.libraryOn(c) && !draining);
             o.put("dl", StreamPrefs.allowDownloads(c) && !draining);
             o.put("q", new JSONArray(queueJson));
@@ -551,6 +555,54 @@ public final class StreamHub {
             return m;
         }
         return null;
+    }
+
+    private static final Map<String, byte[]> thumbCache = Collections.synchronizedMap(new LinkedHashMap<String, byte[]>(16, 0.75f, true) {
+        @Override protected boolean removeEldestEntry(Map.Entry<String, byte[]> e) { return size() > 400; }
+    });
+    private static final byte[] NO_THUMB = new byte[0];
+
+    /** A small picture (about 160 px) for the library list: a photo, a video's frame or a song's own art. Not on the main thread. */
+    static byte[] thumbJpeg(String id) {
+        if (!running || draining || app == null || id == null) return null;
+        MediaInfo m = resolve(id);
+        if (m == null) return null;
+        if (m.image && !StreamPrefs.share(app, 2)) return null;
+        String key = id + "/" + ArtStore.version.get();
+        byte[] b = thumbCache.get(key);
+        if (b != null) return b == NO_THUMB ? null : b;
+        try {
+            Bitmap bmp = null;
+            if (m.image) {
+                byte[] j = StreamPhoto.jpeg(app, m, 160);
+                if (j != null) b = j;
+            } else if (m.video) {
+                android.media.MediaMetadataRetriever r = new android.media.MediaMetadataRetriever();
+                try {
+                    if ("file".equals(m.uri.getScheme()) && m.uri.getPath() != null) r.setDataSource(m.uri.getPath()); else r.setDataSource(app, m.uri);
+                    bmp = r.getFrameAtTime(1_000_000, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
+                } finally { try { r.release(); } catch (Throwable ignored) { } }
+            } else {
+                bmp = NotifArt.artFor(app, m);
+            }
+            if (b == null && bmp != null) {
+                int w = bmp.getWidth(), h = bmp.getHeight(), mx = Math.max(w, h);
+                if (mx > 160) { float f = 160f / mx; bmp = Bitmap.createScaledBitmap(bmp, Math.max(1, Math.round(w * f)), Math.max(1, Math.round(h * f)), true); }
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                bmp.compress(Bitmap.CompressFormat.JPEG, 80, out);
+                b = out.toByteArray();
+            }
+        } catch (Throwable ignored) { }
+        thumbCache.put(key, b == null ? NO_THUMB : b);
+        return b;
+    }
+
+    /** What a download may be: anything streamed (queue, library) plus the photo on show, as the original file. */
+    static MediaInfo resolveDownload(String id) {
+        MediaInfo m = resolve(id);
+        if (m != null || id == null || draining) return m;
+        m = photoMap.get(id);
+        return m != null && StreamPrefs.share(app, 2) ? m : null;
     }
 
     // ── Pictures ──
@@ -742,13 +794,99 @@ public final class StreamHub {
         if (running) bump();
     }
 
-    /** The host's "control the volume of listeners" switch or level changed: everyone follows at once. */
+    /** This phone's media volume (what its volume buttons change), 0..100. */
+    static int sysVolPct() {
+        try {
+            android.media.AudioManager am = (android.media.AudioManager) app.getSystemService(Context.AUDIO_SERVICE);
+            int max = am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC);
+            return max <= 0 ? 100 : Math.round(100f * am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) / max);
+        } catch (Throwable t) { return 100; }
+    }
+
+    private static int lastHv = -2;
+
+    /** The host's "share your volume level" switch changed: everyone follows at once. */
     public static void hostVolumeChanged(Context c) {
         if (app == null) app = c.getApplicationContext();
         if (running) bump();
     }
 
     /** Streaming or keeping to this phone: songs 0, videos 1, photos 2. */
+    /** Videos go out as sound only (on) or with the picture (off). */
+    public static void setAudioOnly(Context c, boolean on) {
+        if (app == null) app = c.getApplicationContext();
+        StreamPrefs.setAudioOnly(c, on);
+        if (running) main.post(() -> { capture(); bump(); });
+    }
+
+    /** The id of what is being streamed live right now, or "". */
+    static String liveId() { Snap s = snap; return s.has ? s.id : ""; }
+
+    private static final Object AO_LOCK = new Object();
+    private static volatile String aoPrepared = "";
+
+    /** Gets the sound of a video ready in the background, so the first listener does not wait. */
+    private static void prepareAudio(final MediaInfo mi, final String id) {
+        if (id == null || id.equals(aoPrepared)) return;
+        aoPrepared = id;
+        new Thread(() -> audioOnlyFile(mi, id), "nkt-stream-audio").start();
+    }
+
+    /** The sound of a video copied out as it is (no re-encoding) into a small .m4a, so listeners only receive the audio. Null when that cannot be done (the whole video is sent instead). Not on the main thread. */
+    static java.io.File audioOnlyFile(MediaInfo m, String id) {
+        if (app == null || m == null || m.uri == null || id == null) return null;
+        java.io.File dir = new java.io.File(app.getCacheDir(), "stream_audio");
+        java.io.File out = new java.io.File(dir, Integer.toHexString(id.hashCode()) + ".m4a");
+        synchronized (AO_LOCK) {
+            if (out.isFile() && out.length() > 0) { out.setLastModified(System.currentTimeMillis()); return out; }
+            dir.mkdirs();
+            java.io.File[] old = dir.listFiles();
+            if (old != null && old.length >= 3) {
+                java.util.Arrays.sort(old, (a, b) -> Long.compare(a.lastModified(), b.lastModified()));
+                for (int i = 0; i < old.length - 2; i++) old[i].delete();
+            }
+            java.io.File tmp = new java.io.File(dir, out.getName() + ".tmp");
+            android.media.MediaExtractor ex = new android.media.MediaExtractor();
+            android.media.MediaMuxer mux = null;
+            boolean ok = false;
+            try {
+                ex.setDataSource(app, m.uri, null);
+                int track = -1;
+                android.media.MediaFormat fmt = null;
+                for (int i = 0; i < ex.getTrackCount(); i++) {
+                    android.media.MediaFormat f = ex.getTrackFormat(i);
+                    String mt = f.getString(android.media.MediaFormat.KEY_MIME);
+                    if (mt != null && mt.startsWith("audio/")) { track = i; fmt = f; break; }
+                }
+                if (track < 0) return null;
+                ex.selectTrack(track);
+                mux = new android.media.MediaMuxer(tmp.getAbsolutePath(), android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
+                int outTrack = mux.addTrack(fmt);
+                mux.start();
+                java.nio.ByteBuffer buf = java.nio.ByteBuffer.allocate(1 << 20);
+                android.media.MediaCodec.BufferInfo bi = new android.media.MediaCodec.BufferInfo();
+                while (true) {
+                    buf.clear();
+                    int n = ex.readSampleData(buf, 0);
+                    if (n < 0) break;
+                    bi.set(0, n, ex.getSampleTime(), (ex.getSampleFlags() & android.media.MediaExtractor.SAMPLE_FLAG_SYNC) != 0 ? android.media.MediaCodec.BUFFER_FLAG_KEY_FRAME : 0);
+                    mux.writeSampleData(outTrack, buf, bi);
+                    ex.advance();
+                }
+                mux.stop();
+                ok = true;
+            } catch (Throwable e) {
+                ok = false;
+            } finally {
+                try { if (mux != null) mux.release(); } catch (Throwable ignored) { }
+                try { ex.release(); } catch (Throwable ignored) { }
+            }
+            if (ok && tmp.length() > 0 && tmp.renameTo(out)) return out;
+            tmp.delete();
+            return null;
+        }
+    }
+
     public static void setShare(Context c, int kind, boolean on) {
         if (app == null) app = c.getApplicationContext();
         StreamPrefs.setShare(c, kind, on);

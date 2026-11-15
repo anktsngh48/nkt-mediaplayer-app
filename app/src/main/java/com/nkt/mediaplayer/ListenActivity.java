@@ -76,7 +76,11 @@ public class ListenActivity extends Activity {
     private ScrollView lyrScroll;
     private LinearLayout lyrBox, viewPills, followRow, libRow;
     private View libBtn, backLiveBtn, fsBtn;
-    private LinearLayout ownRow, autoRow, timesRow;
+    private LinearLayout ownRow, autoRow, timesRow, ctlGroup, liveRow;
+    private final TextView[] liveBtn = new TextView[4];    // back 10 s, play/pause, forward 10 s, go live (the host's live video)
+    private TextView fsFwd, fsGo;
+    private ImageView waitArt;
+    private View nudgeHint, dlBtn;
     private final TextView[] ownBtn = new TextView[5];     // previous, -10 s, play/pause, +10 s, next
     private Switch autoSw;
     private android.widget.SeekBar fsSeek;
@@ -218,6 +222,19 @@ public class ListenActivity extends Activity {
         liveHost.setPadding(dp(12), dp(6), dp(12), dp(6));
         liveBox.addView(liveHost, new LinearLayout.LayoutParams(WRAP, WRAP));
 
+        // while the host plays nothing: the logo, one yellow line, and stop
+        waitArt = new ImageView(this);
+        waitArt.setImageResource(R.drawable.nkt_logo);
+        waitArt.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        waitArt.setBackground(rounded(0xFF0B1222, 18));
+        waitArt.setPadding(dp(46), dp(46), dp(46), dp(46));
+        waitArt.setClipToOutline(true);
+        waitArt.setVisibility(View.GONE);
+        LinearLayout.LayoutParams wal = lp(dp(260), 260, 24, 0);
+        wal.width = dp(260);
+        wal.gravity = Gravity.CENTER_HORIZONTAL;
+        liveBox.addView(waitArt, wal);
+
         libRow = new LinearLayout(this);
         libBtn = outlined(getString(R.string.listen_library_caps), v -> startActivity(new Intent(this, ListenLibraryActivity.class)));
         backLiveBtn = outlined(getString(R.string.listen_back_live_caps), v -> ListenService.backToLive(this));
@@ -285,6 +302,9 @@ public class ListenActivity extends Activity {
         });
         fsBtn.setVisibility(View.GONE);
         liveBox.addView(fsBtn, lp(MATCH, 44, 10, 0));
+        dlBtn = outlined(getString(R.string.listen_download_caps), v -> ListenService.download(this));
+        dlBtn.setVisibility(View.GONE);
+        liveBox.addView(dlBtn, lp(MATCH, 44, 10, 0));
 
         liveTitle = text("", 20, R.color.text, true);
         liveTitle.setGravity(Gravity.CENTER);
@@ -305,7 +325,13 @@ public class ListenActivity extends Activity {
         bar.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF33405A));
         bar.setPadding(0, dp(11), 0, dp(11));
         bar.setOnTouchListener((v, e) -> {                 // a pick of your own can be dragged; the host's song follows the host
-            if (!ListenService.own) return false;
+            if (!ListenService.own) {                      // the host's live video can be taken back and returned to the live edge
+                if (!(ListenService.has && ListenService.video) || ListenService.durMs <= 0) return false;
+                if (e.getActionMasked() == MotionEvent.ACTION_DOWN) v.getParent().requestDisallowInterceptTouchEvent(true);
+                if (e.getActionMasked() == MotionEvent.ACTION_UP)
+                    ListenService.shiftTo(this, (long) (ListenService.durMs * Math.max(0f, Math.min(1f, e.getX() / Math.max(1, v.getWidth())))));
+                return true;
+            }
             ExoPlayer pp = ListenService.player;
             long d = pp == null ? 0 : pp.getDuration();
             if (d > 0 && e.getActionMasked() != MotionEvent.ACTION_CANCEL) {
@@ -334,6 +360,18 @@ public class ListenActivity extends Activity {
         }
         ownRow.setVisibility(View.GONE);
         liveBox.addView(ownRow, lp(MATCH, WRAP, 14, 0));
+        // the host's live video: back 10 s, play/pause, forward 10 s, and GO LIVE
+        liveRow = new LinearLayout(this);
+        String[] liveNames = {"−10", getString(R.string.listen_pause_caps), "+10", getString(R.string.listen_go_live_caps)};
+        for (int i = 0; i < 4; i++) {
+            final int k = i;
+            liveBtn[i] = (TextView) outlined(liveNames[i], x -> liveTap(k));
+            LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(0, dp(46), i == 3 ? 1.5f : 1f);
+            if (i > 0) bl.setMarginStart(dp(6));
+            liveRow.addView(liveBtn[i], bl);
+        }
+        liveRow.setVisibility(View.GONE);
+        liveBox.addView(liveRow, lp(MATCH, WRAP, 14, 0));
         autoRow = new LinearLayout(this);
         autoRow.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout at = new LinearLayout(this);
@@ -344,18 +382,19 @@ public class ListenActivity extends Activity {
         autoSw = new Switch(this);
         autoSw.setThumbTintList(android.content.res.ColorStateList.valueOf(getColor(R.color.accent)));
         autoSw.setChecked(ListenService.autoNext(this));
-        autoSw.setOnCheckedChangeListener((b, on2) -> ListenService.setAutoNext(this, on2));
+        autoSw.setOnCheckedChangeListener((b, on2) -> { if (ListenService.ownKind == 2) ListenService.setAutoNextPhoto(this, on2); else ListenService.setAutoNext(this, on2); });
         autoRow.addView(autoSw);
         autoRow.setVisibility(View.GONE);
         liveBox.addView(autoRow, lp(MATCH, WRAP, 14, 0));
 
-        LinearLayout ctl = group();
+        LinearLayout ctl = ctlGroup = group();
         liveBox.addView(ctl, lp(MATCH, WRAP, 18, 0));
         volT = text("", 14, R.color.accent, true);
         ctl.addView(stepRow(getString(R.string.listen_volume), volT, () -> { stepVolume(-0.1f); }, () -> { stepVolume(0.1f); }));
         nudT = text("", 14, R.color.accent, true);
         ctl.addView(stepRow(getString(R.string.listen_nudge), nudT, () -> stepNudge(-50), () -> stepNudge(50)));
-        liveBox.addView(text(getString(R.string.listen_nudge_hint), 12, R.color.muted, false), lp(MATCH, WRAP, 8, 0));
+        nudgeHint = text(getString(R.string.listen_nudge_hint), 12, R.color.muted, false);
+        liveBox.addView(nudgeHint, lp(MATCH, WRAP, 8, 0));
 
         followRow = new LinearLayout(this);
         followRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -403,19 +442,27 @@ public class ListenActivity extends Activity {
         final boolean mine = ListenService.own;
         fsSeek = null;
         fsPlay = null;
-        if (mine && video) {                                    // your own video can be dragged to any point
+        final boolean liveVid = !mine && video && ListenService.has;      // the host's live video: can be taken back, with GO LIVE
+        fsFwd = null;
+        fsGo = null;
+        if ((mine || liveVid) && video) {                       // your own video, or the live one, can be dragged to any point
             fsSeek = new android.widget.SeekBar(this);
             fsSeek.setMax(1000);
             fsSeek.setProgressTintList(android.content.res.ColorStateList.valueOf(getColor(R.color.accent)));
             fsSeek.setThumbTintList(android.content.res.ColorStateList.valueOf(getColor(R.color.accent)));
             fsSeek.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
                 @Override public void onProgressChanged(android.widget.SeekBar sb, int v2, boolean user) {
+                    if (!ListenService.own) return;
                     ExoPlayer pp = ListenService.player;
                     long d = pp == null ? 0 : pp.getDuration();
                     if (user && d > 0) pp.seekTo(d * v2 / 1000);
                 }
                 @Override public void onStartTrackingTouch(android.widget.SeekBar sb) { fsSeeking = true; ui.removeCallbacks(fsHide); }
-                @Override public void onStopTrackingTouch(android.widget.SeekBar sb) { fsSeeking = false; showFsBar(); }
+                @Override public void onStopTrackingTouch(android.widget.SeekBar sb) {
+                    if (!ListenService.own && ListenService.durMs > 0) ListenService.shiftTo(ListenActivity.this, ListenService.durMs * sb.getProgress() / 1000);
+                    fsSeeking = false;
+                    showFsBar();
+                }
             });
             fsBar.addView(fsSeek, new LinearLayout.LayoutParams(MATCH, dp(36)));
         }
@@ -430,6 +477,19 @@ public class ListenActivity extends Activity {
                 String[] nm = {getString(R.string.listen_prev_caps), "−10", getString(R.string.listen_play_caps), "+10", getString(R.string.listen_next_caps)};
                 TextView t = (TextView) outlined(nm[k], x -> { ownTap(kk); showFsBar(); });
                 if (k == 2) fsPlay = t;
+                LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(0, dp(44), 1f);
+                l.setMarginStart(dp(8));
+                fsRow.addView(t, l);
+            }
+        }
+        if (liveVid) {                                          // back 10 s, play/pause, forward 10 s, go live
+            String[] nm = {"−10", getString(R.string.listen_pause_caps), "+10", getString(R.string.listen_go_live_caps)};
+            for (int k = 0; k < 4; k++) {
+                final int kk = k;
+                TextView t = (TextView) outlined(nm[k], x -> { liveTap(kk); showFsBar(); });
+                if (k == 1) fsPlay = t;
+                if (k == 2) fsFwd = t;
+                if (k == 3) fsGo = t;
                 LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(0, dp(44), 1f);
                 l.setMarginStart(dp(8));
                 fsRow.addView(t, l);
@@ -472,6 +532,8 @@ public class ListenActivity extends Activity {
         fsBar = null;
         fsSeek = null;
         fsPlay = null;
+        fsFwd = null;
+        fsGo = null;
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
         immersive(false);
     }
@@ -491,6 +553,16 @@ public class ListenActivity extends Activity {
             else p.setPlayWhenReady(!p.getPlayWhenReady());
         }
         update();
+    }
+
+    /** Back 10 s, play/pause, forward 10 s, go live: for the host's live video. */
+    private void liveTap(int k) {
+        if (ListenService.own || !ListenService.has || !ListenService.video) return;
+        if (k == 0) ListenService.shiftBy(this, -10_000);
+        else if (k == 1) ListenService.shiftToggle(this);
+        else if (k == 2) { if (ListenService.timeshift) ListenService.shiftBy(this, 10_000); }
+        else ListenService.goLive(this);
+        ui.postDelayed(this::update, 150);
     }
 
     private void showFsBar() {
@@ -932,6 +1004,13 @@ public class ListenActivity extends Activity {
         fsBtn.setVisibility(vid || (photoOn && photoBmp != null && photoShownId.equals(ListenService.shownPhoto())) ? View.VISIBLE : View.GONE);
         if (ownPhoto) liveArtist.setText(ListenService.ownQueue.size() > 1 ? getString(R.string.listen_photo_n, ListenService.ownIdx + 1, ListenService.ownQueue.size()) : "");
         ownRow.setVisibility(own ? View.VISIBLE : View.GONE);
+        boolean liveVideo = !own && vid;
+        liveRow.setVisibility(liveVideo ? View.VISIBLE : View.GONE);
+        boolean shifted = ListenService.timeshift;
+        liveBtn[2].setEnabled(shifted); liveBtn[2].setAlpha(shifted ? 1f : 0.35f);
+        liveBtn[3].setEnabled(shifted); liveBtn[3].setAlpha(shifted ? 1f : 0.35f);
+        if (fsFwd != null) { fsFwd.setEnabled(shifted); fsFwd.setAlpha(shifted ? 1f : 0.35f); }
+        if (fsGo != null) { fsGo.setEnabled(shifted); fsGo.setAlpha(shifted ? 1f : 0.35f); }
         autoRow.setVisibility(own ? View.VISIBLE : View.GONE);
         bar.setVisibility(ownPhoto ? View.GONE : View.VISIBLE);
         timesRow.setVisibility(ownPhoto ? View.GONE : View.VISIBLE);
@@ -941,8 +1020,10 @@ public class ListenActivity extends Activity {
         ownBtn[4].setEnabled(hasNext); ownBtn[4].setAlpha(hasNext ? 1f : 0.35f);
         boolean playing = p != null && p.getPlayWhenReady() && p.getPlaybackState() != androidx.media3.common.Player.STATE_ENDED;
         ownBtn[2].setText(getString(playing ? R.string.listen_pause_caps : R.string.listen_play_caps));
+        liveBtn[1].setText(getString(playing ? R.string.listen_pause_caps : R.string.listen_play_caps));
         if (fsPlay != null) fsPlay.setText(getString(playing ? R.string.listen_pause_caps : R.string.listen_play_caps));
-        if (autoSw.isChecked() != ListenService.autoNext(this)) autoSw.setChecked(ListenService.autoNext(this));
+        boolean autoNow = ListenService.ownKind == 2 ? ListenService.autoNextPhoto(this) : ListenService.autoNext(this);     // photos have a switch of their own, off at first
+        if (autoSw.isChecked() != autoNow) autoSw.setChecked(autoNow);
         if (ListenService.libOffAt != seenLibOff) {                     // the host switched the library off
             seenLibOff = ListenService.libOffAt;
             android.widget.Toast.makeText(this, R.string.listen_lib_off_note, android.widget.Toast.LENGTH_LONG).show();
@@ -963,9 +1044,19 @@ public class ListenActivity extends Activity {
         if (fsSeek != null && !fsSeeking) fsSeek.setProgress(dur > 0 ? (int) Math.min(1000, pos * 1000 / dur) : 0);
         tCur.setText(Ui.time(pos));
         tDur.setText(Ui.time(dur));
-        volT.setText(ListenService.hostVol >= 0f ? getString(R.string.listen_vol_host, Math.round(ListenService.hostVol * 100)) : Math.round(ListenService.volume(this) * 100) + "%");
+        volT.setText(Math.round(ListenService.volume(this) * 100) + "%");
         int n = ListenService.nudgeMs;
         nudT.setText((n > 0 ? "+" : "") + n + " ms");
+
+        // nothing is playing: the same plain screen as the browser (logo, one yellow line, stop)
+        boolean waiting = !has && !own && !photoOn;
+        dlBtn.setVisibility(!waiting && ListenService.dlOn && !ListenService.downloadId().isEmpty() ? View.VISIBLE : View.GONE);
+        View[] normal = {libRow, viewPills, stage, videoView, fsBtn, liveTitle, liveArtist, bar, timesRow, ownRow, liveRow, autoRow, ctlGroup, nudgeHint, followRow};
+        for (View nv : normal) if (waiting) nv.setVisibility(View.GONE);
+        if (!waiting) { ctlGroup.setVisibility(View.VISIBLE); nudgeHint.setVisibility(View.VISIBLE); }
+        waitArt.setVisibility(waiting ? View.VISIBLE : View.GONE);
+        if (waiting) liveStatus.setText((ListenService.priv ? getString(R.string.listen_private) : ListenService.status).toUpperCase());
+        if (waiting && fsView != null) exitFullscreen();
     }
 
     private void resetArt() {

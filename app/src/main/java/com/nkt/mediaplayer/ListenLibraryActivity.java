@@ -1,6 +1,7 @@
 package com.nkt.mediaplayer;
 
 import android.app.Activity;
+import android.content.Intent;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.os.Handler;
@@ -42,6 +43,14 @@ public class ListenLibraryActivity extends Activity {
     private final List<String[]> shown = new ArrayList<>();      // what the list on screen holds, in order
     private boolean loaded = false;
     private ScrollView sv;
+    // thumbnails, picking several, and what to do with them
+    private static final android.util.LruCache<String, android.graphics.Bitmap> thumbs = new android.util.LruCache<>(300);
+    private static final java.util.concurrent.ExecutorService thumbPool = java.util.concurrent.Executors.newFixedThreadPool(3);
+    private final List<View> rowViews = new ArrayList<>();
+    private final java.util.LinkedHashSet<String> picked = new java.util.LinkedHashSet<>();
+    private boolean selecting = false, lastDl = false;
+    private TextView selBtn, shareBtn, saveBtn;
+    private LinearLayout selBar;
     // where you were, kept for the next time the library is opened during this listening
     private static long lastStamp = 0;
     private static int lastKind = 0;
@@ -78,6 +87,12 @@ public class ListenLibraryActivity extends Activity {
         LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(0, WRAP, 1f);
         tl.setMarginStart(dp(14));
         top.addView(title, tl);
+        selBtn = text(getString(R.string.listen_select_caps), 12, R.color.accent, true);
+        selBtn.setLetterSpacing(0.12f);
+        selBtn.setPadding(dp(14), dp(10), dp(14), dp(10));
+        selBtn.setVisibility(View.GONE);
+        selBtn.setOnClickListener(v -> { if (selecting) endSelect(); else startSelect(null); });
+        top.addView(selBtn);
         root.addView(top, new LinearLayout.LayoutParams(MATCH, dp(64)));
 
         search = new EditText(this);
@@ -132,6 +147,19 @@ public class ListenLibraryActivity extends Activity {
         svl.topMargin = dp(6);
         root.addView(sv, svl);
 
+        selBar = new LinearLayout(this);
+        selBar.setPadding(0, dp(8), 0, dp(8));
+        shareBtn = pickBtn(getString(R.string.listen_share_caps), v -> shareSelected());
+        saveBtn = pickBtn(getString(R.string.listen_save_caps), v -> saveSelected());
+        LinearLayout.LayoutParams sb1 = new LinearLayout.LayoutParams(0, dp(46), 1f);
+        LinearLayout.LayoutParams sb2 = new LinearLayout.LayoutParams(0, dp(46), 1f);
+        sb2.setMarginStart(dp(8));
+        selBar.addView(shareBtn, sb1);
+        selBar.addView(saveBtn, sb2);
+        selBar.setVisibility(View.GONE);
+        root.addView(selBar, new LinearLayout.LayoutParams(MATCH, WRAP));
+        sv.setOnScrollChangeListener((v, x, y, ox, oy) -> loadVisible());
+
         load();
     }
 
@@ -167,6 +195,7 @@ public class ListenLibraryActivity extends Activity {
     private void draw() {
         list.removeAllViews();
         shown.clear();
+        rowViews.clear();
         if (!loaded) return;
         String term = search.getText().toString().trim().toLowerCase();
         int n = 0;
@@ -182,32 +211,219 @@ public class ListenLibraryActivity extends Activity {
             none.setPadding(0, dp(18), 0, 0);
             list.addView(none);
         }
+        sv.post(this::loadVisible);
     }
 
-    private View row(String[] it, final int at) {
+    private View row(final String[] it, final int at) {
+        final String id = it[0];
+        final boolean dl = ListenService.dlOn;
         LinearLayout r = new LinearLayout(this);
-        r.setOrientation(LinearLayout.VERTICAL);
-        r.setPadding(dp(14), dp(10), dp(14), dp(10));
-        r.setBackground(stroked(0xFF111827, 0x1400E5FF, 14));
+        r.setGravity(Gravity.CENTER_VERTICAL);
+        r.setPadding(dp(10), dp(8), dp(6), dp(8));
+        boolean on = selecting && picked.contains(id);
+        r.setBackground(stroked(on ? 0xFF10213A : 0xFF111827, on ? getColor(R.color.accent) : 0x1400E5FF, 14));
+
+        final android.widget.ImageView th = new android.widget.ImageView(this);
+        th.setBackground(stroked(0xFF0B1222, 0x1400E5FF, 8));
+        th.setClipToOutline(true);
+        th.setTag(id);
+        int ph = "2".equals(it[4]) ? R.drawable.ic_image : "1".equals(it[4]) ? R.drawable.ic_play : R.drawable.ic_music;
+        thumbPlaceholder(th, ph);
+        android.graphics.Bitmap have = thumbs.get(id);
+        if (have != null) thumbShow(th, have);
+        r.addView(th, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        rowViews.add(r);
+        r.setTag(R.id.tag_row_thumb, th);
+
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
         TextView t = text(it[1], 14, R.color.text, true);
         t.setSingleLine(true);
         t.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        r.addView(t);
+        col.addView(t);
         long sec = 0;
         try { sec = Long.parseLong(it[3]); } catch (Exception ignored) { }
         String sub = (it[2].isEmpty() ? "" : it[2] + " · ") + ("2".equals(it[4]) ? getString(R.string.listen_library_photo) : Ui.time(sec * 1000));
-        TextView s = text(sub, 12, R.color.muted, false);
-        s.setSingleLine(true);
-        s.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        r.addView(s);
+        TextView sTv = text(sub, 12, R.color.muted, false);
+        sTv.setSingleLine(true);
+        sTv.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        col.addView(sTv);
+        LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(0, WRAP, 1f);
+        cl.setMarginStart(dp(12));
+        r.addView(col, cl);
+
+        if (selecting) {                                       // a tick box
+            TextView box = text(on ? "✓" : "", 15, R.color.accent, true);
+            box.setGravity(Gravity.CENTER);
+            box.setBackground(stroked(on ? 0x2200E5FF : Color.TRANSPARENT, getColor(R.color.accent), 6));
+            LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(dp(26), dp(26));
+            bl.setMarginEnd(dp(10));
+            r.addView(box, bl);
+        } else if (dl) {                                       // save this one
+            ImageButton d = new ImageButton(this);
+            d.setBackgroundResource(R.drawable.bg_round_btn);
+            d.setImageResource(R.drawable.ic_download);
+            d.setColorFilter(getColor(R.color.accent));
+            d.setContentDescription(getString(R.string.listen_download_caps));
+            d.setOnClickListener(v -> ListenService.download(this, id));
+            r.addView(d, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        }
         r.setOnClickListener(v -> {
+            if (selecting) { togglePick(id); return; }
             ListenService.playOwn(this, new ArrayList<>(shown), at);         // previous and next move through this list
             finish();
         });
+        if (dl) r.setOnLongClickListener(v -> { if (!selecting) startSelect(id); else togglePick(id); return true; });
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(MATCH, WRAP);
         lp.topMargin = dp(6);
         r.setLayoutParams(lp);
         return r;
+    }
+
+    private void thumbPlaceholder(android.widget.ImageView iv, int res) {
+        iv.setImageResource(res);
+        iv.setColorFilter(getColor(R.color.muted));
+        iv.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
+        iv.setPadding(dp(12), dp(12), dp(12), dp(12));
+    }
+
+    private void thumbShow(android.widget.ImageView iv, android.graphics.Bitmap b) {
+        iv.setColorFilter(null);
+        iv.setPadding(0, 0, 0, 0);
+        iv.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
+        iv.setImageBitmap(b);
+    }
+
+    /** Fetches the small pictures of the rows that are on screen (and a screen more), a few at a time. */
+    private void loadVisible() {
+        if (rowViews.isEmpty() || sv == null) return;
+        int top = sv.getScrollY() - sv.getHeight() / 2, bottom = sv.getScrollY() + sv.getHeight() * 3 / 2;
+        for (View r : rowViews) {
+            if (r.getBottom() < top || r.getTop() > bottom) continue;
+            final android.widget.ImageView th = (android.widget.ImageView) r.getTag(R.id.tag_row_thumb);
+            if (th == null || th.getTag(R.id.tag_thumb_done) != null) continue;
+            final String id = (String) th.getTag();
+            th.setTag(R.id.tag_thumb_done, Boolean.TRUE);
+            if (thumbs.get(id) != null) continue;
+            thumbPool.execute(() -> {
+                byte[] b = ListenService.fetchBytes("/th/" + id, 8000);
+                final android.graphics.Bitmap bmp = b == null ? null : android.graphics.BitmapFactory.decodeByteArray(b, 0, b.length);
+                if (bmp == null) return;
+                thumbs.put(id, bmp);
+                ui.post(() -> { if (id.equals(th.getTag()) && !isFinishing()) thumbShow(th, bmp); });
+            });
+        }
+    }
+
+    // ── Picking several ──
+
+    private TextView pickBtn(String s, View.OnClickListener l) {
+        TextView t = text(s, 12, R.color.accent, true);
+        t.setGravity(Gravity.CENTER);
+        t.setLetterSpacing(0.12f);
+        t.setBackground(stroked(Color.TRANSPARENT, getColor(R.color.accent), 23));
+        t.setOnClickListener(l);
+        return t;
+    }
+
+    private void startSelect(String first) {
+        if (!ListenService.dlOn) return;
+        selecting = true;
+        picked.clear();
+        if (first != null) picked.add(first);
+        refreshSelect();
+    }
+
+    private void endSelect() {
+        selecting = false;
+        picked.clear();
+        refreshSelect();
+    }
+
+    private void togglePick(String id) {
+        if (!picked.remove(id)) picked.add(id);
+        refreshSelect();
+    }
+
+    private void refreshSelect() {
+        selBar.setVisibility(selecting ? View.VISIBLE : View.GONE);
+        selBtn.setText(getString(selecting ? R.string.listen_cancel_caps : R.string.listen_select_caps));
+        selBtn.setVisibility(ListenService.dlOn ? View.VISIBLE : View.GONE);
+        boolean any = !picked.isEmpty();
+        shareBtn.setText(getString(R.string.listen_share_caps) + (any ? " (" + picked.size() + ")" : ""));
+        saveBtn.setText(getString(R.string.listen_save_caps) + (any ? " (" + picked.size() + ")" : ""));
+        shareBtn.setAlpha(any ? 1f : 0.35f);
+        saveBtn.setAlpha(any ? 1f : 0.35f);
+        int y = sv.getScrollY();
+        draw();
+        sv.post(() -> sv.scrollTo(0, y));
+    }
+
+    private void saveSelected() {
+        if (picked.isEmpty()) return;
+        for (String id : new ArrayList<>(picked)) ListenService.download(this, id);
+        endSelect();
+    }
+
+    private void shareSelected() {
+        if (picked.isEmpty()) return;
+        final List<String> ids = new ArrayList<>(picked);
+        android.widget.Toast.makeText(this, getString(R.string.listen_preparing), android.widget.Toast.LENGTH_SHORT).show();
+        final java.io.File dir = new java.io.File(getCacheDir(), "stream_share");
+        new Thread(() -> {
+            java.io.File[] old = dir.listFiles();
+            if (old != null) for (java.io.File f : old) f.delete();
+            final ArrayList<android.net.Uri> uris = new ArrayList<>();
+            String type = null;
+            final ArrayList<android.net.Uri> photoUris = new ArrayList<>();   // photos + videos only (Google Photos takes nothing else)
+            String photoType = null;
+            for (String id : ids) {
+                java.io.File f = ListenService.fetchToCache(this, id, dir);
+                if (f == null) continue;
+                uris.add(androidx.core.content.FileProvider.getUriForFile(this, getPackageName() + ".files", f));
+                String ext = android.webkit.MimeTypeMap.getFileExtensionFromUrl(f.getName());
+                String mt = ext == null ? null : android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext.toLowerCase());
+                if (mt == null) mt = "application/octet-stream";
+                if (mt.startsWith("image/") || mt.startsWith("video/")) {
+                    photoUris.add(uris.get(uris.size() - 1));
+                    if (photoType == null) photoType = mt;
+                    else if (!photoType.equals(mt)) photoType = photoType.split("/")[0].equals(mt.split("/")[0]) ? photoType.split("/")[0] + "/*" : "*/*";
+                }
+                if (type == null) type = mt;
+                else if (!type.equals(mt)) type = type.split("/")[0].equals(mt.split("/")[0]) ? type.split("/")[0] + "/*" : "*/*";
+            }
+            final String fin = type == null ? "*/*" : type;
+            final String photoFin = photoType == null ? "*/*" : photoType;
+            ui.post(() -> {
+                if (isFinishing()) return;
+                if (uris.isEmpty()) { android.widget.Toast.makeText(this, R.string.listen_dl_failed, android.widget.Toast.LENGTH_LONG).show(); return; }
+                Intent send = new Intent(uris.size() == 1 ? Intent.ACTION_SEND : Intent.ACTION_SEND_MULTIPLE).setType(fin);
+                if (uris.size() == 1) send.putExtra(Intent.EXTRA_STREAM, uris.get(0));
+                else send.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris);
+                android.content.ClipData cd = android.content.ClipData.newRawUri("", uris.get(0));
+                for (int i = 1; i < uris.size(); i++) cd.addItem(new android.content.ClipData.Item(uris.get(i)));
+                send.setClipData(cd);
+                send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                Intent chooser = Intent.createChooser(send, getString(R.string.listen_share_caps));
+                // A mixed pick (songs + photos/videos) hides Google Photos from the list, so offer it with just the photos/videos
+                boolean pure = fin.startsWith("image/") || fin.startsWith("video/");
+                if (!pure && !photoUris.isEmpty()) {
+                    try {
+                        Intent gp = new Intent(photoUris.size() == 1 ? Intent.ACTION_SEND : Intent.ACTION_SEND_MULTIPLE).setType(photoFin);
+                        gp.setPackage("com.google.android.apps.photos");
+                        if (photoUris.size() == 1) gp.putExtra(Intent.EXTRA_STREAM, photoUris.get(0));
+                        else gp.putParcelableArrayListExtra(Intent.EXTRA_STREAM, photoUris);
+                        android.content.ClipData pcd = android.content.ClipData.newRawUri("", photoUris.get(0));
+                        for (int i = 1; i < photoUris.size(); i++) pcd.addItem(new android.content.ClipData.Item(photoUris.get(i)));
+                        gp.setClipData(pcd);
+                        gp.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        chooser.putExtra(Intent.EXTRA_INITIAL_INTENTS, new Intent[]{new android.content.pm.LabeledIntent(gp, "com.google.android.apps.photos", "Google Photos", 0)});
+                    } catch (Throwable ignored) { }
+                }
+                try { startActivity(chooser); } catch (Throwable t) { }
+                endSelect();
+            });
+        }, "nkt-listen-share").start();
     }
 
     private void paintPills() {
@@ -239,8 +455,12 @@ public class ListenLibraryActivity extends Activity {
     protected void onResume() {
         super.onResume();
         if (!ListenService.running) finish();          // listening ended meanwhile
+        lastDl = ListenService.dlOn;
+        refreshSelectBar();
         ui.post(watch);
     }
+
+    private void refreshSelectBar() { selBtn.setVisibility(ListenService.dlOn ? View.VISIBLE : View.GONE); }
 
     private void restoreScroll() {
         final int y = lastScroll[kind];
@@ -260,6 +480,7 @@ public class ListenLibraryActivity extends Activity {
     private final Runnable watch = new Runnable() {
         @Override public void run() {
             if (!ListenService.running || !ListenService.libOn) { finish(); return; }
+            if (ListenService.dlOn != lastDl) { lastDl = ListenService.dlOn; if (!lastDl) selecting = false; picked.clear(); if (loaded) refreshSelect(); else refreshSelectBar(); }
             ui.postDelayed(this, 800);
         }
     };

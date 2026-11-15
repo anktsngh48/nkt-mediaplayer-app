@@ -1055,6 +1055,9 @@
     <string name="stream_share_songs">Songs</string>
     <string name="stream_share_videos">Videos</string>
     <string name="stream_share_photos">Photos</string>
+    <string name="stream_audio_only">Stream only audio for videos</string>
+    <string name="stream_audio_only_on">Listeners hear videos, without the picture</string>
+    <string name="stream_audio_only_off">Listeners see the picture too</string>
     <string name="stream_share_sub_on">Streamed to listeners</string>
     <string name="stream_share_sub_off">Only on this phone</string>
     <string name="stream_private_now">Playing only for you</string>
@@ -1077,9 +1080,7 @@
     <string name="listen_photo_n">%1$d of %2$d</string>
     <string name="listen_full_caps">FULL SCREEN</string>
     <string name="listen_exit_full_caps">EXIT</string>
-    <string name="stream_hvol">Control listeners\' volume</string>
-    <string name="stream_hvol_sub">Off: everyone sets their own. On: the level below is used on every listening device.</string>
-    <string name="listen_vol_host">%1$d%% · set by host</string>
+    <string name="stream_hvol">Share your volume level</string>
     <string name="listen_prev_caps">PREV</string>
     <string name="listen_next_caps">NEXT</string>
     <string name="listen_play_caps">PLAY</string>
@@ -1087,4 +1088,15 @@
     <string name="listen_autonext">Auto-play next</string>
     <string name="listen_autonext_sub">When one ends, the next in the list starts.</string>
     <string name="listen_lib_off_note">The host turned the library off. Back to the live stream.</string>
+    <string name="listen_download_caps">DOWNLOAD</string>
+    <string name="listen_downloading">Downloading…</string>
+    <string name="listen_behind">BEHIND LIVE · %1$s</string>
+    <string name="listen_go_live_caps">GO LIVE</string>
+    <string name="listen_saved">Saved to Downloads/NKT Media Player: %1$s</string>
+    <string name="listen_dl_failed">Could not download this</string>
+    <string name="listen_select_caps">SELECT</string>
+    <string name="listen_cancel_caps">CANCEL</string>
+    <string name="listen_share_caps">SHARE</string>
+    <string name="listen_save_caps">SAVE</string>
+    <string name="listen_preparing">Getting your files ready…</string>
 </resources>

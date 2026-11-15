@@ -47,6 +47,7 @@ public class ListenService extends Service {
     public static final String ACTION_OWN = "com.nkt.mediaplayer.OWN_LISTEN";
     public static final String ACTION_LIVE = "com.nkt.mediaplayer.LIVE_LISTEN";
     public static final String ACTION_STEP = "com.nkt.mediaplayer.STEP_LISTEN";
+    public static final String ACTION_SHIFT = "com.nkt.mediaplayer.SHIFT_LISTEN";
     public static final String EXTRA_BASE = "base";
     public static final String EXTRA_COOKIE = "cookie";
     private static final String CHANNEL = "nkt_listen";
@@ -64,11 +65,119 @@ public class ListenService extends Service {
 
     /** A song or video picked from the host's library: played on this phone only, not in step with the host. */
     public static volatile boolean own;
+    /** Gone back in the host's live video: not kept in step until GO LIVE. */
+    public static volatile boolean timeshift;
     public static volatile String ownId = "";
     /** The host is playing something it keeps to itself; the host's library is on; the photo the host is showing. */
     public static volatile boolean priv, libOn;
     public static volatile String photoId = "", photoTitle = "";
     public static volatile int photoN, photoOf;
+
+    /** The host allows downloads (only then the DOWNLOAD button shows). */
+    public static volatile boolean dlOn;
+
+    /** The id of what is on this screen: your own pick, the host's song or video, or the host's photo. */
+    public static String downloadId() { return own ? ownId : (has && !id.isEmpty() ? id : photoId); }
+
+    /** Saves what is on screen to this phone's Downloads (in the NKT folder), in the background. */
+    public static void download(android.content.Context c) { download(c, downloadId()); }
+
+    /** Saves the item with this id (a library item or what is on screen). */
+    public static void download(android.content.Context c, final String did) {
+        if (did == null || did.isEmpty() || baseUrl.isEmpty()) return;
+        final android.content.Context app = c.getApplicationContext();
+        final Handler h = new Handler(Looper.getMainLooper());
+        h.post(() -> android.widget.Toast.makeText(app, R.string.listen_downloading, android.widget.Toast.LENGTH_SHORT).show());
+        new Thread(() -> {
+            String msg;
+            try {
+                HttpURLConnection c2 = (HttpURLConnection) new URL(baseUrl + "/dl/" + did + "?c=" + clientId).openConnection();
+                c2.setConnectTimeout(5000);
+                c2.setReadTimeout(30000);
+                c2.setUseCaches(false);
+                c2.setRequestProperty("User-Agent", "NKT Listen (Android) " + Build.MODEL);
+                if (!cookieStr.isEmpty()) c2.setRequestProperty("Cookie", cookieStr);
+                if (c2.getResponseCode() != 200) { c2.disconnect(); throw new IOException("refused"); }
+                String name = "download";
+                String cd = c2.getHeaderField("Content-Disposition");
+                if (cd != null) {
+                    int k = cd.indexOf("filename*=UTF-8''");
+                    if (k >= 0) { try { name = java.net.URLDecoder.decode(cd.substring(k + 17).split(";")[0].trim().replace("+", "%2B"), "UTF-8"); } catch (Throwable ignored) { } }
+                    else { int q = cd.indexOf("filename=\""); if (q >= 0) { int e = cd.indexOf('"', q + 10); if (e > q) name = cd.substring(q + 10, e); } }
+                }
+                name = name.replaceAll("[\\\\/:*?\"<>|]", "_");
+                String mime = c2.getContentType() == null ? "application/octet-stream" : c2.getContentType().split(";")[0];
+                java.io.OutputStream os;
+                android.net.Uri pending = null;
+                java.io.File legacy = null;
+                if (Build.VERSION.SDK_INT >= 29) {
+                    android.content.ContentValues cv = new android.content.ContentValues();
+                    cv.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name);
+                    cv.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, mime);
+                    cv.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS + "/NKT Media Player");
+                    cv.put(android.provider.MediaStore.MediaColumns.IS_PENDING, 1);
+                    pending = app.getContentResolver().insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, cv);
+                    if (pending == null) throw new IOException("no place to save");
+                    os = app.getContentResolver().openOutputStream(pending);
+                } else {
+                    java.io.File dir = new java.io.File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS), "NKT Media Player");
+                    if (!dir.isDirectory() && !dir.mkdirs() || !dir.canWrite()) dir = app.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS);
+                    legacy = new java.io.File(dir, name);
+                    os = new java.io.FileOutputStream(legacy);
+                }
+                try (InputStream in = c2.getInputStream(); java.io.OutputStream o2 = os) {
+                    byte[] buf = new byte[64 * 1024];
+                    int n;
+                    while ((n = in.read(buf)) > 0) o2.write(buf, 0, n);
+                }
+                c2.disconnect();
+                if (pending != null) {
+                    android.content.ContentValues done = new android.content.ContentValues();
+                    done.put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0);
+                    app.getContentResolver().update(pending, done, null, null);
+                }
+                msg = app.getString(R.string.listen_saved, name);
+            } catch (Throwable t) {
+                msg = app.getString(R.string.listen_dl_failed);
+            }
+            final String shown = msg;
+            h.post(() -> android.widget.Toast.makeText(app, shown, android.widget.Toast.LENGTH_LONG).show());
+        }, "nkt-listen-dl").start();
+    }
+
+    /** Copies the item into this app's cache (for sharing with other apps). Background threads only; null when it could not be got. */
+    public static java.io.File fetchToCache(android.content.Context c, String did, java.io.File dir) {
+        try {
+            if (did == null || did.isEmpty() || baseUrl.isEmpty()) return null;
+            HttpURLConnection c2 = (HttpURLConnection) new URL(baseUrl + "/dl/" + did + "?c=" + clientId).openConnection();
+            c2.setConnectTimeout(5000);
+            c2.setReadTimeout(30000);
+            c2.setUseCaches(false);
+            c2.setRequestProperty("User-Agent", "NKT Listen (Android) " + Build.MODEL);
+            if (!cookieStr.isEmpty()) c2.setRequestProperty("Cookie", cookieStr);
+            if (c2.getResponseCode() != 200) { c2.disconnect(); return null; }
+            String name = "file";
+            String cd = c2.getHeaderField("Content-Disposition");
+            if (cd != null) {
+                int k = cd.indexOf("filename*=UTF-8''");
+                if (k >= 0) { try { name = java.net.URLDecoder.decode(cd.substring(k + 17).split(";")[0].trim().replace("+", "%2B"), "UTF-8"); } catch (Throwable ignored) { } }
+                else { int q = cd.indexOf("filename=\""); if (q >= 0) { int e = cd.indexOf('"', q + 10); if (e > q) name = cd.substring(q + 10, e); } }
+            }
+            name = name.replaceAll("[\\\\/:*?\"<>|]", "_");
+            if (!dir.isDirectory() && !dir.mkdirs()) { c2.disconnect(); return null; }
+            java.io.File f = new java.io.File(dir, name);
+            for (int i = 1; f.exists(); i++) f = new java.io.File(dir, i + "_" + name);
+            try (InputStream in = c2.getInputStream(); java.io.OutputStream o2 = new java.io.FileOutputStream(f)) {
+                byte[] buf = new byte[64 * 1024];
+                int n;
+                while ((n = in.read(buf)) > 0) o2.write(buf, 0, n);
+            }
+            c2.disconnect();
+            return f;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
 
     /** What you picked: the list it came from ({id, title, kind: 0 song, 1 video, 2 photo}) and where you are in it. */
     public static volatile java.util.List<String[]> ownQueue = new java.util.ArrayList<>();
@@ -97,10 +206,30 @@ public class ListenService extends Service {
     }
 
     public static boolean autoNext(android.content.Context c) { return Prefs.sp(c).getBoolean("listen_autonext", true); }
+    /** Photos move on by themselves only when asked: off until switched on. */
+    public static boolean autoNextPhoto(android.content.Context c) { return Prefs.sp(c).getBoolean("listen_autonext_photo", false); }
+    public static void setAutoNextPhoto(android.content.Context c, boolean on) { Prefs.sp(c).edit().putBoolean("listen_autonext_photo", on).apply(); }
     public static void setAutoNext(android.content.Context c, boolean on) { Prefs.sp(c).edit().putBoolean("listen_autonext", on).apply(); }
 
     /** The photo on this screen: the one you picked, or the one the host is showing. */
     public static String shownPhoto() { return own ? (ownKind == 2 ? ownId : "") : photoId; }
+
+    /** Live video only: move the picture to an exact time (ms). */
+    public static void shiftTo(android.content.Context c, long ms) {
+        c.startService(new Intent(c, ListenService.class).setAction(ACTION_SHIFT).putExtra("op", 0).putExtra("ms", ms));
+    }
+    /** Live video only: go back or forward by some milliseconds. */
+    public static void shiftBy(android.content.Context c, long delta) {
+        c.startService(new Intent(c, ListenService.class).setAction(ACTION_SHIFT).putExtra("op", 1).putExtra("ms", delta));
+    }
+    /** Live video only: pause or play your own view of it. */
+    public static void shiftToggle(android.content.Context c) {
+        c.startService(new Intent(c, ListenService.class).setAction(ACTION_SHIFT).putExtra("op", 2));
+    }
+    /** Live video only: jump back to what the host is showing right now. */
+    public static void goLive(android.content.Context c) {
+        c.startService(new Intent(c, ListenService.class).setAction(ACTION_SHIFT).putExtra("op", 3));
+    }
 
     /** Back to following the host. */
     public static void backToLive(android.content.Context c) {
@@ -210,7 +339,7 @@ public class ListenService extends Service {
     private boolean slideArmed = false;
     private final Runnable slide = () -> {
         slideArmed = false;
-        if (running && own && ownKind == 2 && autoNext(this) && ownIdx + 1 < ownQueue.size()) stepOwn(1);
+        if (running && own && ownKind == 2 && autoNextPhoto(this) && ownIdx + 1 < ownQueue.size()) stepOwn(1);
     };
 
     private void startOwnAt(int i) {
@@ -236,6 +365,7 @@ public class ListenService extends Service {
         main.removeCallbacks(slide);
         slideArmed = false;
         own = true;
+        timeshift = false;
         ownId = pid;
         ownKind = kind;
         loadedId = "own:" + pid;
@@ -257,6 +387,7 @@ public class ListenService extends Service {
     private void leaveOwn() {
         if (!own) return;
         own = false;
+        timeshift = false;
         ownId = "";
         ownKind = 0;
         ownIdx = -1;
@@ -287,6 +418,10 @@ public class ListenService extends Service {
         }
         if (intent != null && ACTION_STEP.equals(intent.getAction())) {
             if (running) stepOwn(intent.getIntExtra("delta", 1));
+            return START_NOT_STICKY;
+        }
+        if (intent != null && ACTION_SHIFT.equals(intent.getAction())) {
+            if (running) shift(intent.getIntExtra("op", 0), intent.getLongExtra("ms", 0));
             return START_NOT_STICKY;
         }
         if (intent != null && ACTION_LIVE.equals(intent.getAction())) {
@@ -320,8 +455,8 @@ public class ListenService extends Service {
         status = getString(R.string.listen_connecting);
         has = false; video = false; title = ""; artist = ""; id = ""; durMs = 0; art = null; host = "";
         stHas = false; stOk = false; stPlaying = false; loadedId = ""; ver = -1; syncErr = 0;
-        drain = false; drainAll = false; drainQ = null; localQueue = false; anchorPending = false; viewTag = "art";
-        own = false; ownId = ""; ownKind = 0; ownIdx = -1; hostVol = -1f; priv = false; libOn = false; photoId = ""; photoTitle = ""; photoN = 0; photoOf = 0;
+        drain = false; drainAll = false; drainQ = null; localQueue = false; anchorPending = false; viewTag = "art"; timeshift = false;
+        own = false; ownId = ""; ownKind = 0; ownIdx = -1; hostVol = -1f; priv = false; libOn = false; dlOn = false; photoId = ""; photoTitle = ""; photoN = 0; photoOf = 0;
         hostView = 2; hostStyle = 0; hostSpeed = 40; hostSa = -1; hostLyr = false;
         baseUrl = base; cookieStr = cookie; clientId = cid;
         cid = Long.toString(System.nanoTime(), 36) + Integer.toString((int) (Math.random() * 100000), 36);
@@ -477,6 +612,7 @@ public class ListenService extends Service {
         host = j.optString("host", host);
         priv = j.optBoolean("priv");
         libOn = j.optBoolean("lib");
+        dlOn = j.optBoolean("dl");
         float hv = j.has("hv") ? (float) Math.max(0, Math.min(1, j.optDouble("hv", 0))) : -1f;
         if (hv != hostVol) {
             hostVol = hv;
@@ -552,7 +688,27 @@ public class ListenService extends Service {
         return false;
     }
 
+    /** Going back in the live video and returning to it. op: 0 seek to ms, 1 move by ms, 2 pause/play, 3 go live. */
+    private void shift(int op, long v) {
+        ExoPlayer p = player;
+        if (p == null || own || !stHas || !stOk || !stVideo || loadedId.isEmpty()) return;
+        long live = Math.max(0, expected() + nudgeMs);
+        if (op == 3) { timeshift = false; status = getString(R.string.listen_syncing); main.post(this::notifyNowSafe); return; }
+        if (op == 2) {
+            timeshift = true;
+            if (p.getPlaybackState() == Player.STATE_ENDED) p.seekTo(Math.max(0, live - 1000));
+            p.setPlayWhenReady(!p.getPlayWhenReady());
+            return;
+        }
+        long target = op == 1 ? p.getCurrentPosition() + v : v;
+        if (target >= live - 2000) { timeshift = false; return; }       // back at the live edge
+        timeshift = true;
+        p.seekTo(Math.max(0, target));
+        p.setPlayWhenReady(true);
+    }
+
     private void loadCurrent(ExoPlayer p) {
+        timeshift = false;
         loadedId = stId;
         lastLoadAt = System.currentTimeMillis();
         art = null;
@@ -583,7 +739,7 @@ public class ListenService extends Service {
         if (own) {
             syncErr = 0;
             if (ownKind == 2) {                    // a photo: moves on by itself after a while, if that is wanted
-                boolean want = autoNext(this) && ownIdx + 1 < ownQueue.size();
+                boolean want = autoNextPhoto(this) && ownIdx + 1 < ownQueue.size();
                 if (want && !slideArmed) { slideArmed = true; main.postDelayed(slide, 5000); }
                 else if (!want && slideArmed) { main.removeCallbacks(slide); slideArmed = false; }
                 status = getString(R.string.listen_own_status);
@@ -594,9 +750,19 @@ public class ListenService extends Service {
             status = getString(os == Player.STATE_BUFFERING ? R.string.listen_buffering : os == Player.STATE_ENDED ? R.string.listen_own_done : R.string.listen_own_status);
             return;
         }
-        if (!stHas) { status = getString(R.string.listen_waiting); if (p.getPlayWhenReady()) p.setPlayWhenReady(false); return; }
+        if (!stHas) { timeshift = false; status = getString(R.string.listen_waiting); if (p.getPlayWhenReady()) p.setPlayWhenReady(false); return; }
         if (!stOk) { status = getString(R.string.listen_cant_stream); return; }
         if (loadedId.isEmpty()) { if (System.currentTimeMillis() - lastLoadAt > 5000) loadCurrent(p); return; }
+        if (timeshift && !stVideo) timeshift = false;
+        if (timeshift) {                          // gone back in the live video: left alone until GO LIVE
+            long behind = Math.max(0, expected() + nudgeMs - p.getCurrentPosition());
+            if (p.getPlaybackState() == Player.STATE_ENDED || behind < 1500) timeshift = false;
+            else {
+                if (Math.abs(p.getPlaybackParameters().speed - stSpeed) > 0.001f) p.setPlaybackSpeed(stSpeed);
+                status = getString(R.string.listen_behind, Ui.time(behind));
+                return;
+            }
+        }
         if (anchorPending) {                      // a song of the queue just began: its own clock starts when it really plays
             if (p.getPlaybackState() == Player.STATE_READY && p.isPlaying()) {
                 stPos = p.getCurrentPosition();

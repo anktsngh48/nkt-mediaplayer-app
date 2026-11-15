@@ -49,6 +49,10 @@ final class StreamPrefs {
     static boolean share(Context c, int kind) { return Prefs.sp(c).getBoolean("stream_share_" + kind, true); }
     static void setShare(Context c, int kind, boolean on) { Prefs.sp(c).edit().putBoolean("stream_share_" + kind, on).apply(); }
 
+    /** Videos reach the listeners as sound only (no picture). */
+    static boolean audioOnly(Context c) { return Prefs.sp(c).getBoolean("stream_audio_only", false); }
+    static void setAudioOnly(Context c, boolean on) { Prefs.sp(c).edit().putBoolean("stream_audio_only", on).apply(); }
+
     static void setName(Context c, String n) { Prefs.sp(c).edit().putString("stream_name", n).putBoolean("stream_name_set", true).apply(); }
 
     static int port(Context c) { return Prefs.sp(c).getInt("stream_port", DEFAULT_PORT); }
@@ -97,8 +101,6 @@ final class StreamPrefs {
 
     static boolean hostVolOn(Context c) { return Prefs.sp(c).getBoolean("stream_hvol_on", false); }
     static void setHostVolOn(Context c, boolean v) { Prefs.sp(c).edit().putBoolean("stream_hvol_on", v).apply(); }
-    static int hostVol(Context c) { return Prefs.sp(c).getInt("stream_hvol", 70); }
-    static void setHostVol(Context c, int pct) { Prefs.sp(c).edit().putInt("stream_hvol", Math.max(0, Math.min(100, pct))).apply(); }
 
     static boolean allowDownloads(Context c) { return Prefs.sp(c).getBoolean("stream_downloads", false); }
     static void setAllowDownloads(Context c, boolean v) { Prefs.sp(c).edit().putBoolean("stream_downloads", v).apply(); }

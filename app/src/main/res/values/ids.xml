@@ -3,4 +3,6 @@
     <item name="thumb_key" type="id" />
     <item name="frame_key" type="id" />
     <item name="toast_hide" type="id" />
+    <item name="tag_row_thumb" type="id" />
+    <item name="tag_thumb_done" type="id" />
 </resources>
