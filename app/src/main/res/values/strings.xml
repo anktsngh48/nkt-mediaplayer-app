@@ -918,6 +918,8 @@
         <item quantity="other">%d files</item>
     </plurals>
     <string name="stream_menu_on">Streaming</string>
+    <string name="stream_menu_listening">Listening</string>
+    <string name="stream_menu_listening_to">Listening to %1$s</string>
     <plurals name="stream_menu_on_n">
         <item quantity="one">Streaming · %d listening</item>
         <item quantity="other">Streaming · %d listening</item>
