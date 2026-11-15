@@ -184,6 +184,10 @@ public class ListenService extends Service {
     public static volatile int ownIdx = -1, ownKind = 0;
     /** The host set the volume for everyone (0..1), or -1 while each listener sets their own. */
     public static volatile float hostVol = -1f;
+    /** Your own level while the host shares theirs: kept until the host moves theirs again, or -1. */
+    public static volatile float hostVolLocal = -1f;
+    /** Press and hold on the picture: 2× (only your own pick, or the live video after going back to catch up). */
+    public static volatile boolean fast;
     /** Moves when the host switches the library off while you were playing a pick of your own. */
     public static volatile long libOffAt = 0;
     /** Changes with every new connection (the library screen forgets its place when it does). */
@@ -310,14 +314,30 @@ public class ListenService extends Service {
     // ── Controls used by the screen ──
 
     public static void setVolume(android.content.Context c, float v) {
-        if (hostVol >= 0f) return;                 // the host is setting the volume
         v = Math.max(0f, Math.min(1f, v));
-        Prefs.sp(c).edit().putFloat("listen_vol", v).apply();
+        if (hostVol >= 0f) hostVolLocal = v;       // the host shares theirs: yours holds until the host changes theirs
+        else Prefs.sp(c).edit().putFloat("listen_vol", v).apply();
         ExoPlayer p = player;
         if (p != null) p.setVolume(v);
     }
 
-    public static float volume(android.content.Context c) { return hostVol >= 0f ? hostVol : Prefs.sp(c).getFloat("listen_vol", 1f); }
+    public static float volume(android.content.Context c) { return hostVol >= 0f ? (hostVolLocal >= 0f ? hostVolLocal : hostVol) : Prefs.sp(c).getFloat("listen_vol", 1f); }
+
+    /** Press and hold = 2×. True when it applies (a pick of your own; the live video once you have gone back), false when there is nothing to speed up. */
+    public static boolean holdFast(boolean on) {
+        ExoPlayer p = player;
+        if (p == null) return false;
+        if (!on) {
+            fast = false;
+            if (own) p.setPlaybackSpeed(1f);
+            return true;
+        }
+        if (own) { if (!p.isPlaying()) return false; p.setPlaybackSpeed(2f); fast = true; return true; }
+        if (!timeshift || !p.isPlaying()) return false;
+        fast = true;
+        p.setPlaybackSpeed(2f);
+        return true;
+    }
 
     public static void setNudge(android.content.Context c, int ms) {
         ms = Math.max(-500, Math.min(500, ms));
@@ -456,7 +476,7 @@ public class ListenService extends Service {
         has = false; video = false; title = ""; artist = ""; id = ""; durMs = 0; art = null; host = "";
         stHas = false; stOk = false; stPlaying = false; loadedId = ""; ver = -1; syncErr = 0;
         drain = false; drainAll = false; drainQ = null; localQueue = false; anchorPending = false; viewTag = "art"; timeshift = false;
-        own = false; ownId = ""; ownKind = 0; ownIdx = -1; hostVol = -1f; priv = false; libOn = false; dlOn = false; photoId = ""; photoTitle = ""; photoN = 0; photoOf = 0;
+        own = false; ownId = ""; ownKind = 0; ownIdx = -1; hostVol = -1f; hostVolLocal = -1f; fast = false; priv = false; libOn = false; dlOn = false; photoId = ""; photoTitle = ""; photoN = 0; photoOf = 0;
         hostView = 2; hostStyle = 0; hostSpeed = 40; hostSa = -1; hostLyr = false;
         baseUrl = base; cookieStr = cookie; clientId = cid;
         cid = Long.toString(System.nanoTime(), 36) + Integer.toString((int) (Math.random() * 100000), 36);
@@ -616,6 +636,7 @@ public class ListenService extends Service {
         float hv = j.has("hv") ? (float) Math.max(0, Math.min(1, j.optDouble("hv", 0))) : -1f;
         if (hv != hostVol) {
             hostVol = hv;
+            hostVolLocal = -1f;
             ExoPlayer pv = player;
             if (pv != null) pv.setVolume(volume(this));
         }
@@ -754,11 +775,13 @@ public class ListenService extends Service {
         if (!stOk) { status = getString(R.string.listen_cant_stream); return; }
         if (loadedId.isEmpty()) { if (System.currentTimeMillis() - lastLoadAt > 5000) loadCurrent(p); return; }
         if (timeshift && !stVideo) timeshift = false;
+        if (!timeshift) fast = false;
         if (timeshift) {                          // gone back in the live video: left alone until GO LIVE
             long behind = Math.max(0, expected() + nudgeMs - p.getCurrentPosition());
             if (p.getPlaybackState() == Player.STATE_ENDED || behind < 1500) timeshift = false;
             else {
-                if (Math.abs(p.getPlaybackParameters().speed - stSpeed) > 0.001f) p.setPlaybackSpeed(stSpeed);
+                float want = fast ? 2f : stSpeed;                 // 2× while held, to catch up with the live moment
+                if (Math.abs(p.getPlaybackParameters().speed - want) > 0.001f) p.setPlaybackSpeed(want);
                 status = getString(R.string.listen_behind, Ui.time(behind));
                 return;
             }

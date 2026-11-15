@@ -296,6 +296,7 @@ public class ListenActivity extends Activity {
         videoView.setBackgroundColor(Color.BLACK);
         videoView.setVisibility(View.GONE);
         liveBox.addView(videoView, lp(MATCH, 220, 18, 0));
+        setupVideoGestures();                                   // seek, volume, brightness and 2× on the picture, small view and full screen
         fsBtn = outlined(getString(R.string.listen_full_caps), v -> {         // full screen is only entered with this button
             if (ListenService.has && ListenService.video) enterFullscreen(videoView, true);
             else if (photoBmp != null && photoShownId.equals(ListenService.shownPhoto())) enterFullscreen(photoView, false);
@@ -420,6 +421,147 @@ public class ListenActivity extends Activity {
         stop.setBackground(stroked(0x14FF4F6A, 0x80FF4F6A, 27));
         stop.setOnClickListener(v -> ListenService.stop(this));
         liveBox.addView(stop, lp(MATCH, 54, 20, 0));
+    }
+
+    // ── Gestures on the video (the small view and full screen), the same as the video player ──
+    // slide sideways = seek (the live video: go back / forward to it), up/down on the left = brightness, on the right = volume,
+    // double-tap left/right = −/+10 s, press and hold = 2× while held
+
+    private int vMode = 0;                          // 0 undecided, 1 brightness, 2 volume, 3 seek, 4 nothing
+    private boolean vHolding = false;
+    private long vSeekStart = 0, vSeekTarget = -1;
+    private float vVolAcc = 0;
+    private TextView vFlashT;
+    private final Runnable vFlashHide = () -> { if (vFlashT != null) vFlashT.setVisibility(View.GONE); };
+
+    private void vFlash(String t, long ms) {
+        if (vFlashT == null) return;
+        vFlashT.setText(t);
+        vFlashT.setVisibility(View.VISIBLE);
+        ui.removeCallbacks(vFlashHide);
+        if (ms > 0) ui.postDelayed(vFlashHide, ms);
+    }
+
+    private long vPos() { ExoPlayer p = ListenService.player; return p == null ? 0 : Math.max(0, p.getCurrentPosition()); }
+
+    private long vDur() {
+        if (ListenService.own) { ExoPlayer p = ListenService.player; return p == null ? 0 : Math.max(0, p.getDuration()); }
+        return ListenService.durMs;
+    }
+
+    private boolean vCanSeek() { return vDur() > 0 && (ListenService.own || (ListenService.has && ListenService.video)); }
+
+    private void vSeekTo(long t) {
+        if (ListenService.own) { ExoPlayer p = ListenService.player; if (p != null) p.seekTo(Math.max(0, t)); }
+        else ListenService.shiftTo(this, Math.max(0, t));
+    }
+
+    @android.annotation.SuppressLint("ClickableViewAccessibility")
+    private void setupVideoGestures() {
+        final float density = getResources().getDisplayMetrics().density;
+        vFlashT = text("", 16, R.color.accent, true);
+        vFlashT.setBackgroundColor(0xAA000000);
+        vFlashT.setPadding(dp(14), dp(8), dp(14), dp(8));
+        vFlashT.setGravity(Gravity.CENTER);
+        vFlashT.setVisibility(View.GONE);
+        FrameLayout ov = videoView.getOverlayFrameLayout();
+        if (ov != null) ov.addView(vFlashT, new FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER));
+        final android.view.GestureDetector gd = new android.view.GestureDetector(this, new android.view.GestureDetector.SimpleOnGestureListener() {
+            @Override public boolean onDown(MotionEvent e) { vMode = 0; vVolAcc = 0; vSeekTarget = -1; return true; }
+
+            @Override public boolean onSingleTapConfirmed(MotionEvent e) {
+                if (fsView != null) showFsBar();               // in the small view a tap does nothing: full screen is only entered with the button
+                return true;
+            }
+
+            @Override public boolean onDoubleTap(MotionEvent e) {
+                if (!vCanSeek()) return true;
+                boolean fwd = e.getX() > videoView.getWidth() / 2f;
+                if (ListenService.own) {
+                    long d = vDur(), t = vPos() + (fwd ? 10_000 : -10_000);
+                    vSeekTo(d > 0 ? Math.min(t, d) : t);
+                } else {
+                    if (fwd && !ListenService.timeshift) return true;       // nothing ahead of the live moment
+                    ListenService.shiftBy(ListenActivity.this, fwd ? 10_000 : -10_000);
+                }
+                vFlash(getString(fwd ? R.string.fwd_10 : R.string.back_10), 800);
+                return true;
+            }
+
+            @Override public void onLongPress(MotionEvent e) { if (vMode == 0) startVHold(); }
+
+            @Override public boolean onScroll(MotionEvent e1, MotionEvent e2, float dx, float dy) {
+                if (e1 == null || vHolding) return false;
+                if (vMode == 0) {
+                    if (Math.abs(e2.getY() - e1.getY()) > Math.abs(e2.getX() - e1.getX())) vMode = e1.getX() < videoView.getWidth() / 2f ? 1 : 2;
+                    else if (vCanSeek()) { vMode = 3; vSeekStart = vPos(); }
+                    else vMode = 4;
+                }
+                if (vMode == 3) {                              // fine seeking: about 1 second for every 12 dp
+                    long delta = Math.round((e2.getX() - e1.getX()) / density / 12f) * 1000L;
+                    long d = vDur();
+                    long target = Math.max(0, Math.min(d, vSeekStart + delta));
+                    vSeekTarget = target;
+                    vFlash((delta >= 0 ? "+" : "−") + Ui.time(Math.abs(delta)) + " · " + Ui.time(target), 0);
+                    return true;
+                }
+                float delta = dy / Math.max(1, videoView.getHeight());      // finger up = positive
+                if (vMode == 1) vChangeBrightness(delta * 1.4f);
+                else if (vMode == 2) vChangeVolume(delta * 1.4f);
+                return true;
+            }
+        });
+        videoView.setOnTouchListener((v, ev) -> {
+            int a = ev.getActionMasked();
+            if (a == MotionEvent.ACTION_DOWN && v.getParent() != null) v.getParent().requestDisallowInterceptTouchEvent(true);
+            if (vHolding) {
+                if (a == MotionEvent.ACTION_UP || a == MotionEvent.ACTION_CANCEL) endVHold();
+                return true;
+            }
+            if ((a == MotionEvent.ACTION_UP || a == MotionEvent.ACTION_CANCEL) && vMode == 3) {
+                if (a == MotionEvent.ACTION_UP && vSeekTarget >= 0) vSeekTo(vSeekTarget);
+                vSeekTarget = -1;
+                ui.postDelayed(vFlashHide, 600);
+            }
+            gd.onTouchEvent(ev);
+            return true;
+        });
+    }
+
+    private void startVHold() {
+        if (!ListenService.holdFast(true)) {
+            if (!ListenService.own) vFlash(getString(R.string.listen_already_live), 900);
+            return;
+        }
+        vHolding = true;
+        vFlash(getString(R.string.hold_2x), 0);
+        videoView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
+    }
+
+    private void endVHold() {
+        vHolding = false;
+        ListenService.holdFast(false);
+        ui.removeCallbacks(vFlashHide);
+        ui.post(vFlashHide);
+    }
+
+    private void vChangeBrightness(float delta) {
+        android.view.WindowManager.LayoutParams lp = getWindow().getAttributes();
+        float b = lp.screenBrightness < 0 ? 0.5f : lp.screenBrightness;
+        b = Math.max(0.02f, Math.min(1f, b + delta));
+        lp.screenBrightness = b;
+        getWindow().setAttributes(lp);
+        vFlash(getString(R.string.brightness_pct, Math.round(b * 100)), 900);
+    }
+
+    private void vChangeVolume(float delta) {
+        vVolAcc += delta;
+        if (Math.abs(vVolAcc) >= 0.01f) {
+            ListenService.setVolume(this, ListenService.volume(this) + vVolAcc);
+            vVolAcc = 0;
+            update();
+        }
+        vFlash(getString(R.string.volume_pct, Math.round(ListenService.volume(this) * 100)), 900);
     }
 
     // ── Full screen: the video (landscape, with volume and sync) or the host's photo ──
@@ -633,6 +775,7 @@ public class ListenActivity extends Activity {
 
     @Override
     protected void onPause() {
+        if (vHolding) endVHold();
         ui.removeCallbacks(tick);
         ui.removeCallbacks(feed);
         vizPolling = false;

@@ -1091,6 +1091,7 @@
     <string name="listen_download_caps">DOWNLOAD</string>
     <string name="listen_downloading">Downloading…</string>
     <string name="listen_behind">BEHIND LIVE · %1$s</string>
+    <string name="listen_already_live">Already live</string>
     <string name="listen_go_live_caps">GO LIVE</string>
     <string name="listen_saved">Saved to Downloads/NKT Media Player: %1$s</string>
     <string name="listen_dl_failed">Could not download this</string>
