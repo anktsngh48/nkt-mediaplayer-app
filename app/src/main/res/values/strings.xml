@@ -917,6 +917,11 @@
         <item quantity="one">%d file</item>
         <item quantity="other">%d files</item>
     </plurals>
+    <string name="stream_menu_on">Streaming</string>
+    <plurals name="stream_menu_on_n">
+        <item quantity="one">Streaming · %d listening</item>
+        <item quantity="other">Streaming · %d listening</item>
+    </plurals>
     <plurals name="stream_chip_listening">
         <item quantity="one">%d LISTENING</item>
         <item quantity="other">%d LISTENING</item>
@@ -1091,6 +1096,7 @@
     <string name="listen_download_caps">DOWNLOAD</string>
     <string name="listen_downloading">Downloading…</string>
     <string name="listen_behind">BEHIND LIVE · %1$s</string>
+    <string name="apk_allow_install">To install apps from here, turn on "Allow from this source", then open the file again</string>
     <string name="listen_already_live">Already live</string>
     <string name="listen_go_live_caps">GO LIVE</string>
     <string name="listen_saved">Saved to Downloads/NKT Media Player: %1$s</string>

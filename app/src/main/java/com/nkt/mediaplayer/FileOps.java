@@ -218,7 +218,37 @@ public final class FileOps {
         return m.uri;
     }
 
+    private static final String APK_MIME = "application/vnd.android.package-archive";
+
+    private static boolean isApk(Activity a, MediaInfo m) {
+        try {
+            if (APK_MIME.equals(mime(a, m))) return true;
+            String e = MediaInfo.ext(m.fileName.isEmpty() ? String.valueOf(m.uri.getLastPathSegment()) : m.fileName);
+            return "apk".equalsIgnoreCase(e);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** An app file: the system installer needs this app to be allowed to install apps ("Install unknown apps") and the file opened straight to it. */
+    private static void installApk(Activity a, MediaInfo m) {
+        try {
+            if (Build.VERSION.SDK_INT >= 26 && !a.getPackageManager().canRequestPackageInstalls()) {
+                Ui.toast(a, R.string.apk_allow_install);
+                a.startActivity(new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + a.getPackageName())));
+                return;
+            }
+            Intent i = new Intent(Intent.ACTION_VIEW)
+                    .setDataAndType(shareable(a, m), APK_MIME)
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            a.startActivity(i);
+        } catch (Exception e) {
+            Ui.toast(a, R.string.no_app_to_open);
+        }
+    }
+
     public static void openWith(Activity a, MediaInfo m) {
+        if (isApk(a, m)) { installApk(a, m); return; }
         try {
             Intent i = new Intent(Intent.ACTION_VIEW)
                     .setDataAndType(shareable(a, m), mime(a, m))

@@ -372,10 +372,28 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
             closeDrawer();
             startActivity(new Intent(this, NktShareActivity.class));
         }, null));
-        drawerItems.addView(menuRow(R.drawable.ic_wifi, getString(R.string.stream), getString(R.string.stream_long), false, false, () -> {
+        View streamRow = menuRow(R.drawable.ic_wifi, getString(R.string.stream), getString(R.string.stream_long), false, false, () -> {
             closeDrawer();
             startActivity(new Intent(this, StreamActivity.class));
-        }, null));
+        }, null);
+        if (StreamService.running) {                // streaming from this phone: a green dot and what is going on, in place of the usual line
+            try {
+                int n = StreamHub.listenerCount();
+                String live = n > 0 ? getResources().getQuantityString(R.plurals.stream_menu_on_n, n, n) : getString(R.string.stream_menu_on);
+                TextView sub = (TextView) ((LinearLayout) ((LinearLayout) streamRow).getChildAt(1)).getChildAt(1);
+                sub.setText(live);
+                sub.setTextColor(getColor(R.color.success));
+                sub.setTypeface(null, android.graphics.Typeface.BOLD);
+                android.graphics.drawable.GradientDrawable dot = new android.graphics.drawable.GradientDrawable();
+                dot.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+                dot.setColor(getColor(R.color.success));
+                dot.setSize(7 * dp, 7 * dp);
+                sub.setCompoundDrawablesRelativeWithIntrinsicBounds(dot, null, null, null);
+                sub.setCompoundDrawablePadding(6 * dp);
+                sub.setGravity(Gravity.CENTER_VERTICAL);
+            } catch (Throwable ignored) { }
+        }
+        drawerItems.addView(streamRow);
         drawerItems.addView(menuRow(R.drawable.ic_settings, getString(R.string.menu_settings), null, page == SETTINGS, false, () -> {
             closeDrawer();
             setPage(SETTINGS);
