@@ -1129,4 +1129,16 @@
     <string name="wallpaper_home_caps">HOME</string>
     <string name="wallpaper_lock_caps">LOCK</string>
     <string name="wallpaper_both_caps">BOTH</string>
+    <string name="stream_card_off">Not streaming · press START to let other devices listen</string>
+    <string name="stream_card_on0">Streaming now · no one listening yet</string>
+    <plurals name="stream_card_on_n">
+        <item quantity="one">Streaming now · %d listening</item>
+        <item quantity="other">Streaming now · %d listening</item>
+    </plurals>
+    <string name="stream_card_play_all">Press ▶ to play your songs, A to Z</string>
+    <string name="stream_limit_none">No limit · type a number to set one</string>
+    <plurals name="stream_limit_n">
+        <item quantity="one">Up to %d listener at once</item>
+        <item quantity="other">Up to %d listeners at once</item>
+    </plurals>
 </resources>

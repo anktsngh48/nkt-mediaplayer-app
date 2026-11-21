@@ -236,15 +236,24 @@ public class LyricsEditActivity extends Activity {
         if (!loaded) return;
         Ui.toast(this, R.string.lyr_looking);
         if (Net.off()) { Ui.toast(this, R.string.net_off_toast); return; }
+        // the player may only be asked on this (the screen's) thread: its length is read here, before the search starts
+        long d = 0;
+        try { if (controller != null && controller.getDuration() > 0) d = controller.getDuration(); } catch (Throwable ignored) { }
+        final long durMs = d;
         new Thread(() -> {
-            String keep = Lyrics.savedText(this, song);           // searching saves its result; put the old copy back
-            Lyrics.Result r = Lyrics.online(this, song, title, artist, album, controller != null && controller.getDuration() > 0 ? controller.getDuration() : 0);
-            if (keep == null) Lyrics.forget(this, song); else Lyrics.saveText(this, song, keep);
-            final String t = Lyrics.toText(r);
+            String t = "";
+            try {
+                String keep = Lyrics.savedText(this, song);           // searching saves its result; put the old copy back
+                Lyrics.Result r = Lyrics.online(this, song, title, artist, album, durMs);
+                if (keep == null) Lyrics.forget(this, song); else Lyrics.saveText(this, song, keep);
+                t = Lyrics.toText(r);
+            } catch (Throwable ignored) { }
+            final String found = t == null ? "" : t;
             ui.post(() -> {
-                if (t.isEmpty()) { Ui.toast(this, R.string.lyr_nothing_online); return; }
+                if (isFinishing()) return;
+                if (found.isEmpty()) { Ui.toast(this, R.string.lyr_nothing_online); return; }
                 undo.add(text.getText().toString());
-                setText(t);
+                setText(found);
             });
         }).start();
     }

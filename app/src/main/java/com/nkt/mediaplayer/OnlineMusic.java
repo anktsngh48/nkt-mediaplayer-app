@@ -281,15 +281,16 @@ public final class OnlineMusic {
 
         /** The playlist of the video that just started: YouTube's own mix for it (or its up-next list). */
         @JavascriptInterface
-        public void related(String videoId, int seq) {
+        public void related(String videoId, String title, int seq) {
             if (videoId == null || !videoId.matches("[\\w-]{11}")) return;
             pool.execute(() -> {
                 String json = cache.get("related:" + videoId);
                 if (json == null) json = relatedAll(videoId);
+                if (json == null && title != null && !title.trim().isEmpty()) json = searchAll(title);    // last resort: songs like it
                 if (json != null) {
                     cache.put("related:" + videoId, json);
                     js("NKTrelated(" + seq + "," + JSONObject.quote(videoId) + "," + JSONObject.quote(json) + ")");
-                }
+                } else js("NKTrelatedFailed(" + seq + ")");
             });
         }
 
@@ -337,6 +338,8 @@ public final class OnlineMusic {
     private String relatedAll(String id) {
         ExecutorCompletionService<JSONArray> race = new ExecutorCompletionService<>(pool);
         List<Future<JSONArray>> jobs = new ArrayList<>();
+        jobs.add(race.submit(() -> nextApi(id, true)));
+        jobs.add(race.submit(() -> nextApi(id, false)));
         jobs.add(race.submit(() -> mixYouTube(id)));
         jobs.add(race.submit(() -> upNextYouTube(id)));
         for (String api : PIPED) jobs.add(race.submit(() -> relatedPiped(api, id)));
@@ -353,7 +356,7 @@ public final class OnlineMusic {
                     if (r == null || r.length() == 0) continue;
                     if (r.optJSONObject(0) != null && r.optJSONObject(0).optBoolean("mix")) return strip(r).toString();   // the mix comes first
                     if (second == null) second = r;
-                    if (jobs.get(0).isDone()) return strip(r).toString();
+                    if (jobs.get(0).isDone() && jobs.get(2).isDone()) return strip(r).toString();
                 } catch (Exception ignored) { }
             }
         } catch (InterruptedException ignored) {
@@ -383,6 +386,106 @@ public final class OnlineMusic {
         return b.toString();
     }
 
+    /**
+     * YouTube's own "up next" service (what its website asks): the video's Mix (withMix) or the videos beside it.
+     * Reads both the older and the newer ways YouTube describes a video.
+     */
+    private static JSONArray nextApi(String id, boolean withMix) throws Exception {
+        JSONObject body = new JSONObject()
+                .put("context", new JSONObject().put("client", new JSONObject().put("clientName", "WEB").put("clientVersion", "2.20251101.01.00")
+                        .put("hl", "en").put("gl", "IN")))
+                .put("videoId", id);
+        if (withMix) body.put("playlistId", "RD" + id);
+        JSONObject data = new JSONObject(post("https://www.youtube.com/youtubei/v1/next?prettyPrint=false", body.toString(), 10000));
+        JSONObject two = data.getJSONObject("contents").getJSONObject("twoColumnWatchNextResults");
+        JSONArray out = new JSONArray();
+        if (withMix) {
+            JSONObject pl = two.optJSONObject("playlist");
+            JSONArray items = pl == null || pl.optJSONObject("playlist") == null ? null : pl.getJSONObject("playlist").optJSONArray("contents");
+            for (int i = 0; items != null && i < items.length() && out.length() < 30; i++) {
+                JSONObject r = items.getJSONObject(i).optJSONObject("playlistPanelVideoRenderer");
+                if (r == null || r.optString("videoId").isEmpty()) continue;
+                String dur = text(r.optJSONObject("lengthText"));
+                String ch = text(r.optJSONObject("shortBylineText"));
+                if (ch.isEmpty()) ch = text(r.optJSONObject("longBylineText"));
+                out.put(video(r.getString("videoId"), text(r.optJSONObject("title")), ch, dur).put("mix", true));
+            }
+            if (out.length() == 0) throw new Exception("no mix");
+            return out;
+        }
+        out.put(new JSONObject().put("videoId", id).put("self", true));
+        JSONObject sr = two.optJSONObject("secondaryResults");
+        JSONArray items = sr == null || sr.optJSONObject("secondaryResults") == null ? null : sr.getJSONObject("secondaryResults").optJSONArray("results");
+        for (int i = 0; items != null && i < items.length() && out.length() < 25; i++) {
+            JSONObject it = items.getJSONObject(i);
+            JSONObject c = it.optJSONObject("compactVideoRenderer");
+            if (c != null && !c.optString("videoId").isEmpty()) {
+                String dur = text(c.optJSONObject("lengthText"));
+                if (!dur.isEmpty()) out.put(video(c.getString("videoId"), text(c.optJSONObject("title")), text(c.optJSONObject("longBylineText")), dur));
+                continue;
+            }
+            JSONObject l = it.optJSONObject("lockupViewModel");                    // the newer way
+            if (l == null || !"LOCKUP_CONTENT_TYPE_VIDEO".equals(l.optString("contentType")) || l.optString("contentId").length() != 11) continue;
+            JSONObject md = l.optJSONObject("metadata") == null ? null : l.getJSONObject("metadata").optJSONObject("lockupMetadataViewModel");
+            String title = md == null || md.optJSONObject("title") == null ? "" : md.getJSONObject("title").optString("content");
+            String ch = "";
+            try {
+                ch = md.getJSONObject("metadata").getJSONObject("contentMetadataViewModel").getJSONArray("metadataRows")
+                        .getJSONObject(0).getJSONArray("metadataParts").getJSONObject(0).getJSONObject("text").optString("content");
+            } catch (Exception ignored) { }
+            String dur = findDuration(l.optJSONObject("contentImage"));
+            if (dur.isEmpty()) continue;                                         // live streams and Shorts: not songs
+            out.put(video(l.getString("contentId"), title, ch, dur));
+        }
+        if (out.length() <= 1) throw new Exception("no up next");
+        return out;
+    }
+
+    /** The "3:45" badge somewhere inside a video's picture description. */
+    private static String findDuration(Object o) {
+        if (o instanceof JSONObject) {
+            JSONObject j = (JSONObject) o;
+            String t = j.optString("text", "");
+            if (t.matches("\\d{1,2}(:\\d{2}){1,2}")) return t;
+            JSONArray names = j.names();
+            for (int i = 0; names != null && i < names.length(); i++) {
+                String r = findDuration(j.opt(names.optString(i)));
+                if (!r.isEmpty()) return r;
+            }
+        } else if (o instanceof JSONArray) {
+            JSONArray a = (JSONArray) o;
+            for (int i = 0; i < a.length(); i++) { String r = findDuration(a.opt(i)); if (!r.isEmpty()) return r; }
+        }
+        return "";
+    }
+
+    private static String post(String url, String json, int timeoutMs) throws Exception {
+        if (Net.off()) throw new java.io.IOException("Internet is turned off");
+        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+        c.setConnectTimeout(timeoutMs);
+        c.setReadTimeout(timeoutMs);
+        c.setRequestMethod("POST");
+        c.setDoOutput(true);
+        c.setRequestProperty("Content-Type", "application/json");
+        c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36");
+        c.setRequestProperty("Accept-Language", "en-US,en;q=0.9");
+        c.setRequestProperty("Origin", "https://www.youtube.com");
+        c.setRequestProperty("X-YouTube-Client-Name", "1");
+        c.setRequestProperty("X-YouTube-Client-Version", "2.20251101.01.00");
+        c.setRequestProperty("Cookie", "CONSENT=YES+cb; SOCS=CAI");
+        try {
+            try (java.io.OutputStream os = c.getOutputStream()) { os.write(json.getBytes("UTF-8")); }
+            if (c.getResponseCode() != 200) throw new Exception("HTTP " + c.getResponseCode());
+            try (InputStream in = c.getInputStream()) {
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                byte[] buf = new byte[32 * 1024];
+                int n;
+                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                return out.toString("UTF-8");
+            }
+        } finally { c.disconnect(); }
+    }
+
     /** YouTube's own "Mix" playlist for the video (the list that plays next on YouTube). */
     private static JSONArray mixYouTube(String id) throws Exception {
         JSONObject data = ytData(get("https://www.youtube.com/watch?v=" + id + "&list=RD" + id + "&hl=en&gl=IN", 10000));
@@ -393,7 +496,6 @@ public final class OnlineMusic {
             JSONObject r = items.getJSONObject(i).optJSONObject("playlistPanelVideoRenderer");
             if (r == null || r.optString("videoId").isEmpty()) continue;
             String dur = text(r.optJSONObject("lengthText"));
-            if (dur.isEmpty()) continue;
             String ch = text(r.optJSONObject("shortBylineText"));
             if (ch.isEmpty()) ch = text(r.optJSONObject("longBylineText"));
             out.put(video(r.getString("videoId"), text(r.optJSONObject("title")), ch, dur).put("mix", true));

@@ -33,6 +33,12 @@ import com.google.zxing.qrcode.QRCodeWriter;
 
 import java.util.List;
 
+import androidx.media3.common.MediaMetadata;
+import androidx.media3.common.Player;
+import androidx.media3.session.MediaController;
+
+import com.google.common.util.concurrent.ListenableFuture;
+
 /**
  * Stream: one tap to START. Shows the address and a QR code for the other device, the song that is going out with
  * play / pause / next, "Silence this phone", the library for listeners, and who is listening.
@@ -46,7 +52,12 @@ public class StreamActivity extends Activity {
 
     private ImageView icon, qr, nowArt, btnPlay;
     private TextView status, sub, address, button, intro, scanNote, keepNote, nowTitle, nowSub, nowHint;
-    private TextView blockedSub, limitSub, sharedSub, silenceSub, listenHead, sectionNow;
+    private TextView blockedSub, limitSub, sharedSub, silenceSub, listenHead, sectionNow, nowState;
+    // before START the card is a mini player for the app's own player
+    private ListenableFuture<MediaController> future;
+    private MediaController controller;
+    private EditText limitIn;
+    private boolean limitTyping = false;
     private View addressBox, shareBtn, transport, listenBox;
     private Switch silence, library, hvolSw;
     private final Switch[] shareSw = new Switch[3];
@@ -168,6 +179,11 @@ public class StreamActivity extends Activity {
         now.setBackgroundResource(R.drawable.bg_options_bar);
         now.setPadding(dp(12), dp(12), dp(12), dp(12));
         col.addView(now, lp(MATCH, WRAP, 8, 0));
+        nowState = text("", 12, R.color.muted, true);           // streaming or not, said in one line
+        nowState.setLetterSpacing(0.04f);
+        nowState.setGravity(Gravity.CENTER_VERTICAL);
+        nowState.setCompoundDrawablePadding(dp(6));
+        now.addView(nowState, lp(MATCH, WRAP, 0, 0));
         LinearLayout nowRow = new LinearLayout(this);
         nowRow.setGravity(Gravity.CENTER_VERTICAL);
         nowArt = new ImageView(this);
@@ -193,15 +209,15 @@ public class StreamActivity extends Activity {
         nowRow.addView(names, nl);
         LinearLayout tr = new LinearLayout(this);
         tr.setGravity(Gravity.CENTER_VERTICAL);
-        tr.addView(iconButton(R.drawable.ic_prev, R.string.cd_prev, v -> { StreamHub.previous(); ui.postDelayed(this::update, 300); }), new LinearLayout.LayoutParams(dp(44), dp(44)));
-        ImageButton pp = iconButton(R.drawable.ic_pause, R.string.cd_play, v -> { StreamHub.playPause(); ui.postDelayed(this::update, 300); });
+        tr.addView(iconButton(R.drawable.ic_prev, R.string.cd_prev, v -> { previous(); ui.postDelayed(this::update, 300); }), new LinearLayout.LayoutParams(dp(44), dp(44)));
+        ImageButton pp = iconButton(R.drawable.ic_pause, R.string.cd_play, v -> { playPause(); ui.postDelayed(this::update, 300); });
         pp.setBackgroundResource(R.drawable.bg_round_btn);
         btnPlay = pp;
         tr.addView(pp, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        tr.addView(iconButton(R.drawable.ic_next, R.string.cd_next, v -> { StreamHub.next(); ui.postDelayed(this::update, 300); }), new LinearLayout.LayoutParams(dp(44), dp(44)));
+        tr.addView(iconButton(R.drawable.ic_next, R.string.cd_next, v -> { next(); ui.postDelayed(this::update, 300); }), new LinearLayout.LayoutParams(dp(44), dp(44)));
         transport = tr;
         nowRow.addView(tr);
-        now.addView(nowRow);
+        now.addView(nowRow, lp(MATCH, WRAP, 8, 0));
         nowHint = text(getString(R.string.stream_now_hint), 12, R.color.muted, false);
         now.addView(nowHint, lp(MATCH, WRAP, 8, 0));
 
@@ -261,7 +277,28 @@ public class StreamActivity extends Activity {
             StreamHub.hostVolumeChanged(this);
         });
         limitSub = text("", 12, R.color.muted, false);
-        pb.addView(row(R.drawable.ic_devices, getString(R.string.stream_limit), limitSub, chevron(), this::pickLimit));
+        limitIn = field(StreamPrefs.limit(this) > 0 ? String.valueOf(StreamPrefs.limit(this)) : "", InputType.TYPE_CLASS_NUMBER);
+        limitIn.setHint(R.string.stream_no_limit);
+        limitIn.setHintTextColor(getColor(R.color.muted));
+        limitIn.setGravity(Gravity.CENTER);
+        limitIn.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(3)});
+        limitIn.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE);
+        limitIn.setMinWidth(dp(92));
+        limitIn.setMinHeight(dp(44));
+        limitIn.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence x, int a, int b, int c) { }
+            @Override public void onTextChanged(CharSequence x, int a, int b, int c) { }
+            @Override public void afterTextChanged(android.text.Editable e) {      // empty or 0 = no limit; takes effect at once
+                int n = 0;
+                try { n = e.length() == 0 ? 0 : Integer.parseInt(e.toString()); } catch (Exception ignored) { }
+                StreamPrefs.setLimit(StreamActivity.this, Math.max(0, Math.min(999, n)));
+                limitTyping = true;
+                update();
+                limitTyping = false;
+            }
+        });
+        View limitRow = row(R.drawable.ic_devices, getString(R.string.stream_limit), limitSub, limitIn, () -> limitIn.requestFocus());
+        pb.addView(limitRow);
         blockedSub = text("", 12, R.color.muted, false);
         pb.addView(row(R.drawable.ic_mute, getString(R.string.stream_blocked), blockedSub, chevron(), this::showBlocked));
 
@@ -312,6 +349,66 @@ public class StreamActivity extends Activity {
     protected void onPause() {
         ui.removeCallbacks(tick);
         super.onPause();
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        future = Media.connect(this);
+        future.addListener(() -> {
+            try { controller = future.get(); controller.addListener(watch); update(); } catch (Exception ignored) { }
+        }, ui::post);
+    }
+
+    @Override
+    protected void onStop() {
+        if (controller != null) controller.removeListener(watch);
+        controller = null;
+        MediaController.releaseFuture(future);
+        super.onStop();
+    }
+
+    private final Player.Listener watch = new Player.Listener() {
+        @Override public void onEvents(Player p, Player.Events e) { update(); }
+    };
+
+    // ── The card's buttons: what goes out while streaming, else the app's own player ──
+
+    private void previous() {
+        if (StreamService.running) { StreamHub.previous(); return; }
+        if (controller != null && controller.getMediaItemCount() > 0) controller.seekToPrevious();
+    }
+
+    private void next() {
+        if (StreamService.running) { StreamHub.next(); return; }
+        if (controller != null && controller.hasNextMediaItem()) controller.seekToNextMediaItem();
+    }
+
+    private void playPause() {
+        if (StreamService.running && StreamHub.hasItem()) { StreamHub.playPause(); return; }
+        if (controller == null) return;
+        if (controller.getMediaItemCount() > 0) {
+            if (controller.isPlaying()) controller.pause(); else Media.play(controller);
+            return;
+        }
+        // nothing queued: the Audio library, A to Z, from the first song
+        new Thread(() -> {
+            List<MediaInfo> songs;
+            LibraryCache.Snapshot snap = LibraryCache.load(this);
+            songs = snap != null && !snap.audio.isEmpty() ? new java.util.ArrayList<>(snap.audio) : MediaLibrary.audio(this);
+            boolean hidden = Prefs.showHidden(this);
+            java.util.List<MediaInfo> list = new java.util.ArrayList<>();
+            for (MediaInfo m : songs) if (hidden || !m.hidden) list.add(m);
+            java.util.Collections.sort(list, (a, b) -> a.title.compareToIgnoreCase(b.title));
+            ui.post(() -> {
+                if (controller == null || isFinishing()) return;
+                if (list.isEmpty()) { Ui.toast(this, R.string.no_songs); return; }
+                controller.setShuffleModeEnabled(false);
+                controller.setMediaItems(Media.items(list), 0, 0);
+                controller.prepare();
+                controller.play();
+            });
+        }, "nkt-stream-playall").start();
     }
 
     // ── Start ────────────────────────────────────────────────────────────────
@@ -497,22 +594,6 @@ public class StreamActivity extends Activity {
         return e;
     }
 
-    private void pickLimit() {
-        int[] vals = {0, 2, 5, 10, 20};
-        String[] names = {getString(R.string.stream_no_limit), "2", "5", "10", "20"};
-        int cur = StreamPrefs.limit(this), at = 0;
-        for (int i = 0; i < vals.length; i++) if (vals[i] == cur) at = i;
-        Dialogs.builder(this)
-                .setTitle(R.string.stream_limit)
-                .setSingleChoiceItems(names, at, (d, w) -> {
-                    StreamPrefs.setLimit(this, vals[w]);
-                    d.dismiss();
-                    update();
-                })
-                .setNegativeButton(R.string.cancel, null)
-                .show();
-    }
-
     // ── Screen ───────────────────────────────────────────────────────────────
 
     private void update() {
@@ -558,10 +639,21 @@ public class StreamActivity extends Activity {
         int nb = StreamPrefs.blocked(this).size();
         blockedSub.setText(nb == 0 ? getString(R.string.stream_blocked_sub0) : getResources().getQuantityString(R.plurals.stream_blocked_n, nb, nb));
 
-        // the song or video that is going out
+        // the song or video that is going out; before START, what the app's own player has (a mini player)
         sectionNow.setText(on ? R.string.stream_now : R.string.stream_what);
+        int ln = StreamHub.listenerCount();
+        nowState.setText(!on ? getString(R.string.stream_card_off)
+                : ln > 0 ? getResources().getQuantityString(R.plurals.stream_card_on_n, ln, ln) : getString(R.string.stream_card_on0));
+        nowState.setTextColor(getColor(on ? R.color.success : R.color.muted));
+        android.graphics.drawable.GradientDrawable dot = new android.graphics.drawable.GradientDrawable();
+        dot.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        dot.setColor(getColor(on ? R.color.success : R.color.muted));
+        dot.setSize(dp(7), dp(7));
+        nowState.setCompoundDrawablesRelativeWithIntrinsicBounds(dot, null, null, null);
         boolean has = StreamHub.running && StreamHub.hasItem();
         if (!StreamHub.running) has = false;
+        boolean local = !on && controller != null && controller.getMediaItemCount() > 0 && controller.getCurrentMediaItem() != null;
+        boolean playingNow;
         if (has) {
             nowTitle.setText(StreamHub.nowTitle());
             String a = StreamHub.nowArtist();
@@ -578,27 +670,46 @@ public class StreamActivity extends Activity {
                     });
                 }).start();
             }
+            playingNow = StreamHub.isPlaying();
+        } else if (local) {
+            MediaMetadata md = controller.getMediaMetadata();
+            nowTitle.setText(md.title == null ? getString(R.string.unknown) : md.title);
+            String a = md.artist == null ? "" : md.artist.toString();
+            long dur = Math.max(0, controller.getDuration());
+            String t = Ui.time(Math.max(0, controller.getCurrentPosition())) + (dur > 0 ? " / " + Ui.time(dur) : "");
+            nowSub.setText(a.isEmpty() ? t : a + " · " + t);
+            String id = "local:" + controller.getCurrentMediaItem().mediaId;
+            if (!id.equals(shownArtId)) {
+                shownArtId = id;
+                Bitmap b = null;
+                if (md.artworkData != null) { try { b = android.graphics.BitmapFactory.decodeByteArray(md.artworkData, 0, md.artworkData.length); } catch (Throwable ignored) { } }
+                if (b != null) { nowArt.setPadding(0, 0, 0, 0); nowArt.clearColorFilter(); nowArt.setImageBitmap(b); }
+                else { nowArt.setPadding(dp(14), dp(14), dp(14), dp(14)); nowArt.setColorFilter(getColor(R.color.accent)); nowArt.setImageResource(R.drawable.ic_music); }
+            }
+            playingNow = controller.isPlaying();
         } else {
             boolean priv = StreamHub.running && StreamHub.nowPrivate();
             nowTitle.setText(priv ? R.string.stream_private_now : R.string.stream_nothing);
-            nowSub.setText(priv ? R.string.stream_private_sub : R.string.stream_what_sub);
+            nowSub.setText(priv ? R.string.stream_private_sub : on ? R.string.stream_what_sub : R.string.stream_card_play_all);
             if (!shownArtId.isEmpty()) {
                 shownArtId = "";
                 nowArt.setPadding(dp(14), dp(14), dp(14), dp(14));
                 nowArt.setColorFilter(getColor(R.color.accent));
                 nowArt.setImageResource(R.drawable.ic_music);
             }
+            playingNow = false;
         }
-        transport.setVisibility(on ? View.VISIBLE : View.GONE);
+        transport.setVisibility(View.VISIBLE);                 // before START too: it plays the app's own player
         nowHint.setVisibility(on ? View.VISIBLE : View.GONE);
         if (btnPlay != null) {
-            btnPlay.setImageResource(StreamHub.isPlaying() ? R.drawable.ic_pause : R.drawable.ic_play);
+            btnPlay.setImageResource(playingNow ? R.drawable.ic_pause : R.drawable.ic_play);
+            btnPlay.setContentDescription(getString(playingNow ? R.string.cd_pause : R.string.cd_play));
             btnPlay.setColorFilter(getColor(R.color.accent));
         }
 
         silenceSub.setText(StreamPrefs.silence(this) ? R.string.stream_silence_on : R.string.stream_silence_off);
         int lim = StreamPrefs.limit(this);
-        limitSub.setText(lim == 0 ? getString(R.string.stream_no_limit) : String.valueOf(lim));
+        limitSub.setText(lim == 0 ? getString(R.string.stream_limit_none) : getResources().getQuantityString(R.plurals.stream_limit_n, lim, lim));
         boolean chosen = !StreamPrefs.MODE_ALL.equals(StreamPrefs.shareMode(this));
         sharedSub.setText(getString(R.string.stream_shared_sub,
                 chosen ? getString(R.string.stream_chosen) : getString(R.string.stream_all_kinds),

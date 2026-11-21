@@ -155,6 +155,27 @@ a.pcb{display:inline-flex;align-items:center;justify-content:center;text-decorat
 .litem.back{border-color:rgba(0,229,255,.3)}
 #ph .phTop .x svg{display:block;margin:auto}
 #ph:fullscreen,#ph:-webkit-full-screen{width:100vw;height:100vh}
+/* rows never grow wider than their column (long names kept the download arrow out of view) */
+#lib{overflow-x:hidden}
+#libList>div{min-width:0}
+#libList .litem{min-width:0;flex:1 1 auto}
+/* your own pick: a bar at the top of the library */
+#own{position:sticky;top:8px;z-index:6;background:#0D1526;margin-top:12px!important;box-shadow:0 8px 20px rgba(0,0,0,.45)}
+#own .oart{width:48px;height:48px;border-radius:8px;flex:none}
+/* a tap on the art, visualiser or lyrics: only that, filling the screen */
+body.clean{overflow:hidden}
+body.clean #s-main>*:not(#live),body.clean #live>*:not(#pArt):not(#pLyr):not(#pViz),body.clean #pArt>*:not(#bigArt),body.clean #pViz>*:not(#vizBox),body.clean #selBar{display:none!important}
+body.clean #s-main,body.clean #live{visibility:visible}
+body.clean #live #pArt>#bigArt{position:fixed;inset:0;margin:auto!important;width:min(92vw,92vh)!important;height:min(92vw,92vh)!important;max-width:none!important;z-index:30}
+body.clean #live #pViz>#vizBox{position:fixed;inset:0;height:100vh!important;margin:0!important;border-radius:0;border:0;z-index:30}
+body.clean #live #pLyr>#lyr{position:fixed;inset:0;margin:0!important;min-height:100vh;border-radius:0;border:0;z-index:30;background:#05080F}
+body.clean::before{content:"";position:fixed;inset:0;background:#000;z-index:29}
+#cleanX{position:fixed;top:16px;right:16px;z-index:31;display:none}
+body.clean.peek #cleanX{display:inline-flex}
+#bigArt,#vizBox,#lyr{cursor:pointer}
+/* the photo viewer with nothing on it */
+#ph.bare .phTop,#ph.bare .pha,#ph.bare #phStrip,#ph.bare .phCap,#ph.bare .phCtl{display:none!important}
+#ph.bare{cursor:none}
 /* All files: folder path, folders, a file's length; the play arrow of a row (TV / laptop) */
 #crumbs{margin-top:10px;font-size:12px;display:flex;flex-wrap:wrap;gap:4px;align-items:center}
 #crumbs span[data-path]{color:#00E5FF;cursor:pointer}
@@ -186,7 +207,7 @@ a.pcb{display:inline-flex;align-items:center;justify-content:center;text-decorat
 @media (min-width:900px){
   .wideonly{display:block!important}
   #s-main{position:relative}
-  #tabsRow{position:absolute;top:26px;left:250px;margin:0!important}
+  #tabsRow{margin:0!important}
   #tabsRow .tab{height:38px;width:130px;flex:none}
   .litem .pa{display:flex}
   /* LIVE beside the library: the player on the left, the host's library on the right */
@@ -195,7 +216,7 @@ a.pcb{display:inline-flex;align-items:center;justify-content:center;text-decorat
   #s-main.split #wait,#s-main.split #live{grid-column:1;grid-row:2;min-height:0;overflow:auto;padding-right:4px}
   #s-main.split #lib{grid-column:2;grid-row:2;min-height:0;overflow:auto;display:flex!important;padding-right:4px}
   #s-main.split .libHead{display:flex!important}
-  #s-main.split #pArt[style*="flex"]{display:flex!important}
+  #s-main.split #pArt:not([style*="none"]){display:flex!important}
   #s-main.split #pArt>#bigArt{width:min(100%,340px)!important;height:auto!important;aspect-ratio:1/1;margin-top:16px!important}
   #s-main.split #pArt>#aTitle{text-align:center!important;font-size:22px!important;margin-top:18px!important}
   #s-main.split #pArt>#aArtist{text-align:center!important;font-size:14px!important}
@@ -206,7 +227,7 @@ a.pcb{display:inline-flex;align-items:center;justify-content:center;text-decorat
   #s-main.split #lyr{min-height:44vh}
   #s-main.split #libList{grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}
   /* LIBRARY on its own: the kinds down the side, with how many each has */
-  #s-main.libfull #lib[style*="flex"]{display:grid!important;grid-template-columns:210px 1fr;column-gap:32px;align-items:start;align-content:start}
+  #s-main.libfull #lib:not([style*="none"]){display:grid!important;grid-template-columns:210px 1fr;column-gap:32px;align-items:start;align-content:start}
   #s-main.libfull #lib>*{grid-column:2}
   #s-main.libfull #lib>#kinds{grid-column:1;grid-row:1/span 30;flex-direction:column;align-items:stretch;gap:6px;margin-top:12px!important;position:sticky;top:16px}
   #s-main.libfull #kinds .pill{text-align:left;display:flex;align-items:center;height:44px;border-radius:12px}
@@ -229,11 +250,15 @@ a.pcb{display:inline-flex;align-items:center;justify-content:center;text-decorat
   .tab{max-width:240px}
   #s-tap .art{width:300px!important;height:300px!important}
   #tapTitle{font-size:28px!important}
-  #pArt[style*="flex"]{display:grid!important;grid-template-columns:minmax(320px,46%) 1fr;column-gap:56px;align-items:start;align-content:start}
+  #pArt:not([style*="none"]){display:grid!important;grid-template-columns:minmax(320px,46%) 1fr;column-gap:56px;align-items:start;align-content:start}
   #pArt>#bigArt{grid-column:1;grid-row:1/span 8;width:100%!important;height:auto!important;aspect-ratio:1/1;max-width:600px;margin-top:22px!important}
   #pArt>*:not(#bigArt){grid-column:2}
-  #pArt>#aTitle{text-align:left!important;font-size:32px!important;line-height:1.2;margin-top:30px!important}
-  #pArt>#aArtist{text-align:left!important;font-size:18px!important}
+  #pArt>#aTitle{text-align:left!important;font-size:22px!important;line-height:1.25;margin-top:30px!important}
+  #pArt>#aArtist{text-align:left!important;font-size:15px!important}
+  #tv .ti{font-size:max(17px,1.8vw)}
+  #tv .ar{font-size:max(13px,1.2vw)}
+  #tabsRow.inhead{position:static;margin:0 12px 0 auto!important}
+  #tabsRow.inhead .tab.on{display:none}
   #pArt>#syncChip{justify-self:start}
   #pArt>#foot{padding-top:12px!important}
   #vizBox{height:64vh}
@@ -296,7 +321,7 @@ a.pcb{display:inline-flex;align-items:center;justify-content:center;text-decorat
 
 <!-- Main -->
 <div id="s-main" class="wrap scr" style="flex-direction:column">
-  <div class="row" style="justify-content:space-between">
+  <div class="row" id="hdRow" style="justify-content:space-between">
     <div class="logo">NKT STREAM</div>
     <div class="chip" id="hChip"><i></i><span id="hChipT">LIVE</span></div>
   </div>
@@ -336,7 +361,7 @@ a.pcb{display:inline-flex;align-items:center;justify-content:center;text-decorat
         <div class="bar" role="progressbar" aria-label="Song position"><b id="aBar"></b></div>
         <div class="row muted" style="justify-content:space-between;font-size:12px;margin-top:8px"><span id="aCur">0:00</span><span id="aDur">0:00</span></div>
       </div>
-      <div class="chip" id="syncChip" style="margin-top:12px"><span id="syncT">IN SYNC</span></div>
+      <div class="row" id="actRow" style="margin-top:12px;gap:8px;justify-content:center;flex-wrap:wrap"><div class="chip" id="syncChip"><span id="syncT">IN SYNC</span></div></div>
 
       <div class="card" style="align-self:stretch;margin-top:18px;padding:8px 14px 14px">
         <div class="row" style="height:56px;gap:8px">
@@ -394,6 +419,12 @@ a.pcb{display:inline-flex;align-items:center;justify-content:center;text-decorat
 
   <!-- LIBRARY -->
   <div id="lib" style="display:none;flex-direction:column;flex:1">
+    <div class="card" id="own" hidden style="margin-top:auto;margin-top:14px;padding:12px 14px;border-color:rgba(0,229,255,.25)">
+      <div class="row" style="gap:12px"><div class="art oart" id="oArt"></div><div style="flex:1;min-width:0"><div id="oTitle" style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div><div class="muted" style="font-size:12px;margin-top:2px">Not synced with the host</div></div>
+        <button class="btn" id="backLive" style="height:44px;padding:0 16px;font-size:11px;letter-spacing:.12em">BACK TO LIVE</button></div>
+      <div class="bar" style="margin-top:8px"><b id="oBar" style="background:#7B61FF"></b></div>
+      <div class="pc" style="margin-top:12px"><button class="pcb" id="oPrev">PREV</button><button class="pcb" id="oBack">−10s</button><button class="pcb" id="oPlay">PAUSE</button><button class="pcb" id="oFwd">+10s</button><button class="pcb" id="oNext">NEXT</button><button class="pcb" id="oFs" hidden aria-label="Full screen">FULL</button></div>
+    </div>
     <div class="row libHead" style="justify-content:space-between;gap:12px"><div class="orb" style="font-size:12px">LIBRARY</div><div class="muted" id="libHint" style="font-size:12px">Play something yourself while you wait</div></div>
     <div style="position:relative;margin-top:12px"><svg style="position:absolute;left:14px;top:14px" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8A9AB2" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input id="search" placeholder="Search songs and videos" autocomplete="off"></div>
     <div class="row" style="gap:8px;margin-top:12px" id="kinds"><button class="pill on" data-k="0">SONGS<span class="kc"></span></button><button class="pill" data-k="1">VIDEOS<span class="kc"></span></button><button class="pill" data-k="2">PHOTOS<span class="kc"></span></button><button class="pill" data-k="3">ALL FILES<span class="kc"></span></button></div>
@@ -402,18 +433,13 @@ a.pcb{display:inline-flex;align-items:center;justify-content:center;text-decorat
     <div id="dlNote" class="muted" hidden style="margin-top:8px;font-size:12px">The host has allowed downloads. The arrow saves a copy to this device.</div>
     <div id="crumbs" hidden></div>
     <div id="libList"></div>
-    <div class="card" id="own" hidden style="margin-top:auto;margin-top:14px;padding:12px 14px;border-color:rgba(0,229,255,.25)">
-      <div class="row" style="gap:12px"><div style="flex:1;min-width:0"><div id="oTitle" style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div><div class="muted" style="font-size:12px;margin-top:2px">Not synced with the host</div></div>
-        <button class="btn" id="backLive" style="height:44px;padding:0 16px;font-size:11px;letter-spacing:.12em">BACK TO LIVE</button></div>
-      <div class="bar" style="margin-top:8px"><b id="oBar" style="background:#7B61FF"></b></div>
-      <div class="pc" style="margin-top:12px"><button class="pcb" id="oPrev">PREV</button><button class="pcb" id="oBack">−10s</button><button class="pcb" id="oPlay">PAUSE</button><button class="pcb" id="oFwd">+10s</button><button class="pcb" id="oNext">NEXT</button><button class="pcb" id="oFs" hidden aria-label="Full screen">FULL</button></div>
-    </div>
   </div>
 </div>
 
 <!-- Video: for a TV or a laptop -->
 <div id="selBar"><button class="pcb" id="selDl">DOWNLOAD</button><button class="pcb" id="selAll">ALL</button><button class="pcb" id="selDone">DONE</button></div>
 <!-- Photo the host is showing -->
+<button class="pcb" id="cleanX" aria-label="Show everything">SHOW ALL</button>
 <div id="ask"><div class="card"><div class="orb" style="font-size:12px">PLAY HERE?</div><div id="askT" style="margin-top:12px;font-size:17px;font-weight:700"></div><div class="muted" style="margin-top:8px;font-size:13px;line-height:1.5">The songs and videos of this folder then play one after another on this device.</div><div class="row" style="gap:8px;margin-top:18px"><button class="btn" id="askNo" style="flex:1">CANCEL</button><button class="btn" id="askGo" style="flex:1;background:#00E5FF;color:#05080F">PLAY</button></div></div></div>
 <div id="ph"><img id="phImg" alt=""><button class="pha" id="phL" aria-label="Previous">‹</button><button class="pha" id="phR" aria-label="Next">›</button><div id="phStrip"></div><div class="phTop"><div class="logo">NKT STREAM</div><div class="chip"><i></i><span id="phChipT">LIVE PHOTO</span></div><a class="pcb" id="phDl" download hidden aria-label="Download this photo">DOWNLOAD</a><button class="x" id="phFs" hidden aria-label="Full screen"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00E5FF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button><button class="x" id="phX" style="margin-left:0" aria-label="Hide this photo">×</button></div><div class="pc phCtl"><button class="pcb" id="phPrev">PREV</button><button class="pcb" id="phPlay">PAUSE</button><button class="pcb" id="phNext">NEXT</button></div><div class="phCap"><b id="phT"></b><span class="muted" id="phN" style="font-size:13px"></span></div></div>
 
@@ -754,7 +780,11 @@ function render() {
   var waiting = !!(listening && !own && tab === 'live' && !st.has && !tv);
   $('#tabsRow').style.display = waiting && !libOn ? 'none' : 'flex';      // nothing playing yet: the library can still be opened
   // a TV or a laptop: LIVE shows the host's library beside the player; LIBRARY has its kinds down the side
-  var wide = isWide(), split = !!(wide && listening && libOn && tab === 'live' && !tv);
+  if (cleanOn && (waiting || tab !== 'live' || own || tv || !listening)) setClean(false);
+  var wide = isWide(), split = false;
+  var tr = $('#tabsRow'), hd = $('#hdRow');
+  if (wide && tr.parentNode !== hd) { hd.insertBefore(tr, $('#hChip')); tr.classList.add('inhead'); }
+  else if (!wide && tr.parentNode === hd) { hd.parentNode.insertBefore(tr, hd.nextSibling); tr.classList.remove('inhead'); }
   $('#s-main').classList.toggle('split', split);
   $('#s-main').classList.toggle('libfull', !!(wide && tab === 'lib'));
   if (split) {
@@ -777,6 +807,10 @@ function render() {
   $('#dlLive').hidden = !ldl;
   if (ldl) $('#dlLive').href = dlHref(st.id);
   $('#fsAudio').hidden = !fsAvail();
+  var place = view === 2 ? $('#actRow') : $('#dlRow');
+  [$('#dlLive'), $('#fsAudio')].forEach(function (b) { if (b.parentNode !== place) place.appendChild(b); });
+  $('#dlRow').style.display = view === 2 ? 'none' : 'flex';
+  if (cleanOn && view !== cleanView) setClean(false);
   var vs = document.querySelectorAll('#views button');
   for (var i = 0; i < vs.length; i++) vs[i].classList.toggle('on', +vs[i].getAttribute('data-v') === view);
   $('#pArt').style.display = view === 2 ? 'flex' : 'none';
@@ -876,24 +910,61 @@ function fsChanged() {
   $('#tvFsT').textContent = fsOn() ? 'Exit full screen' : 'Full screen';
   $('#fsAudio').textContent = fsOn() ? 'EXIT FULL SCREEN' : 'FULL SCREEN';
   $('#oFs').textContent = fsOn() ? 'EXIT FULL' : 'FULL';
-  wake();                                    // the controls come back when the screen changes size
+  if (!fsOn() && $('#tv').classList.contains('on')) wake();   // leaving full screen shows the controls; entering it leaves them hidden
 }
 document.addEventListener('fullscreenchange', fsChanged);
 document.addEventListener('webkitfullscreenchange', fsChanged);
-var quietT = 0, unquietAt = 0;
+var quietT = 0, unquietAt = 0, lastMove = 0;
+// The video's controls hide 3 s after the mouse (or a remote's pointer) last moved. Keys that do something
+// (play, next, previous, seek, volume) and the next video starting do not bring them back.
 function wake() {
   var tv = $('#tv');
+  lastMove = Date.now();
   if (tv.classList.contains('quiet')) unquietAt = Date.now();
   tv.classList.remove('quiet');
   clearTimeout(quietT);
-  quietT = setTimeout(function () {
-    var playingNow = own ? !vid.paused : (st.has && st.playing);
-    if (tv.classList.contains('on') && playingNow) tv.classList.add('quiet');
-  }, 3500);
+  quietT = setTimeout(quietCheck, 3000);
 }
-$('#tv').addEventListener('pointermove', wake);
+function quietCheck() {
+  var tv = $('#tv');
+  if (!tv.classList.contains('on') || tv.classList.contains('quiet')) return;
+  var playingNow = own ? !vid.paused : (st.has && st.playing);
+  if (fsOn() || playingNow) { tv.classList.add('quiet'); return; }
+  quietT = setTimeout(quietCheck, 500);                    // still loading: hide as soon as it plays
+}
+vid.addEventListener('playing', function () { if (Date.now() - lastMove >= 3000) quietCheck(); });
+$('#tv').addEventListener('pointermove', function (e) { if (e.movementX || e.movementY || e.pointerType !== 'mouse') wake(); });
+
+// Songs: a tap on the art, visualiser or lyrics leaves only that on the screen; a tap again brings everything back
+var cleanOn = false, cleanView = -1, peekT = 0;
+function setClean(on) {
+  cleanOn = !!on;
+  cleanView = on ? view : -1;
+  document.body.classList.toggle('clean', cleanOn);
+  document.body.classList.remove('peek');
+  if (cleanOn) setTimeout(function () { try { resize(); } catch (x) {} }, 50);
+}
+['#bigArt', '#vizBox', '#lyr'].forEach(function (sel) {
+  $(sel).addEventListener('click', function () { if (listening && !own) setClean(!cleanOn); });
+});
+$('#cleanX').onclick = function () { setClean(false); };
+document.addEventListener('pointermove', function (e) {
+  if (!(e.movementX || e.movementY)) return;
+  if (cleanOn) { document.body.classList.add('peek'); clearTimeout(peekT); peekT = setTimeout(function () { document.body.classList.remove('peek'); }, 3000); }
+  if ($('#ph').classList.contains('on') && $('#ph').classList.contains('auto')) phShow();
+});
+// Photos: a tap shows or hides the bars; in full screen they also hide by themselves after 3 s
+var phT = 0;
+function phShow() {
+  var ph = $('#ph');
+  ph.classList.remove('bare');
+  clearTimeout(phT);
+  if (fsOn()) phT = setTimeout(function () { if (fsOn() && ph.classList.contains('on')) ph.classList.add('bare'); }, 3000);
+}
+document.addEventListener('fullscreenchange', function () { var ph = $('#ph'); ph.classList.toggle('auto', fsOn() && ph.classList.contains('on')); if (fsOn() && ph.classList.contains('on')) phShow(); else clearTimeout(phT); });
 var wasQuiet = false;
 $('#tv').addEventListener('pointerdown', function () { wasQuiet = $('#tv').classList.contains('quiet') || Date.now() - unquietAt < 700; });
+$('#phImg').addEventListener('click', function () { var ph = $('#ph'); if (ph.classList.contains('bare')) phShow(); else { clearTimeout(phT); ph.classList.add('bare'); } });
 $('#tv').addEventListener('click', function (e) {
   var tv = $('#tv');
   if (wasQuiet) { wake(); return; }
@@ -945,7 +1016,8 @@ document.addEventListener('keydown', function (e) {
   else if ((k === 'g' || k === 'G') && shift) goLiveShift();
   else done = false;
   if (done) e.preventDefault();
-  if ($('#tv').classList.contains('on')) wake();
+  else if ($('#tv').classList.contains('on') && (k === 'Tab' || k === 'Enter' || k === 'Escape' || /^Arrow/.test(k))) wake();   // moving around with a remote
+  if (e.key === 'Escape' && cleanOn) setClean(false);
 });
 // the laptop's media keys, a TV remote's play / next keys and the media notification
 function msSet(a, f) { try { navigator.mediaSession.setActionHandler(a, f); } catch (x) {} }
@@ -1433,6 +1505,7 @@ function updOwnBtns() {
 }
 function renderLibState() {
   $('#own').hidden = !(own && !own.photo);
+  if (own && !own.photo) setArt($('#oArt'), own.id, 22);
   $('#oFs').hidden = !fsAvail();
   $('#oTitle').textContent = own ? own.title : '';
   var ks = document.querySelectorAll('#kinds button');

@@ -367,7 +367,8 @@
     if (!played.length || played[played.length - 1].videoId !== r.videoId) { played.push(r); if (played.length > 50) played.shift(); }
     if (relatedFor === r.videoId || !app || !app.related) return;
     relatedFor = r.videoId;
-    app.related(r.videoId, ++relatedSeq);
+    document.getElementById('results-note').textContent = 'Getting this video’s playlist…';
+    app.related(r.videoId, (r.title || '') + ' ' + (r.channel || ''), ++relatedSeq);
   }
   window.NKTrelated = (seq, vid, json) => {
     if (seq !== relatedSeq) return;
@@ -376,12 +377,16 @@
     let list = []; try { list = JSON.parse(json); } catch(_) {}
     const seen = new Set([vid]);
     list = list.filter(x => x && x.videoId && !x.self && x.title && !seen.has(x.videoId) && seen.add(x.videoId));
-    if (!list.length) return;
+    if (!list.length) { document.getElementById('results-note').textContent = 'Couldn’t get its playlist'; return; }
     currentList = [cur].concat(list);
     currentIdx = 0;
     listMode = 'playlist';
     document.getElementById('next-btn').disabled = currentList.length < 2;
     renderResults();
+  };
+  window.NKTrelatedFailed = (seq) => {
+    if (seq !== relatedSeq) return;
+    document.getElementById('results-note').textContent = 'Couldn’t get its playlist';
   };
 
   function togglePlay() {
