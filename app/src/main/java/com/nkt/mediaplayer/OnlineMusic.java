@@ -279,6 +279,16 @@ public final class OnlineMusic {
             });
         }
 
+        /** The playlist of the video that started: YouTube's mix for it, else its related videos. */
+        @JavascriptInterface
+        public void playlist(String videoId, int seq) {
+            pool.execute(() -> {
+                String json = null;
+                try { json = playlistFor(videoId); } catch (Throwable ignored) { }
+                js(json == null ? "NKTplaylistFailed(" + seq + ")" : "NKTplaylist(" + seq + "," + JSONObject.quote(json) + ")");
+            });
+        }
+
         @JavascriptInterface
         public void playing(boolean on) {
             ui.post(() -> {
@@ -372,6 +382,85 @@ public final class OnlineMusic {
             }
         }
         if (out.length() == 0) throw new Exception("no results");
+        return out;
+    }
+
+    // ── The playing video's playlist ─────────────────────────────────────────
+
+    private String playlistFor(String id) {
+        if (id == null || !id.matches("[\\w-]{11}")) return null;
+        JSONArray a = null;
+        try { a = youTubeMix(id); } catch (Throwable ignored) { }
+        if (a == null || a.length() < 2) {
+            for (String api : PIPED) {
+                try { a = pipedRelated(api, id); if (a != null && a.length() > 1) break; } catch (Throwable ignored) { }
+            }
+        }
+        return a == null || a.length() < 2 ? null : a.toString();
+    }
+
+    /** YouTube's "Mix" for a video (the playlist it starts by itself), or the videos shown beside it. */
+    private static JSONArray youTubeMix(String id) throws Exception {
+        String html = get("https://www.youtube.com/watch?v=" + id + "&list=RD" + id + "&hl=en&gl=IN", 10000);
+        Matcher m = Pattern.compile("ytInitialData\\s*=\\s*(\\{.+?\\});\\s*</script>", Pattern.DOTALL).matcher(html);
+        if (!m.find()) throw new Exception("no data");
+        JSONObject data = new JSONObject(m.group(1));
+        JSONArray out = new JSONArray();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        collect(data, out, seen, 50);
+        return out;
+    }
+
+    /** Walks YouTube's page data for the playlist rows (and, failing that, the related videos). */
+    private static void collect(Object node, JSONArray out, java.util.Set<String> seen, int max) throws Exception {
+        if (out.length() >= max || node == null) return;
+        if (node instanceof JSONObject) {
+            JSONObject o = (JSONObject) node;
+            JSONObject pv = o.optJSONObject("playlistPanelVideoRenderer");
+            if (pv == null) pv = o.optJSONObject("compactVideoRenderer");
+            if (pv != null) {
+                String vid = pv.optString("videoId");
+                String dur = text(pv.optJSONObject("lengthText"));
+                if (!vid.isEmpty() && !dur.isEmpty() && seen.add(vid)) {
+                    String ch = text(pv.optJSONObject("shortBylineText"));
+                    if (ch.isEmpty()) ch = text(pv.optJSONObject("longBylineText"));
+                    out.put(video(vid, text(pv.optJSONObject("title")), ch, dur));
+                }
+                return;
+            }
+            JSONArray names = o.names();
+            if (names == null) return;
+            for (int i = 0; i < names.length(); i++) collect(o.opt(names.getString(i)), out, seen, max);
+        } else if (node instanceof JSONArray) {
+            JSONArray a = (JSONArray) node;
+            for (int i = 0; i < a.length() && out.length() < max; i++) collect(a.opt(i), out, seen, max);
+        }
+    }
+
+    private static String text(JSONObject t) {
+        if (t == null) return "";
+        if (t.has("simpleText")) return t.optString("simpleText");
+        JSONArray runs = t.optJSONArray("runs");
+        StringBuilder b = new StringBuilder();
+        if (runs != null) for (int i = 0; i < runs.length(); i++) b.append(runs.optJSONObject(i) == null ? "" : runs.optJSONObject(i).optString("text"));
+        return b.toString();
+    }
+
+    /** A free Piped server: the videos related to this one. */
+    private static JSONArray pipedRelated(String api, String id) throws Exception {
+        JSONObject j = new JSONObject(get(api + "/streams/" + id, 8000));
+        JSONArray rel = j.optJSONArray("relatedStreams");
+        JSONArray out = new JSONArray();
+        out.put(video(id, j.optString("title"), j.optString("uploader"), j.optLong("duration") > 0 ? fmt(j.optLong("duration")) : ""));
+        if (rel == null) return out;
+        for (int i = 0; i < rel.length() && out.length() < 30; i++) {
+            JSONObject it = rel.getJSONObject(i);
+            if (!"stream".equals(it.optString("type")) || it.optBoolean("isShort")) continue;
+            Matcher m = Pattern.compile("[?&]v=([\\w-]{11})").matcher(it.optString("url"));
+            if (!m.find()) continue;
+            long d = it.optLong("duration", -1);
+            out.put(video(m.group(1), it.optString("title"), it.optString("uploaderName"), d > 0 ? fmt(d) : ""));
+        }
         return out;
     }
 

@@ -532,7 +532,7 @@ public final class StreamHub {
                 String id = Lyrics.idOf(m.key());
                 if (map.containsKey(id)) continue;
                 map.put(id, m);
-                arr.put(new JSONArray().put(id).put(m.title).put(m.artist).put(m.durationMs / 1000).put(m.image ? 2 : m.video ? 1 : 0).put(m.size).put(m.folder));     // kind: 0 song, 1 video, 2 photo
+                arr.put(new JSONArray().put(id).put(m.title).put(m.artist).put(m.durationMs / 1000).put(m.image ? 2 : m.video ? 1 : 0).put(m.size).put(m.folder).put(relPath(m)));     // kind: 0 song, 1 video, 2 photo; then where it sits, for the folder views
             }
             JSONObject o = new JSONObject();
             try { o.put("items", arr); } catch (Exception ignored) { }
@@ -541,6 +541,21 @@ public final class StreamHub {
             libFor = items;
         }
         return libJson;
+    }
+
+    /** Where a file sits, shown to listeners for the folder views: the path under the phone's storage ("DCIM/Camera/IMG_1.jpg"), never the full system path. */
+    @SuppressWarnings("deprecation")
+    private static String relPath(MediaInfo m) {
+        String p = m.path == null ? "" : m.path;
+        if (p.isEmpty()) return m.folder + "/" + m.title;
+        String root = android.os.Environment.getExternalStorageDirectory().getAbsolutePath();
+        if (p.startsWith(root + "/")) return p.substring(root.length() + 1);
+        if (p.startsWith("/storage/")) {                    // an SD card or USB stick: keep its short name
+            String rest = p.substring(9);
+            return rest;
+        }
+        int i = p.lastIndexOf('/');
+        return m.folder + "/" + (i >= 0 ? p.substring(i + 1) : p);
     }
 
     /** A song or video a listener may play: what is in the queue, or (when allowed) the shared library. */

@@ -348,6 +348,7 @@ public class PlayerActivity extends Activity {
 
         playerView.setOnTouchListener((v, ev) -> {
             if (inPip) return false;
+            if (Ui.edgeTouch(v, ev) && !holding) return false;          // the edges are for the back gesture
             int act = ev.getActionMasked();
             if (holding && (act == MotionEvent.ACTION_UP || act == MotionEvent.ACTION_CANCEL)) { endHold(); return true; }
             if (holding) return true;

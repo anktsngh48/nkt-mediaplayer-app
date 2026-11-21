@@ -97,6 +97,17 @@ public final class Ui {
         }
     }
 
+    /** The bars come back (after a page's full-screen video). */
+    @SuppressWarnings("deprecation")
+    public static void exitFullScreen(Activity a) {
+        if (Build.VERSION.SDK_INT >= 30) {
+            WindowInsetsController c = a.getWindow().getInsetsController();
+            if (c != null) c.show(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+        } else {
+            a.getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+        }
+    }
+
     /**
      * Keeps content clear of the status bar, camera cut-out and navigation bar on every Android version.
      * Android 11+ draws the app edge to edge and pads the root by the bars; older Android keeps apps clear already.
@@ -247,4 +258,17 @@ public final class Ui {
     }
 
     public static int dp(Context c, float v) { return Math.round(v * c.getResources().getDisplayMetrics().density); }
+
+    /**
+     * Touches that start in a strip along the left or right edge belong to the system's back gesture: the video
+     * gestures (seek, brightness, volume, double-tap) leave them alone. Returns true for every event of such a touch.
+     */
+    public static boolean edgeTouch(View v, android.view.MotionEvent ev) {
+        if (ev.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) {
+            float edge = dp(v.getContext(), 28);
+            float x = ev.getX();
+            v.setTag(R.id.tag_edge_touch, x < edge || x > v.getWidth() - edge ? Boolean.TRUE : null);
+        }
+        return v.getTag(R.id.tag_edge_touch) != null;
+    }
 }

@@ -124,7 +124,17 @@ public class PlaybackService extends MediaSessionService {
      * The logo or art changed: show the new picture in the notification now. The current item is
      * replaced with an identical copy, which makes the notification ask for its picture again.
      */
-    public static void refreshArt() {
+    /** For Listen: was this phone's own music playing? */
+    public boolean playingNow() { return player != null && player.getPlayWhenReady() && player.getMediaItemCount() > 0; }
+
+    /** Listening ended: the queue that was playing before carries on. */
+    public void resumeNow() {
+        if (player == null || player.getMediaItemCount() == 0) return;
+        if (player.getPlaybackState() == Player.STATE_IDLE) player.prepare();
+        player.play();
+    }
+
+        public static void refreshArt() {
         PlaybackService s = instance;
         if (s == null || s.player == null) return;
         s.h.post(() -> {

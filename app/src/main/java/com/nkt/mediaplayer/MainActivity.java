@@ -244,11 +244,16 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         miniSub = findViewById(R.id.mini_sub);
         miniPlay = findViewById(R.id.mini_play);
         miniPlay.setOnClickListener(v -> {
+            if (ListenService.running) { listenToggle(); return; }
             if (controller == null) return;
             if (controller.isPlaying()) controller.pause(); else Media.play(controller);
         });
-        findViewById(R.id.mini_next).setOnClickListener(v -> { if (controller != null) controller.seekToNextMediaItem(); });
+        findViewById(R.id.mini_next).setOnClickListener(v -> {
+            if (ListenService.running) { if (ListenService.own) ListenService.step(this, 1); return; }
+            if (controller != null) controller.seekToNextMediaItem();
+        });
         findViewById(R.id.mini_close).setOnClickListener(v -> {
+            if (ListenService.running) { ListenService.stop(this); ui.postDelayed(this::updateMini, 600); return; }     // stop listening: your own queue comes back
             if (controller == null) return;
             if (page == SONGS) {
                 // ✕ on the Audio page: really stop and clear
@@ -261,7 +266,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
                 updateMini();
             }
         });
-        mini.setOnClickListener(v -> startActivity(new Intent(this, NowPlayingActivity.class)));
+        mini.setOnClickListener(v -> startActivity(new Intent(this, ListenService.running ? ListenActivity.class : NowPlayingActivity.class)));
 
         int start = Arrays.asList(PAGE_KEYS).indexOf(Prefs.startPage(this));
         if (savedInstanceState != null) {
@@ -400,6 +405,10 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
             } catch (Throwable ignored) { }
         }
         drawerItems.addView(streamRow);
+        drawerItems.addView(menuRow(R.drawable.ic_open, getString(R.string.menu_browser), null, false, false, () -> {
+            closeDrawer();
+            startActivity(new Intent(this, WebActivity.class).putExtra(WebActivity.EXTRA_FULL, true));
+        }, null));
         drawerItems.addView(menuRow(R.drawable.ic_settings, getString(R.string.menu_settings), null, page == SETTINGS, false, () -> {
             closeDrawer();
             setPage(SETTINGS);
@@ -737,6 +746,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
     protected void onPause() {
         super.onPause();
         online.onActivityPause();                    // YouTube songs can't play in the background
+        ui.removeCallbacks(miniTick);
     }
 
     @Override
@@ -785,6 +795,8 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         online.onActivityResume(page == ONLINE);
         if (pendingAccess != null && HiddenScanner.hasAllFilesAccess(this)) { accessGranted(); return; }
         pendingAccess = null;
+        ui.removeCallbacks(miniTick);
+        ui.post(miniTick);
         if (!resumedOnce) { resumedOnce = true; return; }
         if (!loaded && hasPermission()) startLoading();
         else if (page == PLAYLISTS || page == HISTORY || page == SETTINGS || page == FOLDERS) refresh();
@@ -1071,6 +1083,10 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
             buildSettings(out);
         }
 
+        // a search: the last row searches the same words on the internet, in the app
+        String typed = search.getText().toString().trim();
+        if (!typed.isEmpty() && page != SETTINGS && !Prefs.noInternet(this))
+            out.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.search_internet), getString(R.string.search_internet_sub, typed), null, "search_net", R.drawable.ic_globe));
         useRows(grid, colsKey, defCols);
         rows.setRows(out);
         if (permBox.getVisibility() == View.VISIBLE) return;
@@ -1530,6 +1546,8 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         all.add(RowAdapter.Row.toggle(getString(R.string.no_internet), getString(R.string.no_internet_sub), "no_internet",
                 R.drawable.ic_globe, Prefs.noInternet(this)));
         all.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.reset_perms), getString(R.string.reset_perms_sub), null, "reset_perms", R.drawable.ic_lock));
+        all.add(RowAdapter.Row.header(getString(R.string.set_browser)));
+        all.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.clear_browser), getString(R.string.clear_browser_sub), null, "clear_browser", R.drawable.ic_delete));
         all.add(RowAdapter.Row.header(getString(R.string.set_about)));
         all.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.app_name), getString(R.string.version_line), null, "about", R.drawable.ic_info));
         for (RowAdapter.Row r : all) {
@@ -2028,6 +2046,14 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
                 break;
             case "folders_access": needAccessFor("folders"); break;
             case "reset_perms": confirmResetPermissions(); break;
+            case "clear_browser":
+                Dialogs.builder(this).setTitle(R.string.clear_browser_title).setMessage(R.string.clear_browser_msg)
+                        .setPositiveButton(R.string.clear_browser_go, (d, w) -> { WebActivity.clearData(this); Ui.toast(this, R.string.clear_browser_done); })
+                        .setNegativeButton(R.string.cancel, null).show();
+                break;
+            case "search_net":
+                startActivity(new Intent(this, WebActivity.class).putExtra(WebActivity.EXTRA_QUERY, search.getText().toString()));
+                break;
             case "np_view": startActivity(new Intent(this, DefaultViewActivity.class)); break;
             case "new_here": newHere(); break;
             case "play_here": {
@@ -2343,7 +2369,47 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         super.onStop();
     }
 
+    /** Listening to another phone, or streaming from this one: the mini player says so and keeps itself current. */
+    private final Runnable miniTick = new Runnable() {
+        @Override public void run() {
+            updateMini();
+            if (ListenService.running || StreamService.running) ui.postDelayed(this, 1000);
+        }
+    };
+
+    private void listenToggle() {
+        androidx.media3.exoplayer.ExoPlayer p = ListenService.player;
+        if (p == null || !ListenService.own || ListenService.ownKind == 2) return;      // the live stream follows the host
+        if (p.getPlaybackState() == Player.STATE_ENDED) { p.seekTo(0); p.setPlayWhenReady(true); }
+        else p.setPlayWhenReady(!p.getPlayWhenReady());
+        ui.postDelayed(this::updateMini, 150);
+    }
+
+    private boolean updateListenMini() {
+        if (!ListenService.running) return false;
+        btnMini.setVisibility(View.GONE);
+        mini.setVisibility(View.VISIBLE);
+        String t = ListenService.has && !ListenService.title.isEmpty() ? ListenService.title : ListenService.status;
+        miniTitle.setText(t == null || t.isEmpty() ? getString(R.string.stream_menu_listening) : t);
+        String hn = ListenService.host;
+        miniSub.setText("● " + (hn == null || hn.isEmpty() ? getString(R.string.stream_menu_listening) : getString(R.string.stream_menu_listening_to, hn)));
+        miniSub.setTextColor(getColor(R.color.success));
+        boolean own = ListenService.own && ListenService.ownKind != 2;
+        androidx.media3.exoplayer.ExoPlayer p = ListenService.player;
+        miniPlay.setVisibility(own ? View.VISIBLE : View.GONE);
+        findViewById(R.id.mini_next).setVisibility(ListenService.own ? View.VISIBLE : View.GONE);
+        if (own && p != null) miniPlay.setImageResource(p.getPlayWhenReady() ? R.drawable.ic_pause : R.drawable.ic_play);
+        Bitmap a = ListenService.art;
+        if (a != null) Thumbs.showBitmap(miniArt, a);
+        else Thumbs.showPlaceholder(miniArt, ListenService.video ? R.drawable.ic_movie : R.drawable.ic_music);
+        return true;
+    }
+
     private void updateMini() {
+        if (updateListenMini()) return;
+        miniPlay.setVisibility(View.VISIBLE);
+        findViewById(R.id.mini_next).setVisibility(View.VISIBLE);
+        miniSub.setTextColor(getColor(R.color.muted));
         boolean queued = controller != null && controller.getMediaItemCount() > 0 && controller.getCurrentMediaItem() != null;
         btnMini.setVisibility(queued ? View.VISIBLE : View.GONE);
         if (queued) {
@@ -2363,6 +2429,11 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         MediaMetadata md = controller.getMediaMetadata();
         miniTitle.setText(md.title == null ? getString(R.string.unknown) : md.title);
         miniSub.setText(Media.isVideo(md) ? getString(R.string.video_in_background) : md.artist == null ? "" : md.artist);
+        if (StreamService.running) {                     // streaming from this phone: the same green line as the menu
+            int n = StreamHub.listenerCount();
+            miniSub.setText("● " + (n > 0 ? getResources().getQuantityString(R.plurals.stream_menu_on_n, n, n) : getString(R.string.stream_menu_on)));
+            miniSub.setTextColor(getColor(R.color.success));
+        }
         miniPlay.setImageResource(controller.isPlaying() ? R.drawable.ic_pause : R.drawable.ic_play);
         Bitmap art = null;
         if (md.artworkData != null) {

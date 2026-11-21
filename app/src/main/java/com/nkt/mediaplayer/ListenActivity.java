@@ -512,6 +512,7 @@ public class ListenActivity extends Activity {
             }
         });
         videoView.setOnTouchListener((v, ev) -> {
+            if (Ui.edgeTouch(v, ev) && !vHolding) return false;          // the edges are for the back gesture
             int a = ev.getActionMasked();
             if (a == MotionEvent.ACTION_DOWN && v.getParent() != null) v.getParent().requestDisallowInterceptTouchEvent(true);
             if (vHolding) {

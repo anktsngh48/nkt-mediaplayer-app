@@ -39,14 +39,16 @@ public final class Players {
                         .build();
             }
         };
-        return new ExoPlayer.Builder(app, renderers)
+        ExoPlayer p = new ExoPlayer.Builder(app, renderers)
                 .setMediaSourceFactory(new DefaultMediaSourceFactory(() -> new Routing(app)))
                 .setAudioAttributes(new AudioAttributes.Builder()
                         .setUsage(C.USAGE_MEDIA)
                         .setContentType(music ? C.AUDIO_CONTENT_TYPE_MUSIC : C.AUDIO_CONTENT_TYPE_MOVIE)
-                        .build(), /* handleAudioFocus= */ true)
+                        .build(), /* handleAudioFocus= */ false)       // the app holds the sound itself: calls don't pause it
                 .setHandleAudioBecomingNoisy(true)
                 .build();
+        KeepPlaying.attach(app, p, null);
+        return p;
     }
 
     /** ftp:// to FtpDataSource; everything else (files, content, http) to the usual source. */

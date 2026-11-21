@@ -1108,4 +1108,36 @@
     <string name="listen_share_caps">SHARE</string>
     <string name="listen_save_caps">SAVE</string>
     <string name="listen_preparing">Getting your files ready…</string>
+
+    <!-- Round 1 changes -->
+    <string name="listen_library_all">ALL FILES</string>
+    <string name="listen_all_files">All files</string>
+    <string name="listen_view_list">LIST</string>
+    <string name="listen_view_folders">FOLDERS</string>
+    <string name="listen_play_song_title">Play this song?</string>
+    <string name="listen_play_song_msg">It plays on this phone, not in step with the host, then carries on with the other songs in this folder.</string>
+    <string name="share_devices_sub">Browse, play and copy from phones running NKT Share, or any FTP server</string>
+    <string name="search_internet">Search on internet</string>
+    <string name="search_internet_sub">“%1$s” on duckduckgo.com</string>
+    <string name="menu_browser">Browser</string>
+    <string name="set_browser">BROWSER</string>
+    <string name="clear_browser">Clear browser data</string>
+    <string name="clear_browser_sub">Cache, cookies, saved logins and site data of the Browser and web pages opened in the app</string>
+    <string name="clear_browser_title">Clear browser data?</string>
+    <string name="clear_browser_msg">You will be signed out of every website opened in NKT Media Player, and their saved data is deleted.</string>
+    <string name="clear_browser_go">CLEAR</string>
+    <string name="clear_browser_done">Browser data cleared</string>
+    <string name="web_saved">Saved to Download/NKT Media Player</string>
+    <string name="web_saving">Downloading %1$s…</string>
+    <string name="web_no_app">No app on this phone can open this link</string>
+    <string name="web_close">Close the page</string>
+    <string name="wallpaper_title">SET AS WALLPAPER</string>
+    <string name="wallpaper_hint">Pinch to zoom, drag to move</string>
+    <string name="wallpaper_fill">FILL</string>
+    <string name="wallpaper_fit">FIT</string>
+    <string name="wallpaper_rotate">Rotate</string>
+    <string name="wallpaper_go">SET WALLPAPER</string>
+    <string name="wallpaper_setting">Setting the wallpaper…</string>
+    <string name="online_playlist">PLAYLIST · %1$d</string>
+    <string name="online_playlist_note">From the video that is playing</string>
 </resources>

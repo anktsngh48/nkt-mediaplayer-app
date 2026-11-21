@@ -74,6 +74,7 @@ public class NktShareActivity extends Activity {
         newPw.setOnClickListener(v -> { FtpService.newPassword(this); settingsChanged(); });
         findViewById(R.id.sh_folder_row).setOnClickListener(v -> pickFolder());
         findViewById(R.id.sh_access_row).setOnClickListener(v -> { if (!canWrite()) askAccess(); else pickAccess(); });
+        findViewById(R.id.sh_remote_row).setOnClickListener(v -> startActivity(new android.content.Intent(this, RemoteActivity.class)));
     }
 
     @Override
@@ -82,6 +83,45 @@ public class NktShareActivity extends Activity {
         if (startWhenAllowed && canWrite()) { startWhenAllowed = false; FtpService.start(this); }
         startWhenAllowed = false;
         ui.post(tick);
+        showSavedDevices();
+    }
+
+    /** Saved devices under Other devices: tap one to open it straight away. */
+    private void showSavedDevices() {
+        android.widget.LinearLayout box = findViewById(R.id.sh_devices);
+        for (int i = box.getChildCount() - 1; i >= 1; i--) box.removeViewAt(i);      // keep the Other devices row
+        for (Remote.Device d : Remote.saved(this)) {
+            android.widget.LinearLayout r = new android.widget.LinearLayout(this);
+            r.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            r.setPadding(Ui.dp(this, 10), 0, Ui.dp(this, 10), 0);
+            r.setBackgroundResource(R.drawable.bg_tile_btn);
+            ImageView ic = new ImageView(this);
+            ic.setImageResource(R.drawable.ic_phone);
+            ic.setColorFilter(getColor(R.color.accent));
+            r.addView(ic, new android.widget.LinearLayout.LayoutParams(Ui.dp(this, 22), Ui.dp(this, 22)));
+            android.widget.LinearLayout col = new android.widget.LinearLayout(this);
+            col.setOrientation(android.widget.LinearLayout.VERTICAL);
+            TextView t = new TextView(this);
+            t.setText(d.label());
+            t.setTextColor(getColor(R.color.text));
+            t.setTextSize(14);
+            t.setSingleLine(true);
+            col.addView(t);
+            TextView a = new TextView(this);
+            a.setText(d.address());
+            a.setTextColor(getColor(R.color.muted));
+            a.setTextSize(12);
+            a.setSingleLine(true);
+            col.addView(a);
+            android.widget.LinearLayout.LayoutParams cl = new android.widget.LinearLayout.LayoutParams(0, android.view.ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            cl.setMarginStart(Ui.dp(this, 14));
+            r.addView(col, cl);
+            final String key = d.key();
+            r.setOnClickListener(v -> startActivity(new android.content.Intent(this, RemoteActivity.class).putExtra(RemoteActivity.EXTRA_OPEN_SAVED, key)));
+            android.widget.LinearLayout.LayoutParams rl = new android.widget.LinearLayout.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 60));
+            rl.topMargin = Ui.dp(this, 4);
+            box.addView(r, rl);
+        }
     }
 
     @Override

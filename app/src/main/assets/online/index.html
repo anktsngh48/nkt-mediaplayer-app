@@ -260,15 +260,37 @@
     if (!list.length) { lastQuery = ''; setStatus('No results — try other words', 'error'); return; }
     if (q) saveRecent(q);
     currentList = list;
+    listKind = 'results';
     renderResults();
     playIndex(0);
   }
 
+  // When a video from the search starts, the list becomes that video's playlist (YouTube's mix for it)
+  let listKind = 'results', plSeq = 0;
+  function fetchPlaylist(r) {
+    if (!app || !app.playlist || !r) return;
+    const seq = ++plSeq;
+    app.playlist(r.videoId, seq);
+  }
+  window.NKTplaylist = (seq, json) => {
+    if (seq !== plSeq) return;
+    let list = []; try { list = JSON.parse(json); } catch(_) {}
+    const cur = currentList[currentIdx];
+    if (!cur || list.length < 2) return;
+    const rest = list.filter(x => x.videoId !== cur.videoId);
+    currentList = [cur].concat(rest);
+    currentIdx = 0;
+    listKind = 'playlist';
+    document.getElementById('next-btn').disabled = currentList.length < 2;
+    renderResults();
+  };
+  window.NKTplaylistFailed = () => {};
+
   function renderResults(note) {
     const box = document.getElementById('results'); box.innerHTML = '';
     document.getElementById('results-head').classList.toggle('show', currentList.length > 0);
-    document.getElementById('results-count').textContent = 'RESULTS · ' + currentList.length;
-    document.getElementById('results-note').textContent = note || '';
+    document.getElementById('results-count').textContent = (listKind === 'playlist' ? 'PLAYLIST · ' : 'RESULTS · ') + currentList.length;
+    document.getElementById('results-note').textContent = note || (listKind === 'playlist' ? 'From the video that is playing' : '');
     currentList.forEach((r, i) => {
       const el = document.createElement('div');
       el.className = 'result' + (i === currentIdx ? ' playing' : '') + (r.bad ? ' skipped' : '');
@@ -333,6 +355,7 @@
     let p; try { p = await ensurePlayer(); } catch(e) { setStatus(e.message, 'error'); return; }
     if (currentIdx !== idx) return;
     p.loadVideoById(r.videoId);
+    if (listKind === 'results') fetchPlaylist(r);          // a search pick: its playlist takes over the list
   }
 
   function onPlayerState(e) {

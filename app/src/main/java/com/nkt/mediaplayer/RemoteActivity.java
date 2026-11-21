@@ -98,6 +98,9 @@ public class RemoteActivity extends Activity implements RowAdapter.Listener, Sel
     private ListenableFuture<MediaController> future;
     private MediaController controller;
 
+    /** A saved device's key: open it at once (from the NKT Share page). */
+    public static final String EXTRA_OPEN_SAVED = "open_saved";
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -152,6 +155,12 @@ public class RemoteActivity extends Activity implements RowAdapter.Listener, Sel
         show();
         discover();
         checkSaved();
+        String open = getIntent() == null ? null : getIntent().getStringExtra(EXTRA_OPEN_SAVED);
+        if (open != null) {                                   // a saved device tapped on the NKT Share page
+            getIntent().removeExtra(EXTRA_OPEN_SAVED);
+            Remote.Device d = deviceFor("saved:" + open);
+            if (d != null) connect(d);
+        }
     }
 
     private String view() { return Prefs.view(this, "remote", "list"); }

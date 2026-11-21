@@ -84,6 +84,44 @@ a{text-decoration:none;color:inherit}
 .dlb{width:44px;height:44px;display:flex;align-items:center;justify-content:center;flex:none;border-radius:50%}
 #search{width:100%;height:48px;background:#0B1222;border:1px solid rgba(0,229,255,.12);border-radius:24px;padding:0 16px 0 44px;color:#E8F0FE;font-size:14px;outline:none}
 #search:focus{border-color:#00E5FF}
+/* folders (All files and the FOLDERS view) */
+.seg2{display:flex;padding:2px;border:1px solid rgba(0,229,255,.25);border-radius:22px}
+.seg2 button{height:36px;padding:0 16px;border:0;border-radius:18px;background:transparent;color:#8A9AB2;font-size:11px;font-weight:700;letter-spacing:.12em;cursor:pointer}
+.seg2 button.on{background:rgba(0,229,255,.14);color:#00E5FF}
+.fpath{flex:1;min-width:0;font-size:13px;color:#8A9AB2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:rtl;text-align:left}
+.fpath b{color:#00E5FF;font-weight:400}
+.litem.dir .th{background:rgba(0,229,255,.1)}
+.more{padding:14px 4px;font-size:13px;color:#8A9AB2;text-align:center}
+#ask{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:40;display:none;align-items:center;justify-content:center;padding:20px}
+#ask.on{display:flex}
+#ask .askc{width:min(440px,100%);padding:22px}
+#ask .th0{width:52px;height:52px;border-radius:10px;background:#0B1222;display:flex;align-items:center;justify-content:center;flex:none}
+/* TV and laptop: a wider page, bigger type, two columns */
+@media (min-width:900px){
+  .wrap{max-width:1180px;padding:32px 48px 32px}
+  .logo{font-size:20px}
+  .tab{flex:none;min-width:180px;height:50px;font-size:13px}
+  #tabsRow{gap:12px!important}
+  #live #pArt[style*="display: flex"],#live #pArt[style*="display:flex"]{display:grid!important;grid-template-columns:400px 1fr;column-gap:48px;align-items:start}
+  #live #pArt #bigArt{grid-row:1/span 6;width:400px!important;height:400px!important;margin-top:24px!important}
+  #live #pArt > *:not(#bigArt){grid-column:2;align-self:stretch;text-align:left!important}
+  #live #pArt #aTitle{font-size:28px;margin-top:28px!important}
+  #live #pArt #aArtist{font-size:17px}
+  #live #pArt #syncChip{justify-self:start}
+  #wait #waitArt{width:360px!important;height:360px!important}
+  #wait #stopBtn2{align-self:center!important;width:420px}
+  #vizBox{height:460px}
+  #lyr{min-height:460px}
+  .lc{font-size:30px}.l1{font-size:20px}
+  #libList{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  #libList > .more,#libList > .muted{grid-column:1/-1}
+  .litem{min-height:76px}
+  .litem .th{width:56px;height:56px}
+  .litem .a{font-size:16px}.litem .b{font-size:13px}
+  #search{height:54px;font-size:16px}
+  .pill{height:44px;font-size:12px}
+}
+@media (min-width:1400px){ #libList{grid-template-columns:repeat(3,minmax(0,1fr))} }
 /* messages & pin */
 #pinIn{width:180px;height:56px;text-align:center;font-size:28px;letter-spacing:.4em;background:#0B1222;border:1px solid rgba(0,229,255,.3);border-radius:12px;color:#E8F0FE;outline:none}
 /* TV / video */
@@ -289,7 +327,9 @@ a.pcb{display:inline-flex;align-items:center;justify-content:center;text-decorat
   <!-- LIBRARY -->
   <div id="lib" style="display:none;flex-direction:column;flex:1">
     <div style="position:relative;margin-top:12px"><svg style="position:absolute;left:14px;top:14px" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8A9AB2" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input id="search" placeholder="Search songs and videos" autocomplete="off"></div>
-    <div class="row" style="gap:8px;margin-top:12px" id="kinds"><button class="pill on" data-k="0">SONGS</button><button class="pill" data-k="1">VIDEOS</button><button class="pill" data-k="2">PHOTOS</button></div>
+    <div class="row" style="gap:8px;margin-top:12px" id="kinds"><button class="pill on" data-k="0">SONGS</button><button class="pill" data-k="1">VIDEOS</button><button class="pill" data-k="2">PHOTOS</button><button class="pill" data-k="3">ALL FILES</button></div>
+    <div class="row" style="gap:8px;margin-top:8px" id="lview"><div class="seg2"><button data-f="0" class="on">LIST</button><button data-f="1">FOLDERS</button></div></div>
+    <div class="row" id="fbar" hidden style="gap:10px;margin-top:10px"><button class="round" id="fUp" aria-label="Up one folder" style="flex:none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00E5FF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="M6 11l6-6 6 6"/></svg></button><div id="fPath" class="fpath"></div></div>
     <div class="row" style="margin-top:8px"><button class="pill on" id="autoNext">AUTO-PLAY NEXT: ON</button><button class="pill" id="selBtn" hidden>SELECT</button></div>
     <div id="dlNote" class="muted" hidden style="margin-top:8px;font-size:12px">The host has allowed downloads. The arrow saves a copy to this device.</div>
     <div id="libList"></div>
@@ -301,6 +341,14 @@ a.pcb{display:inline-flex;align-items:center;justify-content:center;text-decorat
     </div>
   </div>
 </div>
+
+<!-- A song picked in All files -->
+<div id="ask" role="dialog" aria-modal="true" aria-labelledby="askT"><div class="askc card">
+  <div class="orb" id="askT" style="font-size:13px">PLAY THIS SONG?</div>
+  <div class="row" style="gap:14px;margin-top:16px"><div class="th0"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00E5FF" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg></div><div style="min-width:0"><div id="askN" style="font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div><div id="askS" class="muted" style="font-size:13px;margin-top:2px"></div></div></div>
+  <div class="muted" style="font-size:13px;line-height:1.5;margin-top:14px">It plays on this device, not in step with the host, then carries on with the other songs in this folder. BACK TO LIVE returns you to what the host plays.</div>
+  <div class="row" style="gap:10px;margin-top:20px;justify-content:flex-end"><button class="pill" id="askNo">CANCEL</button><button class="btn" id="askYes" style="padding:0 30px;background:#00E5FF;color:#05080F;border-color:#00E5FF">PLAY</button></div>
+</div></div>
 
 <!-- Video: for a TV or a laptop -->
 <div id="selBar"><button class="pcb" id="selDl">DOWNLOAD</button><button class="pcb" id="selAll">ALL</button><button class="pcb" id="selDone">DONE</button></div>
@@ -641,7 +689,7 @@ function render() {
   $('#tabLive').classList.toggle('on', tab === 'live');
   $('#tabLib').classList.toggle('on', tab === 'lib');
   var waiting = !!(listening && !own && tab === 'live' && !st.has && !tv);
-  $('#tabsRow').style.display = waiting ? 'none' : 'flex';
+  $('#tabsRow').style.display = 'flex';                  // the LIBRARY tab stays reachable while the host plays nothing
   $('#wait').style.display = waiting ? 'flex' : 'none';
   $('#live').style.display = tab === 'live' && !waiting ? 'flex' : 'none';
   $('#lib').style.display = tab === 'lib' ? 'flex' : 'none';
@@ -1168,13 +1216,16 @@ $('#tvLPlay').onclick = function () {
 
 // ── Library: pick your own songs and videos, not synced with the host ──
 var lib = { items: [] }, libLoaded = false, kind = 0, q = '', ownList = [], curShown = [], autoNext = store('autonext') !== '0', autoNextP = store('autonextp') === '1';
-var libScroll = [0, 0, 0], libRestoring = false;      // where you were in each list (songs, videos, photos)
+var libScroll = [0, 0, 0, 0], libRestoring = false;      // where you were in each list (songs, videos, photos, all files)
+var folderView = [store('fv0') === '1', store('fv1') === '1', store('fv2') === '1', true], libDir = ['', '', '', ''];   // FOLDERS view per kind; All files is always folders
+var PAGE = 300, libShown = PAGE;                       // the list grows by itself as you scroll: nothing is left out
 function libRestore() {
   libRestoring = true;
   requestAnimationFrame(function () { window.scrollTo(0, libScroll[kind] || 0); requestAnimationFrame(function () { libRestoring = false; }); });
 }
 window.addEventListener('scroll', function () {
   if (tab === 'lib' && !libRestoring && $('#lib').style.display !== 'none') libScroll[kind] = window.pageYOffset;
+  if (tab === 'lib' && libLoaded && libShown < libTotal && window.innerHeight + window.pageYOffset > document.body.scrollHeight - 1600) { libShown += PAGE; drawLib(true); }
 }, { passive: true });
 function libOpen() {
   libRestoring = true;
@@ -1196,6 +1247,10 @@ function renderLibState() {
   $('#oTitle').textContent = own ? own.title : '';
   var ks = document.querySelectorAll('#kinds button');
   for (var i = 0; i < ks.length; i++) ks[i].classList.toggle('on', +ks[i].getAttribute('data-k') === kind);
+  $('#lview').hidden = kind === 3;
+  var fv = document.querySelectorAll('#lview button');
+  for (var f = 0; f < fv.length; f++) fv[f].classList.toggle('on', +fv[f].getAttribute('data-f') === (folderView[kind] ? 1 : 0));
+  $('#search').placeholder = folderView[kind] ? 'Search in this folder' : 'Search songs and videos';
   drawLib();
 }
 var byId = function (id) { for (var i = 0; i < lib.items.length; i++) if (lib.items[i][0] === id) return lib.items[i]; return null; };
@@ -1218,23 +1273,63 @@ $('#selDl').onclick = function () {
     setTimeout(function () { var a = document.createElement('a'); a.href = B + 'dl/' + id + '?c=' + encodeURIComponent(C); a.download = ''; document.body.appendChild(a); a.click(); a.remove(); }, i * 500);
   });
 };
-function drawLib() {
+var libTotal = 0;
+function inKind(it) { return kind === 3 || it[4] === kind; }
+function dirOf(it) { var p = it[7] || ((it[6] || 'Other') + '/' + it[1]); var k = p.lastIndexOf('/'); return k < 0 ? '' : p.substring(0, k); }
+function folderRows(term) {          // what sits in the open folder: its subfolders first, then its files
+  var dir = libDir[kind], pre = dir ? dir + '/' : '', subs = {}, files = [];
+  lib.items.forEach(function (it) {
+    if (!inKind(it)) return;
+    var d = dirOf(it);
+    if (d === dir) { if (!term || (it[1] + ' ' + it[2]).toLowerCase().indexOf(term) >= 0) files.push(it); return; }
+    if (dir && d.indexOf(pre) !== 0) return;
+    var rest = d.substring(pre.length), name = rest.split('/')[0];
+    if (!name) return;
+    if (term && name.toLowerCase().indexOf(term) < 0) return;
+    subs[name] = (subs[name] || 0) + 1;
+  });
+  var names = Object.keys(subs).sort(function (a, b) { return a.toLowerCase() < b.toLowerCase() ? -1 : 1; });
+  return { dirs: names.map(function (n) { return [n, subs[n]]; }), files: files };
+}
+function folderSvg() { return '<svg width="22" height="22" viewBox="0 0 24 24" fill="#00E5FF" aria-hidden="true"><path d="M10,4H4c-1.1,0 -1.99,0.9 -1.99,2L2,18c0,1.1 0.9,2 2,2h16c1.1,0 2,-0.9 2,-2V8c0,-1.1 -0.9,-2 -2,-2h-8l-2,-2z"/></svg>'; }
+function itemRow(it) {
+  var on = own && own.id === it[0], pk = selecting && picked[it[0]];
+  var thumb = on ? bars() : artSvgSmall() + '<img class="tim" loading="lazy" alt="" src="' + B + 'th/' + it[0] + '?c=' + encodeURIComponent(C) + '" onerror="this.remove()">';
+  var sub = it[4] === 0 ? (it[2] ? it[2] + ' · ' : '') + fmt(it[3] * 1000) : it[4] === 1 ? (folderView[kind] ? 'Video · ' : esc(it[6] || 'video') + ' · ') + fmt(it[3] * 1000) : (folderView[kind] ? 'Photo' : (it[6] || 'photo'));
+  return '<div style="display:flex;align-items:center;gap:4px"><button class="litem' + (on ? ' on' : '') + (pk ? ' sel' : '') + '" data-id="' + it[0] + '"><div class="th">' + thumb + '</div><div class="tx"><div class="a">' + esc(it[1]) + '</div><div class="b">' + (on ? 'Your pick · on this device only' : esc(sub)) + '</div></div></button>' +
+    (selecting ? '<button class="cbx" data-id="' + it[0] + '" aria-label="Select ' + esc(it[1]) + '"><i>' + (pk ? '✓' : '') + '</i></button>'
+      : st.dl ? '<a class="dlb" aria-label="Download ' + esc(it[1]) + '" href="' + B + 'dl/' + it[0] + '?c=' + encodeURIComponent(C) + '" download><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00E5FF" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/></svg></a>' : '') + '</div>';
+}
+function drawLib(more) {
   var box = $('#libList'), html = '';
   if (!libLoaded) { box.innerHTML = '<div class="muted" style="padding:16px 4px;font-size:13px">Loading…</div>'; return; }
   if (selecting && !st.dl) { selecting = false; picked = {}; }
-  var term = q.toLowerCase(), n = 0;
+  if (!more) libShown = PAGE;
+  var term = q.toLowerCase(), fv = folderView[kind];
   curShown = [];
-  lib.items.forEach(function (it) {
-    if (it[4] !== kind) return;
-    if (term && (it[1] + ' ' + it[2]).toLowerCase().indexOf(term) < 0) return;
-    if (++n > 400) return;
-    curShown.push(it);
-    var on = own && own.id === it[0], pk = selecting && picked[it[0]];
-    var thumb = on ? bars() : artSvgSmall() + '<img class="tim" loading="lazy" alt="" src="' + B + 'th/' + it[0] + '?c=' + encodeURIComponent(C) + '" onerror="this.remove()">';
-    html += '<div style="display:flex;align-items:center;gap:4px"><button class="litem' + (on ? ' on' : '') + (pk ? ' sel' : '') + '" data-id="' + it[0] + '"><div class="th">' + thumb + '</div><div class="tx"><div class="a">' + esc(it[1]) + '</div><div class="b">' + (on ? 'Your pick · on this device only' : esc((it[2] ? it[2] + ' · ' : '') + (it[4] === 1 ? esc(it[6] || 'video') + ' · ' : it[4] === 2 ? esc(it[6] || 'photo') : '') + (it[4] === 2 ? '' : fmt(it[3] * 1000)))) + '</div></div></button>' +
-      (selecting ? '<button class="cbx" data-id="' + it[0] + '" aria-label="Select ' + esc(it[1]) + '"><i>' + (pk ? '✓' : '') + '</i></button>'
-        : st.dl ? '<a class="dlb" aria-label="Download ' + esc(it[1]) + '" href="' + B + 'dl/' + it[0] + '?c=' + encodeURIComponent(C) + '" download><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00E5FF" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/></svg></a>' : '') + '</div>';
-  });
+  $('#fbar').hidden = !fv;
+  if (fv) {
+    var dir = libDir[kind], parts = dir ? dir.split('/') : [];
+    var top = kind === 3 ? 'All files' : ['Songs', 'Videos', 'Photos'][kind];
+    $('#fPath').innerHTML = '<bdi>' + esc(top) + (parts.length ? ' › ' + parts.slice(0, -1).map(esc).join(' › ') + (parts.length > 1 ? ' › ' : '') + '<b>' + esc(parts[parts.length - 1]) + '</b>' : '') + '</bdi>';
+    $('#fUp').disabled = !dir;
+    var fr = folderRows(term);
+    fr.dirs.forEach(function (d) {
+      html += '<button class="litem dir" data-dir="' + esc(d[0]) + '"><div class="th">' + folderSvg() + '</div><div class="tx"><div class="a">' + esc(d[0]) + '</div><div class="b">' + d[1] + (d[1] === 1 ? ' item' : ' items') + '</div></div></button>';
+    });
+    libTotal = fr.files.length;
+    fr.files.forEach(function (it, n) { curShown.push(it); if (n < libShown) html += itemRow(it); });
+  } else {
+    var all = [];
+    lib.items.forEach(function (it) {
+      if (!inKind(it)) return;
+      if (term && (it[1] + ' ' + it[2]).toLowerCase().indexOf(term) < 0) return;
+      all.push(it);
+    });
+    libTotal = all.length;
+    all.forEach(function (it, n) { curShown.push(it); if (n < libShown) html += itemRow(it); });
+  }
+  if (libTotal > libShown) html += '<div class="more">Showing ' + libShown + ' of ' + libTotal + ' · scroll for more</div>';
   box.innerHTML = html || '<div class="muted" style="padding:16px 4px;font-size:13px">Nothing to show</div>';
   selUi();
 }
@@ -1243,10 +1338,37 @@ function bars() { return '<svg width="20" height="20" viewBox="0 0 24 24" fill="
 $('#libList').onclick = function (e) {
   var b = e.target.closest ? e.target.closest('button') : null;
   if (!b) return;
+  if (b.getAttribute('data-dir') != null && selecting) { libDir[kind] = (libDir[kind] ? libDir[kind] + '/' : '') + b.getAttribute('data-dir'); window.scrollTo(0, 0); drawLib(); return; }
   if (selecting) { var sid = b.getAttribute('data-id'); if (picked[sid]) delete picked[sid]; else picked[sid] = 1; var sy = window.pageYOffset; drawLib(); window.scrollTo(0, sy); return; }
+  var dn = b.getAttribute('data-dir');
+  if (dn != null) { libDir[kind] = (libDir[kind] ? libDir[kind] + '/' : '') + dn; window.scrollTo(0, 0); drawLib(); return; }
   var it = byId(b.getAttribute('data-id'));
-  if (it) { ownList = curShown.slice(); playOwn(it); }
+  if (!it) return;
+  if (folderView[kind]) {
+    // in a folder: photos and videos open together (swipe or step through both), songs carry on through the folder's songs
+    var song = it[4] === 0;
+    var list = curShown.filter(function (x) { return song ? x[4] === 0 : x[4] !== 0; });
+    if (song && kind === 3) { askSong(it, list); return; }
+    ownList = list; playOwn(it); return;
+  }
+  ownList = curShown.slice(); playOwn(it);
 };
+var asking = null;
+function askSong(it, list) {
+  asking = { it: it, list: list };
+  $('#askN').textContent = it[1];
+  $('#askS').textContent = (it[2] ? it[2] + ' · ' : '') + fmt(it[3] * 1000);
+  $('#ask').classList.add('on');
+  $('#askYes').focus();
+}
+function askClose() { asking = null; $('#ask').classList.remove('on'); }
+$('#askNo').onclick = askClose;
+$('#ask').onclick = function (e) { if (e.target === this) askClose(); };
+$('#askYes').onclick = function () { var a = asking; askClose(); if (a) { ownList = a.list; playOwn(a.it); } };
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && asking) askClose(); });
+$('#fUp').onclick = function () { var d = libDir[kind]; var k = d.lastIndexOf('/'); libDir[kind] = k < 0 ? '' : d.substring(0, k); drawLib(); };
+var fvb = document.querySelectorAll('#lview button');
+for (var fi = 0; fi < fvb.length; fi++) fvb[fi].onclick = function () { folderView[kind] = this.getAttribute('data-f') === '1'; store('fv' + kind, folderView[kind] ? '1' : '0'); window.scrollTo(0, 0); renderLibState(); };
 var kb = document.querySelectorAll('#kinds button');
 for (var ki = 0; ki < kb.length; ki++) kb[ki].onclick = function () { libRestoring = true; kind = +this.getAttribute('data-k'); setAuto(); renderLibState(); libRestore(); };
 $('#search').oninput = function () { q = this.value; drawLib(); };

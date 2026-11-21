@@ -461,9 +461,17 @@ public class ListenService extends Service {
         return START_NOT_STICKY;
     }
 
+    /** This phone's own music was playing when listening began: it carries on when listening ends. */
+    private static boolean resumeMain = false;
+
     @Override
     public void onDestroy() {
         teardown();
+        if (resumeMain) {
+            resumeMain = false;
+            PlaybackService ps = PlaybackService.instance;
+            if (ps != null) new Handler(Looper.getMainLooper()).postDelayed(ps::resumeNow, 400);
+        }
         super.onDestroy();
     }
 
@@ -487,7 +495,7 @@ public class ListenService extends Service {
         if (!cookie.isEmpty()) hf.setDefaultRequestProperties(Collections.singletonMap("Cookie", cookie));
         ExoPlayer p = new ExoPlayer.Builder(this)
                 .setMediaSourceFactory(new DefaultMediaSourceFactory(hf))
-                .setAudioAttributes(new AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
+                .setAudioAttributes(new AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), false)   // calls don't pause it (KeepPlaying)
                 .setHandleAudioBecomingNoisy(true)
                 .setWakeMode(C.WAKE_MODE_NETWORK)
                 .build();
@@ -500,12 +508,12 @@ public class ListenService extends Service {
                 status = getString(R.string.listen_cant_play);
                 loadedId = "";      // loaded again on the next tick
             }
-            @Override public void onPlayWhenReadyChanged(boolean playWhenReady, int reason) {
-                // another app took the sound for good (the user started their own music): step aside
-                if (!playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS) finish(getString(R.string.listen_focus));
-            }
         });
+        // another app took the sound for good (the user started their own music): step aside. Calls don't count.
+        KeepPlaying.attach(this, p, () -> { if (running && player == p) finish(getString(R.string.listen_focus)); });
         player = p;
+        // what this phone was playing before listening comes back when listening ends
+        resumeMain = PlaybackService.instance != null && PlaybackService.instance.playingNow();
 
         new Thread(() -> netLoop(my), "nkt-listen-net").start();
         new Thread(() -> helloLoop(my), "nkt-listen-hello").start();
