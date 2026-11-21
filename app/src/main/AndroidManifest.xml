@@ -22,10 +22,6 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Online Music: voice search listens on the page itself -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <!-- Web pages in the app: sites may use the camera and microphone once you allow it -->
-    <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <!-- Keep music playing in the background -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
@@ -39,6 +35,11 @@
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <!-- Recycle bin: the daily 30-day clean-up keeps running after the phone restarts -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Browser and web search: pages may use the microphone and the camera once allowed -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <!-- "Set as wallpaper" for photos -->
     <uses-permission android:name="android.permission.SET_WALLPAPER" />
     <!-- "Set as ringtone" -->
@@ -132,6 +133,36 @@
             </intent-filter>
         </activity>
 
+        <!-- Browser: full screen, also "Open with" for every web link (http / https) from other apps -->
+        <activity
+            android:name=".BrowserActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard|navigation|uiMode"
+            android:exported="true"
+            android:label="@string/browser"
+            android:launchMode="singleTask"
+            android:taskAffinity="com.nkt.mediaplayer.browser"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.APP_BROWSER" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!-- Set as wallpaper: move and zoom the photo first -->
+        <activity
+            android:name=".WallpaperActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
+            android:exported="false"
+            android:theme="@style/Theme.NKT.Video" />
+
         <!-- YouTube links play in YouTube's own player -->
         <activity
             android:name=".YouTubeActivity"
@@ -196,24 +227,6 @@
         <activity android:name=".DefaultViewActivity" android:exported="false" />
         <activity android:name=".ImagePickActivity" android:exported="false" />
         <activity android:name=".LyricsEditActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
-
-        <!-- Web pages and the Browser; also in the "Open with" list for every web link, so the app works as a browser -->
-        <activity
-            android:name=".WebActivity"
-            android:exported="true"
-            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
-            android:windowSoftInputMode="adjustResize">
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="http" />
-                <data android:scheme="https" />
-            </intent-filter>
-        </activity>
-
-        <!-- Set as wallpaper: move, zoom and turn the photo first -->
-        <activity android:name=".WallpaperActivity" android:exported="false" />
 
         <!-- Other devices: browse, stream and copy from FTP servers and phones running NKT Share -->
         <activity

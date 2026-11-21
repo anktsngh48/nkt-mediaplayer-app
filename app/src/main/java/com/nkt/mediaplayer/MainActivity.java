@@ -123,6 +123,12 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
     private ContentObserver observer;
     private OnlineMusic online;
     private View onlineBox;
+    // Search on internet: the page opens here, under the NKT bar
+    private WebPane webPane;
+    private FrameLayout webBox;
+    private boolean webOpen = false;
+    private TextView webPill;
+    private boolean listenShown = false, resumed = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -221,10 +227,11 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         findViewById(R.id.btn_link).setOnClickListener(v -> openLinkDialog());
         btnMini = findViewById(R.id.btn_mini);
         btnMini.setOnClickListener(v -> {
+            if (ListenService.running) { ListenService.togglePause(this); ui.postDelayed(this::updateMini, 200); return; }
             if (controller == null) return;
             if (controller.isPlaying()) controller.pause(); else Media.play(controller);
         });
-        btnMini.setOnLongClickListener(v -> { startActivity(new Intent(this, NowPlayingActivity.class)); return true; });
+        btnMini.setOnLongClickListener(v -> { startActivity(new Intent(this, ListenService.running ? ListenActivity.class : NowPlayingActivity.class)); return true; });
 
         onlineBox = findViewById(R.id.online_box);
         online = new OnlineMusic(this, findViewById(R.id.online_box), playing -> {
@@ -236,6 +243,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         drawer = findViewById(R.id.drawer);
         drawerItems = findViewById(R.id.drawer_items);
         scrim.setOnClickListener(v -> closeDrawer());
+        makeWebPill();
 
         mini = findViewById(R.id.mini);
         miniArt = findViewById(R.id.mini_art);
@@ -244,16 +252,16 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         miniSub = findViewById(R.id.mini_sub);
         miniPlay = findViewById(R.id.mini_play);
         miniPlay.setOnClickListener(v -> {
-            if (ListenService.running) { listenToggle(); return; }
+            if (ListenService.running) { ListenService.togglePause(this); ui.postDelayed(this::updateMini, 200); return; }
             if (controller == null) return;
             if (controller.isPlaying()) controller.pause(); else Media.play(controller);
         });
         findViewById(R.id.mini_next).setOnClickListener(v -> {
-            if (ListenService.running) { if (ListenService.own) ListenService.step(this, 1); return; }
+            if (ListenService.running) { if (ListenService.own) ListenService.step(this, 1); ui.postDelayed(this::updateMini, 300); return; }
             if (controller != null) controller.seekToNextMediaItem();
         });
         findViewById(R.id.mini_close).setOnClickListener(v -> {
-            if (ListenService.running) { ListenService.stop(this); ui.postDelayed(this::updateMini, 600); return; }     // stop listening: your own queue comes back
+            if (ListenService.running) { ListenService.stop(this); ui.postDelayed(this::updateMini, 400); return; }   // stop listening: back to your playlist
             if (controller == null) return;
             if (page == SONGS) {
                 // ✕ on the Audio page: really stop and clear
@@ -369,10 +377,6 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
             closeDrawer();
             startActivity(new Intent(this, TrashActivity.class));
         }, null));
-        drawerItems.addView(menuRow(R.drawable.ic_devices, getString(R.string.other_devices), null, false, false, () -> {
-            closeDrawer();
-            startActivity(new Intent(this, RemoteActivity.class));
-        }, null));
         drawerItems.addView(menuRow(R.drawable.ic_pc, getString(R.string.nkt_share), getString(R.string.nkt_share_long), false, false, () -> {
             closeDrawer();
             startActivity(new Intent(this, NktShareActivity.class));
@@ -405,9 +409,10 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
             } catch (Throwable ignored) { }
         }
         drawerItems.addView(streamRow);
-        drawerItems.addView(menuRow(R.drawable.ic_open, getString(R.string.menu_browser), null, false, false, () -> {
+        drawerItems.addView(menuRow(R.drawable.ic_globe, getString(R.string.browser), null, false, false, () -> {
             closeDrawer();
-            startActivity(new Intent(this, WebActivity.class).putExtra(WebActivity.EXTRA_FULL, true));
+            if (Net.off()) { Ui.toast(this, R.string.net_off_toast); return; }
+            startActivity(new Intent(this, BrowserActivity.class));
         }, null));
         drawerItems.addView(menuRow(R.drawable.ic_settings, getString(R.string.menu_settings), null, page == SETTINGS, false, () -> {
             closeDrawer();
@@ -506,7 +511,8 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         if (!drawerOpen() && !sel.active()) {
             switch (e.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
-                    edgeX = e.getX() < Ui.dp(this, 22) ? e.getX() : -1;
+                    int zone = Ui.edgeZone(drawer.getRootView());            // the back gesture's own strip is left to Android
+                    edgeX = e.getX() >= zone && e.getX() < zone + Ui.dp(this, 22) ? e.getX() : -1;
                     edgeY = e.getY();
                     break;
                 case MotionEvent.ACTION_MOVE:
@@ -541,6 +547,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
                 list.setPadding(list.getPaddingLeft(), h, list.getPaddingRight(), list.getPaddingBottom());
             }
             if (onlineBox.getPaddingTop() != h) onlineBox.setPadding(0, h, 0, 0);
+            if (webOpen) sizeWebBox();
             scroller.setTopInset(h + collapse.getTranslationY());
         });
         list.addOnScrollListener(new RecyclerView.OnScrollListener() {
@@ -551,6 +558,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
                 t = Math.max(-h, Math.min(0, t));
                 collapse.setTranslationY(t);
                 scroller.setTopInset(h + t);
+                updateWebPill();
             }
 
             @Override public void onScrollStateChanged(RecyclerView rv, int state) {
@@ -599,6 +607,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         super.onRequestPermissionsResult(requestCode, permissions, results);
         if (deleter.onRequestPermissionsResult(requestCode, results)) return;
         if (online != null && online.onRequestPermissionsResult(requestCode, results)) return;
+        if (webPane != null && webPane.onPermissionsResult(requestCode)) return;
         if (requestCode == REQ_PERMS && hasPermission()) startLoading();
         if (requestCode == REQ_LEGACY_WRITE && HiddenScanner.hasAllFilesAccess(this)) accessGranted();
     }
@@ -745,12 +754,15 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
     @Override
     protected void onPause() {
         super.onPause();
+        resumed = false;
+        ui.removeCallbacks(listenTick);
+        if (webPane != null) webPane.onPause();
         online.onActivityPause();                    // YouTube songs can't play in the background
-        ui.removeCallbacks(miniTick);
     }
 
     @Override
     protected void onDestroy() {
+        if (webPane != null) webPane.destroy();
         online.destroy();
         if (observer != null) try { getContentResolver().unregisterContentObserver(observer); } catch (Exception ignored) { }
         super.onDestroy();
@@ -792,11 +804,13 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
     @Override
     protected void onResume() {
         super.onResume();
+        resumed = true;
+        ui.removeCallbacks(listenTick);
+        ui.post(listenTick);
+        if (webPane != null && webOpen) webPane.onResume();
         online.onActivityResume(page == ONLINE);
         if (pendingAccess != null && HiddenScanner.hasAllFilesAccess(this)) { accessGranted(); return; }
         pendingAccess = null;
-        ui.removeCallbacks(miniTick);
-        ui.post(miniTick);
         if (!resumedOnce) { resumedOnce = true; return; }
         if (!loaded && hasPermission()) startLoading();
         else if (page == PLAYLISTS || page == HISTORY || page == SETTINGS || page == FOLDERS) refresh();
@@ -869,6 +883,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
     // ── Pages & views ────────────────────────────────────────────────────────
 
     private void setPage(int p) {
+        if (webOpen) closeWeb();
         if (sel.active()) sel.clear();
         rememberScroll();
         page = p;
@@ -989,6 +1004,12 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         if (sortable) sortBtn.setText(SortSheet.chip(this, currentSort()));
         galleryBar.setVisibility(page == GALLERY ? View.VISIBLE : View.GONE);
         folderBar.setVisibility(page == FOLDERS ? View.VISIBLE : View.GONE);
+        if (webOpen) {
+            search.setVisibility(View.GONE);
+            tabBar.setVisibility(View.GONE);
+            galleryBar.setVisibility(View.GONE);
+            folderBar.setVisibility(View.GONE);
+        }
         String[] views = SortSheet.views(PAGE_KEYS[page]);
         boolean showViews = views.length > 1 && !(inside && page != PLAYLISTS);
         viewSwitch.setVisibility(showViews ? View.VISIBLE : View.GONE);
@@ -1012,6 +1033,10 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
     private void refresh() {
         if (isFinishing()) return;
         updateBars();
+        if (webOpen) return;                                             // the web page covers the list: it is brought up to date when it closes
+        int pb = Ui.dp(this, filter.isEmpty() ? 12 : 76);              // room for "Search on internet" at the end of the results
+        if (list.getPaddingBottom() != pb) list.setPadding(list.getPaddingLeft(), list.getPaddingTop(), list.getPaddingRight(), pb);
+        list.post(this::updateWebPill);
         if (page == ONLINE) {
             list.setVisibility(View.GONE);
             empty.setVisibility(View.GONE);
@@ -1083,10 +1108,6 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
             buildSettings(out);
         }
 
-        // a search: the last row searches the same words on the internet, in the app
-        String typed = search.getText().toString().trim();
-        if (!typed.isEmpty() && page != SETTINGS && !Prefs.noInternet(this))
-            out.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.search_internet), getString(R.string.search_internet_sub, typed), null, "search_net", R.drawable.ic_globe));
         useRows(grid, colsKey, defCols);
         rows.setRows(out);
         if (permBox.getVisibility() == View.VISIBLE) return;
@@ -1546,8 +1567,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         all.add(RowAdapter.Row.toggle(getString(R.string.no_internet), getString(R.string.no_internet_sub), "no_internet",
                 R.drawable.ic_globe, Prefs.noInternet(this)));
         all.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.reset_perms), getString(R.string.reset_perms_sub), null, "reset_perms", R.drawable.ic_lock));
-        all.add(RowAdapter.Row.header(getString(R.string.set_browser)));
-        all.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.clear_browser), getString(R.string.clear_browser_sub), null, "clear_browser", R.drawable.ic_delete));
+        all.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.clear_browser), getString(R.string.clear_browser_sub), null, "clear_browser", R.drawable.ic_globe));
         all.add(RowAdapter.Row.header(getString(R.string.set_about)));
         all.add(new RowAdapter.Row(RowAdapter.ACTION, getString(R.string.app_name), getString(R.string.version_line), null, "about", R.drawable.ic_info));
         for (RowAdapter.Row r : all) {
@@ -1950,6 +1970,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (webPane != null && webPane.onActivityResult(requestCode, resultCode, data)) return;
         deleter.onActivityResult(requestCode, resultCode);
     }
 
@@ -2047,12 +2068,9 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
             case "folders_access": needAccessFor("folders"); break;
             case "reset_perms": confirmResetPermissions(); break;
             case "clear_browser":
-                Dialogs.builder(this).setTitle(R.string.clear_browser_title).setMessage(R.string.clear_browser_msg)
-                        .setPositiveButton(R.string.clear_browser_go, (d, w) -> { WebActivity.clearData(this); Ui.toast(this, R.string.clear_browser_done); })
+                Dialogs.builder(this).setTitle(R.string.clear_browser).setMessage(R.string.clear_browser_confirm)
+                        .setPositiveButton(R.string.clear, (d, w) -> { WebPane.clearAll(this); Ui.toast(this, R.string.clear_browser_done); })
                         .setNegativeButton(R.string.cancel, null).show();
-                break;
-            case "search_net":
-                startActivity(new Intent(this, WebActivity.class).putExtra(WebActivity.EXTRA_QUERY, search.getText().toString()));
                 break;
             case "np_view": startActivity(new Intent(this, DefaultViewActivity.class)); break;
             case "new_here": newHere(); break;
@@ -2325,6 +2343,100 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         }
     }
 
+    // ── Search on internet: at the end of the results, opens the search here ─
+
+    private void makeWebPill() {
+        int dp = Ui.dp(this, 1);
+        webPill = new TextView(this);
+        webPill.setTextSize(13);
+        webPill.setTextColor(getColor(R.color.accent));
+        webPill.setGravity(Gravity.CENTER_VERTICAL);
+        webPill.setSingleLine(true);
+        webPill.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        webPill.setBackgroundResource(R.drawable.bg_pill_btn);
+        webPill.setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_globe, 0, 0, 0);
+        webPill.setCompoundDrawableTintList(ColorStateList.valueOf(getColor(R.color.accent)));
+        webPill.setCompoundDrawablePadding(10 * dp);
+        webPill.setPadding(16 * dp, 0, 18 * dp, 0);
+        webPill.setVisibility(View.GONE);
+        webPill.setOnClickListener(v -> openWeb(search.getText().toString().trim()));
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, 48 * dp, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        lp.bottomMargin = 14 * dp;
+        lp.leftMargin = lp.rightMargin = 16 * dp;
+        ViewGroup area = (ViewGroup) list.getParent();
+        area.addView(webPill, lp);
+    }
+
+    private void updateWebPill() {
+        if (webPill == null) return;
+        String q = search.getText().toString().trim();
+        boolean show = !webOpen && !q.isEmpty() && page != SETTINGS && page != ONLINE && list.getVisibility() == View.VISIBLE
+                && permBox.getVisibility() != View.VISIBLE && !list.canScrollVertically(1);
+        if (show) webPill.setText(getString(R.string.search_internet_for, q));
+        webPill.setVisibility(show ? View.VISIBLE : View.GONE);
+    }
+
+    private void openWeb(String q) {
+        if (q.isEmpty()) return;
+        if (Net.off()) { Ui.toast(this, R.string.net_off_toast); return; }
+        hideKeyboard();
+        if (webPane == null) {
+            webPane = new WebPane(this);
+            webBox = new FrameLayout(this);
+            webBox.setBackgroundColor(getColor(R.color.bg));
+            webBox.setClickable(true);
+            webBox.addView(webPane.web, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            ViewGroup area = (ViewGroup) collapse.getParent();
+            area.addView(webBox, area.indexOfChild(collapse), new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            webPane.setOnScroll((v, x, y, ox, oy) -> {                  // scrolling down the page hides the NKT bar, up brings it back
+                float h = collapse.getHeight();
+                float t = collapse.getTranslationY() - (y - oy);
+                if (y <= 0) t = 0;
+                t = Math.max(-h, Math.min(0, t));
+                collapse.setTranslationY(t);
+                webBox.setTranslationY(t);
+            });
+        }
+        webOpen = true;
+        collapse.animate().cancel();
+        collapse.setTranslationY(0);
+        webBox.setTranslationY(0);
+        webBox.setVisibility(View.VISIBLE);
+        updateBars();
+        pageLabel.setText(R.string.page_internet);
+        scroller.setVisibility(View.GONE);
+        empty.setVisibility(View.GONE);
+        webPill.setVisibility(View.GONE);
+        collapse.post(this::sizeWebBox);
+        webPane.onResume();
+        webPane.load(WebPane.searchUrl(q));
+    }
+
+    /** The page sits under the NKT bar and moves up with it (one bar's height taller, so nothing opens at the bottom). */
+    private void sizeWebBox() {
+        if (webBox == null) return;
+        int h = collapse.getHeight();
+        ViewGroup area = (ViewGroup) webBox.getParent();
+        if (area == null) return;
+        if (webBox.getPaddingTop() != h) webBox.setPadding(0, h, 0, 0);
+        ViewGroup.LayoutParams lp = webBox.getLayoutParams();
+        int want = area.getHeight() + h;
+        if (area.getHeight() > 0 && lp.height != want) { lp.height = want; webBox.setLayoutParams(lp); }
+    }
+
+    private void closeWeb() {
+        if (!webOpen) return;
+        webOpen = false;
+        if (webPane != null) webPane.destroy();
+        if (webBox != null && webBox.getParent() instanceof ViewGroup) ((ViewGroup) webBox.getParent()).removeView(webBox);
+        webPane = null;
+        webBox = null;
+        pageLabel.setText(PAGE_TITLES[page]);
+        collapse.setTranslationY(0);
+        refresh();
+        showHeader();
+    }
+
     // ── Background player ────────────────────────────────────────────────────
 
     private void playAudio(List<MediaInfo> list, int index, boolean shuffle) {
@@ -2369,47 +2481,44 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         super.onStop();
     }
 
-    /** Listening to another phone, or streaming from this one: the mini player says so and keeps itself current. */
-    private final Runnable miniTick = new Runnable() {
+    /** While listening to another phone's Stream, the mini player and the round button show (and control) that. */
+    private final Runnable listenTick = new Runnable() {
         @Override public void run() {
-            updateMini();
-            if (ListenService.running || StreamService.running) ui.postDelayed(this, 1000);
+            if (ListenService.running || listenShown) updateMini();
+            if (resumed) ui.postDelayed(this, 1000);
         }
     };
 
-    private void listenToggle() {
-        androidx.media3.exoplayer.ExoPlayer p = ListenService.player;
-        if (p == null || !ListenService.own || ListenService.ownKind == 2) return;      // the live stream follows the host
-        if (p.getPlaybackState() == Player.STATE_ENDED) { p.seekTo(0); p.setPlayWhenReady(true); }
-        else p.setPlayWhenReady(!p.getPlayWhenReady());
-        ui.postDelayed(this::updateMini, 150);
-    }
-
-    private boolean updateListenMini() {
-        if (!ListenService.running) return false;
-        btnMini.setVisibility(View.GONE);
+    private boolean showListenMini() {
+        if (!ListenService.running) { listenShown = false; return false; }
+        listenShown = true;
+        boolean on = ListenService.playingHere();
+        btnMini.setVisibility(View.VISIBLE);
+        btnMini.setImageResource(on ? R.drawable.ic_pause : R.drawable.ic_play);
+        btnMini.setContentDescription(getString(on ? R.string.cd_pause : R.string.cd_play));
         mini.setVisibility(View.VISIBLE);
-        String t = ListenService.has && !ListenService.title.isEmpty() ? ListenService.title : ListenService.status;
-        miniTitle.setText(t == null || t.isEmpty() ? getString(R.string.stream_menu_listening) : t);
-        String hn = ListenService.host;
-        miniSub.setText("● " + (hn == null || hn.isEmpty() ? getString(R.string.stream_menu_listening) : getString(R.string.stream_menu_listening_to, hn)));
-        miniSub.setTextColor(getColor(R.color.success));
-        boolean own = ListenService.own && ListenService.ownKind != 2;
-        androidx.media3.exoplayer.ExoPlayer p = ListenService.player;
-        miniPlay.setVisibility(own ? View.VISIBLE : View.GONE);
-        findViewById(R.id.mini_next).setVisibility(ListenService.own ? View.VISIBLE : View.GONE);
-        if (own && p != null) miniPlay.setImageResource(p.getPlayWhenReady() ? R.drawable.ic_pause : R.drawable.ic_play);
-        Bitmap a = ListenService.art;
-        if (a != null) Thumbs.showBitmap(miniArt, a);
-        else Thumbs.showPlaceholder(miniArt, ListenService.video ? R.drawable.ic_movie : R.drawable.ic_music);
+        String host = ListenService.host == null ? "" : ListenService.host;
+        String t = ListenService.has && !ListenService.title.isEmpty() ? ListenService.title
+                : !ListenService.photoId.isEmpty() ? ListenService.photoTitle : getString(R.string.listen_waiting);
+        miniTitle.setText(t);
+        String from = host.isEmpty() ? getString(R.string.stream) : getString(R.string.mini_stream_from, host);
+        String st = ListenService.status == null ? "" : ListenService.status;
+        miniSub.setText(ListenService.own ? getString(R.string.mini_stream_own) : st.isEmpty() ? from : from + " · " + st);
+        miniPlay.setImageResource(on ? R.drawable.ic_pause : R.drawable.ic_play);
+        View next = findViewById(R.id.mini_next);
+        boolean canNext = ListenService.own && ListenService.ownIdx + 1 < ListenService.ownQueue.size();
+        next.setAlpha(canNext ? 1f : 0.35f);
+        next.setEnabled(canNext);
+        Bitmap art = ListenService.art;
+        if (art != null) Thumbs.showBitmap(miniArt, art);
+        else Thumbs.showPlaceholder(miniArt, R.drawable.ic_wifi);
         return true;
     }
 
     private void updateMini() {
-        if (updateListenMini()) return;
-        miniPlay.setVisibility(View.VISIBLE);
-        findViewById(R.id.mini_next).setVisibility(View.VISIBLE);
-        miniSub.setTextColor(getColor(R.color.muted));
+        if (showListenMini()) return;
+        View nextBtn = findViewById(R.id.mini_next);
+        if (!nextBtn.isEnabled()) { nextBtn.setEnabled(true); nextBtn.setAlpha(1f); }
         boolean queued = controller != null && controller.getMediaItemCount() > 0 && controller.getCurrentMediaItem() != null;
         btnMini.setVisibility(queued ? View.VISIBLE : View.GONE);
         if (queued) {
@@ -2429,11 +2538,6 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         MediaMetadata md = controller.getMediaMetadata();
         miniTitle.setText(md.title == null ? getString(R.string.unknown) : md.title);
         miniSub.setText(Media.isVideo(md) ? getString(R.string.video_in_background) : md.artist == null ? "" : md.artist);
-        if (StreamService.running) {                     // streaming from this phone: the same green line as the menu
-            int n = StreamHub.listenerCount();
-            miniSub.setText("● " + (n > 0 ? getResources().getQuantityString(R.plurals.stream_menu_on_n, n, n) : getString(R.string.stream_menu_on)));
-            miniSub.setTextColor(getColor(R.color.success));
-        }
         miniPlay.setImageResource(controller.isPlaying() ? R.drawable.ic_pause : R.drawable.ic_play);
         Bitmap art = null;
         if (md.artworkData != null) {
@@ -2449,6 +2553,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
     @Override
     public void onBackPressed() {
         if (drawerOpen()) { closeDrawer(); return; }
+        if (webOpen) { if (!webPane.back()) closeWeb(); return; }
         if (sel.active()) { sel.clear(); return; }
         if (search.getText().length() > 0) { search.setText(""); return; }
         if (goBack()) return;

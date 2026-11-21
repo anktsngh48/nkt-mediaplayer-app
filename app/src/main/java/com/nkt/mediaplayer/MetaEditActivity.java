@@ -140,39 +140,92 @@ public class MetaEditActivity extends Activity {
     private void load() {
         setBusy(true);
         new Thread(() -> {
+            File f = null;
+            TagIO.Data d = null;
             try {
-                String ext = name.contains(".") ? name.substring(name.lastIndexOf('.')) : ".mp3";
-                File f = new File(getCacheDir(), "edit" + ext.toLowerCase(java.util.Locale.ROOT));
-                try (InputStream in = getContentResolver().openInputStream(uri); OutputStream out = new FileOutputStream(f)) {
+                f = new File(getCacheDir(), "edit" + extension());
+                try (InputStream in = "file".equals(uri.getScheme()) ? new FileInputStream(uri.getPath()) : getContentResolver().openInputStream(uri);
+                     OutputStream out = new FileOutputStream(f)) {
                     if (in == null) throw new Exception("no input");
                     copy(in, out);
                 }
-                TagIO.Data d = TagIO.read(f);
-                ui.post(() -> {
-                    work = f;
-                    data = d;
-                    for (int i = 0; i < inputs.length; i++) { inputs[i].setText(d.values[i]); inputs[i].setEnabled(true); }
-                    if (inputs[0].getText().length() == 0) inputs[0].setHint(getIntent().getStringExtra(EXTRA_TITLE));
-                    setBusy(false);
-                    String artPath = getIntent().getStringExtra(EXTRA_ART);
-                    if (artPath != null) {                       // a picture was chosen before this screen opened
-                        try (InputStream ai = new FileInputStream(artPath)) {
-                            ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                            copy(ai, bos);
-                            data.art = bos.toByteArray();
-                            artChanged = true;
-                        } catch (Throwable ignored) { }
-                    }
-                    showArt();
-                    if (artPath != null && artChanged && getIntent().getBooleanExtra(EXTRA_AUTOSAVE, false)) startSave();
-                });
+                try { d = TagIO.read(f); }
+                catch (Throwable first) {                        // the name may not say what the file really is: look at its first bytes
+                    String real = sniff(f);
+                    if (real != null && !f.getName().endsWith(real)) {
+                        File g = new File(getCacheDir(), "edit" + real);
+                        if (g.exists()) g.delete();
+                        if (f.renameTo(g)) f = g;
+                        d = TagIO.read(f);
+                    } else throw first;
+                }
             } catch (Throwable t) {
-                ui.post(() -> {
-                    Ui.toast(this, R.string.meta_cant_read);
-                    finish();
-                });
+                d = null;
             }
+            final File file = f;
+            final TagIO.Data got = d;
+            ui.post(() -> {
+                if (isFinishing()) return;
+                boolean readable = got != null;
+                if (!readable && auto) { Ui.toast(this, R.string.meta_cant_read); finish(); return; }
+                if (!readable) Ui.toast(this, R.string.meta_cant_read);          // the editor still opens, filled with what is known
+                work = file != null && file.exists() ? file : null;
+                data = readable ? got : new TagIO.Data();
+                if (!readable) {
+                    String t = getIntent().getStringExtra(EXTRA_TITLE);
+                    for (int i = 0; i < data.values.length; i++) data.values[i] = "";
+                    data.values[0] = t == null ? "" : t;
+                }
+                for (int i = 0; i < inputs.length; i++) { inputs[i].setText(data.values[i]); inputs[i].setEnabled(true); }
+                if (inputs[0].getText().length() == 0) inputs[0].setHint(getIntent().getStringExtra(EXTRA_TITLE));
+                setBusy(false);
+                String artPath = getIntent().getStringExtra(EXTRA_ART);
+                if (artPath != null) {                       // a picture was chosen before this screen opened
+                    try (InputStream ai = new FileInputStream(artPath)) {
+                        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                        copy(ai, bos);
+                        data.art = bos.toByteArray();
+                        artChanged = true;
+                    } catch (Throwable ignored) { }
+                }
+                showArt();
+                if (artPath != null && artChanged && getIntent().getBooleanExtra(EXTRA_AUTOSAVE, false)) startSave();
+            });
         }).start();
+    }
+
+    /** The file's type from its path, its name or what Android says it is (".mp3" when none of them tell). */
+    private String extension() {
+        for (String n : new String[]{path, name, uri.getLastPathSegment()}) {
+            if (n == null) continue;
+            int dot = n.lastIndexOf('.'), slash = n.lastIndexOf('/');
+            if (dot > slash && n.length() - dot <= 6 && n.length() - dot >= 3) return n.substring(dot).toLowerCase(java.util.Locale.ROOT);
+        }
+        try {
+            String mime = getContentResolver().getType(uri);
+            String ext = mime == null ? null : android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(mime);
+            if (ext != null && !ext.isEmpty()) return "." + ext.toLowerCase(java.util.Locale.ROOT);
+        } catch (Throwable ignored) { }
+        return ".mp3";
+    }
+
+    /** What the first bytes of the file say it is, or null. */
+    private static String sniff(File f) {
+        byte[] b = new byte[12];
+        try (InputStream in = new FileInputStream(f)) {
+            int n = in.read(b);
+            if (n < 12) return null;
+        } catch (Throwable t) { return null; }
+        String s4 = new String(b, 0, 4, java.nio.charset.StandardCharsets.ISO_8859_1);
+        String s8 = new String(b, 4, 4, java.nio.charset.StandardCharsets.ISO_8859_1);
+        if (s4.startsWith("ID3") || ((b[0] & 0xFF) == 0xFF && (b[1] & 0xE0) == 0xE0)) return ".mp3";
+        if (s4.equals("fLaC")) return ".flac";
+        if (s4.equals("OggS")) return ".ogg";
+        if (s4.equals("RIFF")) return ".wav";
+        if (s8.equals("ftyp")) return ".m4a";
+        if (s4.equals("FORM")) return ".aif";
+        if ((b[0] & 0xFF) == 0x30 && (b[1] & 0xFF) == 0x26) return ".wma";
+        return null;
     }
 
     private void showArt() {
@@ -252,7 +305,8 @@ public class MetaEditActivity extends Activity {
     // ── Save ─────────────────────────────────────────────────────────────────
 
     private void startSave() {
-        if (busy || data == null || work == null) return;
+        if (busy || data == null) return;
+        if (work == null) { Ui.toast(this, R.string.meta_cant_write); return; }
         for (int i = 0; i < inputs.length; i++) data.values[i] = inputs[i].getText().toString();
         setBusy(true);
         new Thread(() -> {

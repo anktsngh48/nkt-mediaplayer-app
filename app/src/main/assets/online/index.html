@@ -157,6 +157,9 @@
   const app = window.NKT || null;
 
   let lastQuery = '', searchSeq = 0, currentList = [], currentIdx = -1, listening = false;
+  // the list below the player: the search results at first, then the playlist of the video that is playing
+  let listMode = 'results', relatedFor = '', relatedSeq = 0;
+  const played = [];
   const searchCache = new Map();
 
   function setStatus(msg, type) { const el = document.getElementById('status'); el.textContent = msg; el.className = type || ''; }
@@ -260,37 +263,16 @@
     if (!list.length) { lastQuery = ''; setStatus('No results — try other words', 'error'); return; }
     if (q) saveRecent(q);
     currentList = list;
-    listKind = 'results';
+    listMode = 'results'; relatedFor = '';
     renderResults();
     playIndex(0);
   }
 
-  // When a video from the search starts, the list becomes that video's playlist (YouTube's mix for it)
-  let listKind = 'results', plSeq = 0;
-  function fetchPlaylist(r) {
-    if (!app || !app.playlist || !r) return;
-    const seq = ++plSeq;
-    app.playlist(r.videoId, seq);
-  }
-  window.NKTplaylist = (seq, json) => {
-    if (seq !== plSeq) return;
-    let list = []; try { list = JSON.parse(json); } catch(_) {}
-    const cur = currentList[currentIdx];
-    if (!cur || list.length < 2) return;
-    const rest = list.filter(x => x.videoId !== cur.videoId);
-    currentList = [cur].concat(rest);
-    currentIdx = 0;
-    listKind = 'playlist';
-    document.getElementById('next-btn').disabled = currentList.length < 2;
-    renderResults();
-  };
-  window.NKTplaylistFailed = () => {};
-
   function renderResults(note) {
     const box = document.getElementById('results'); box.innerHTML = '';
     document.getElementById('results-head').classList.toggle('show', currentList.length > 0);
-    document.getElementById('results-count').textContent = (listKind === 'playlist' ? 'PLAYLIST · ' : 'RESULTS · ') + currentList.length;
-    document.getElementById('results-note').textContent = note || (listKind === 'playlist' ? 'From the video that is playing' : '');
+    document.getElementById('results-count').textContent = (listMode === 'playlist' ? 'PLAYLIST · ' : 'RESULTS · ') + currentList.length;
+    document.getElementById('results-note').textContent = note || '';
     currentList.forEach((r, i) => {
       const el = document.createElement('div');
       el.className = 'result' + (i === currentIdx ? ' playing' : '') + (r.bad ? ' skipped' : '');
@@ -355,12 +337,11 @@
     let p; try { p = await ensurePlayer(); } catch(e) { setStatus(e.message, 'error'); return; }
     if (currentIdx !== idx) return;
     p.loadVideoById(r.videoId);
-    if (listKind === 'results') fetchPlaylist(r);          // a search pick: its playlist takes over the list
   }
 
   function onPlayerState(e) {
     const S = YT.PlayerState, btn = document.getElementById('play-btn');
-    if (e.data === S.PLAYING) { btn.innerHTML = ICON_PAUSE; setStatus('Now playing', 'playing'); if (app) app.playing(true); }
+    if (e.data === S.PLAYING) { btn.innerHTML = ICON_PAUSE; setStatus('Now playing', 'playing'); if (app) app.playing(true); gotPlaying(); }
     if (e.data === S.PAUSED)  { btn.innerHTML = ICON_PLAY;  setStatus('Paused'); if (app) app.playing(false); }
     if (e.data === S.ENDED) {
       btn.innerHTML = ICON_PLAY;
@@ -379,6 +360,30 @@
     } else setStatus('Couldn’t play this one (' + code + ')', 'error');
   }
 
+  // A video has started: remember it (for PREVIOUS) and fetch its own playlist, which becomes the list below
+  function gotPlaying() {
+    const r = currentList[currentIdx];
+    if (!r) return;
+    if (!played.length || played[played.length - 1].videoId !== r.videoId) { played.push(r); if (played.length > 50) played.shift(); }
+    if (relatedFor === r.videoId || !app || !app.related) return;
+    relatedFor = r.videoId;
+    app.related(r.videoId, ++relatedSeq);
+  }
+  window.NKTrelated = (seq, vid, json) => {
+    if (seq !== relatedSeq) return;
+    const cur = currentList[currentIdx];
+    if (!cur || cur.videoId !== vid) return;
+    let list = []; try { list = JSON.parse(json); } catch(_) {}
+    const seen = new Set([vid]);
+    list = list.filter(x => x && x.videoId && !x.self && x.title && !seen.has(x.videoId) && seen.add(x.videoId));
+    if (!list.length) return;
+    currentList = [cur].concat(list);
+    currentIdx = 0;
+    listMode = 'playlist';
+    document.getElementById('next-btn').disabled = currentList.length < 2;
+    renderResults();
+  };
+
   function togglePlay() {
     if (!player || !player.getPlayerState) return;
     const st = player.getPlayerState();
@@ -386,7 +391,16 @@
   }
   function prevTrack() {
     if (player && player.getCurrentTime && player.getCurrentTime() > 3) { player.seekTo(0, true); return; }
-    if (currentIdx > 0) playIndex(currentIdx - 1); else if (player && player.seekTo) player.seekTo(0, true);
+    if (currentIdx > 0) { playIndex(currentIdx - 1); return; }
+    if (played.length >= 2) {                    // the song before this one: back to it (and its playlist)
+      played.pop();
+      const p = played.pop();
+      currentList = [p].concat(currentList.filter(x => x.videoId !== p.videoId));
+      relatedFor = '';
+      playIndex(0);
+      return;
+    }
+    if (player && player.seekTo) player.seekTo(0, true);
   }
   function nextTrack() { if (currentIdx + 1 < currentList.length) playIndex(currentIdx + 1); }
   window.NKTpause = () => { try { if (player && player.pauseVideo) player.pauseVideo(); } catch(_) {} };

@@ -105,6 +105,8 @@ public class ZoomImageView extends ImageView {
     @SuppressLint("ClickableViewAccessibility")
     @Override
     public boolean onTouchEvent(MotionEvent ev) {
+        // a touch that starts in the back gesture's strip at the sides is left to Android
+        if (ev.getActionMasked() == MotionEvent.ACTION_DOWN && ev.getPointerCount() == 1 && Ui.inEdgeZone(this, ev)) return false;
         scaler.onTouchEvent(ev);
         gestures.onTouchEvent(ev);
         // while zoomed (or pinching), keep the swipe-to-next-photo list from taking the touch

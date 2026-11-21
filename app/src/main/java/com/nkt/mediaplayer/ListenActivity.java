@@ -142,25 +142,9 @@ public class ListenActivity extends Activity {
         setContentView(root);
         Ui.padForSystemBars(root);
 
-        // top row
-        LinearLayout top = new LinearLayout(this);
-        top.setGravity(Gravity.CENTER_VERTICAL);
-        ImageButton back = new ImageButton(this);
-        back.setBackgroundResource(R.drawable.bg_round_btn);
-        back.setImageResource(R.drawable.ic_back);
-        back.setColorFilter(getColor(R.color.accent));
-        back.setContentDescription(getString(R.string.cd_back));
-        back.setOnClickListener(v -> finish());
-        top.addView(back, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        TextView title = text(getString(R.string.listen_caps), 13, R.color.accent, false);
-        title.setTypeface(Ui.orbitron(this));
-        title.setLetterSpacing(0.2f);
-        LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        tl.setMarginStart(dp(14));
-        top.addView(title, tl);
-        LinearLayout.LayoutParams topLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        topLp.topMargin = dp(8);
-        col.addView(top, topLp);
+        // top row: the same NKT bar as the Library, with this screen's name under it
+        col.addView(Ui.appBar(this, getString(R.string.stream_caps) + " · " + getString(R.string.listen_caps), this::finish),
+                new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         // ── not listening ──
         idleBox = new LinearLayout(this);
@@ -318,6 +302,7 @@ public class ListenActivity extends Activity {
         liveStatus.setLetterSpacing(0.1f);
         liveStatus.setGravity(Gravity.CENTER);
         liveStatus.setPadding(dp(14), dp(7), dp(14), dp(7));
+        liveStatus.setOnClickListener(v -> { if (ListenService.held) { ListenService.togglePause(this); ui.postDelayed(this::update, 150); } });   // paused from the mini player: tap to play
         liveBox.addView(liveStatus, lp(WRAP, WRAP, 14, 0));
 
         bar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
@@ -428,7 +413,7 @@ public class ListenActivity extends Activity {
     // double-tap left/right = −/+10 s, press and hold = 2× while held
 
     private int vMode = 0;                          // 0 undecided, 1 brightness, 2 volume, 3 seek, 4 nothing
-    private boolean vHolding = false;
+    private boolean vHolding = false, vEdge = false;
     private long vSeekStart = 0, vSeekTarget = -1;
     private float vVolAcc = 0;
     private TextView vFlashT;
@@ -512,8 +497,9 @@ public class ListenActivity extends Activity {
             }
         });
         videoView.setOnTouchListener((v, ev) -> {
-            if (Ui.edgeTouch(v, ev) && !vHolding) return false;          // the edges are for the back gesture
             int a = ev.getActionMasked();
+            if (a == MotionEvent.ACTION_DOWN) vEdge = !vHolding && Ui.inEdgeZone(v, ev);     // the back gesture's strip at the sides
+            if (vEdge) { if (a == MotionEvent.ACTION_UP || a == MotionEvent.ACTION_CANCEL) vEdge = false; return false; }
             if (a == MotionEvent.ACTION_DOWN && v.getParent() != null) v.getParent().requestDisallowInterceptTouchEvent(true);
             if (vHolding) {
                 if (a == MotionEvent.ACTION_UP || a == MotionEvent.ACTION_CANCEL) endVHold();
@@ -1197,6 +1183,11 @@ public class ListenActivity extends Activity {
         dlBtn.setVisibility(!waiting && ListenService.dlOn && !ListenService.downloadId().isEmpty() ? View.VISIBLE : View.GONE);
         View[] normal = {libRow, viewPills, stage, videoView, fsBtn, liveTitle, liveArtist, bar, timesRow, ownRow, liveRow, autoRow, ctlGroup, nudgeHint, followRow};
         for (View nv : normal) if (waiting) nv.setVisibility(View.GONE);
+        if (waiting && ListenService.libOn) {                  // nothing playing yet, but the host shares its library: it can be opened now
+            libRow.setVisibility(View.VISIBLE);
+            libBtn.setVisibility(View.VISIBLE);
+            backLiveBtn.setVisibility(View.GONE);
+        }
         if (!waiting) { ctlGroup.setVisibility(View.VISIBLE); nudgeHint.setVisibility(View.VISIBLE); }
         waitArt.setVisibility(waiting ? View.VISIBLE : View.GONE);
         if (waiting) liveStatus.setText((ListenService.priv ? getString(R.string.listen_private) : ListenService.status).toUpperCase());

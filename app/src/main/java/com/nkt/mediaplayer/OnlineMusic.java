@@ -279,13 +279,17 @@ public final class OnlineMusic {
             });
         }
 
-        /** The playlist of the video that started: YouTube's mix for it, else its related videos. */
+        /** The playlist of the video that just started: YouTube's own mix for it (or its up-next list). */
         @JavascriptInterface
-        public void playlist(String videoId, int seq) {
+        public void related(String videoId, int seq) {
+            if (videoId == null || !videoId.matches("[\\w-]{11}")) return;
             pool.execute(() -> {
-                String json = null;
-                try { json = playlistFor(videoId); } catch (Throwable ignored) { }
-                js(json == null ? "NKTplaylistFailed(" + seq + ")" : "NKTplaylist(" + seq + "," + JSONObject.quote(json) + ")");
+                String json = cache.get("related:" + videoId);
+                if (json == null) json = relatedAll(videoId);
+                if (json != null) {
+                    cache.put("related:" + videoId, json);
+                    js("NKTrelated(" + seq + "," + JSONObject.quote(videoId) + "," + JSONObject.quote(json) + ")");
+                }
             });
         }
 
@@ -326,6 +330,114 @@ public final class OnlineMusic {
             for (Future<JSONArray> f : jobs) f.cancel(true);
         }
         return null;
+    }
+
+    // ── The playing video's playlist: YouTube's mix, its up-next list, or a Piped server's related videos ──
+
+    private String relatedAll(String id) {
+        ExecutorCompletionService<JSONArray> race = new ExecutorCompletionService<>(pool);
+        List<Future<JSONArray>> jobs = new ArrayList<>();
+        jobs.add(race.submit(() -> mixYouTube(id)));
+        jobs.add(race.submit(() -> upNextYouTube(id)));
+        for (String api : PIPED) jobs.add(race.submit(() -> relatedPiped(api, id)));
+        long until = System.currentTimeMillis() + 12000;
+        JSONArray second = null;
+        try {
+            for (int i = 0; i < jobs.size(); i++) {
+                long left = until - System.currentTimeMillis();
+                if (left <= 0) break;
+                Future<JSONArray> f = race.poll(left, TimeUnit.MILLISECONDS);
+                if (f == null) break;
+                try {
+                    JSONArray r = f.get();
+                    if (r == null || r.length() == 0) continue;
+                    if (r.optJSONObject(0) != null && r.optJSONObject(0).optBoolean("mix")) return strip(r).toString();   // the mix comes first
+                    if (second == null) second = r;
+                    if (jobs.get(0).isDone()) return strip(r).toString();
+                } catch (Exception ignored) { }
+            }
+        } catch (InterruptedException ignored) {
+        } finally {
+            for (Future<JSONArray> f : jobs) f.cancel(true);
+        }
+        return second == null ? null : strip(second).toString();
+    }
+
+    private static JSONArray strip(JSONArray a) {
+        for (int i = 0; i < a.length(); i++) { JSONObject o = a.optJSONObject(i); if (o != null) o.remove("mix"); }
+        return a;
+    }
+
+    private static JSONObject ytData(String html) throws Exception {
+        Matcher m = Pattern.compile("ytInitialData\\s*=\\s*(\\{.+?\\});\\s*</script>", Pattern.DOTALL).matcher(html);
+        if (!m.find()) throw new Exception("no data");
+        return new JSONObject(m.group(1));
+    }
+
+    private static String text(JSONObject o) {
+        if (o == null) return "";
+        if (o.has("simpleText")) return o.optString("simpleText");
+        JSONArray runs = o.optJSONArray("runs");
+        StringBuilder b = new StringBuilder();
+        for (int k = 0; runs != null && k < runs.length(); k++) b.append(runs.optJSONObject(k) == null ? "" : runs.optJSONObject(k).optString("text"));
+        return b.toString();
+    }
+
+    /** YouTube's own "Mix" playlist for the video (the list that plays next on YouTube). */
+    private static JSONArray mixYouTube(String id) throws Exception {
+        JSONObject data = ytData(get("https://www.youtube.com/watch?v=" + id + "&list=RD" + id + "&hl=en&gl=IN", 10000));
+        JSONArray items = data.getJSONObject("contents").getJSONObject("twoColumnWatchNextResults")
+                .getJSONObject("playlist").getJSONObject("playlist").getJSONArray("contents");
+        JSONArray out = new JSONArray();
+        for (int i = 0; i < items.length() && out.length() < 30; i++) {
+            JSONObject r = items.getJSONObject(i).optJSONObject("playlistPanelVideoRenderer");
+            if (r == null || r.optString("videoId").isEmpty()) continue;
+            String dur = text(r.optJSONObject("lengthText"));
+            if (dur.isEmpty()) continue;
+            String ch = text(r.optJSONObject("shortBylineText"));
+            if (ch.isEmpty()) ch = text(r.optJSONObject("longBylineText"));
+            out.put(video(r.getString("videoId"), text(r.optJSONObject("title")), ch, dur).put("mix", true));
+        }
+        if (out.length() == 0) throw new Exception("no mix");
+        return out;
+    }
+
+    /** The videos YouTube lists beside the video ("Up next"). */
+    private static JSONArray upNextYouTube(String id) throws Exception {
+        JSONObject data = ytData(get("https://www.youtube.com/watch?v=" + id + "&hl=en&gl=IN", 10000));
+        JSONArray items = data.getJSONObject("contents").getJSONObject("twoColumnWatchNextResults")
+                .getJSONObject("secondaryResults").getJSONObject("secondaryResults").getJSONArray("results");
+        JSONArray out = new JSONArray();
+        out.put(new JSONObject().put("videoId", id).put("self", true));
+        for (int i = 0; i < items.length() && out.length() < 25; i++) {
+            JSONObject r = items.getJSONObject(i).optJSONObject("compactVideoRenderer");
+            if (r == null || r.optString("videoId").isEmpty()) continue;
+            String dur = text(r.optJSONObject("lengthText"));
+            if (dur.isEmpty()) continue;
+            out.put(video(r.getString("videoId"), text(r.optJSONObject("title")), text(r.optJSONObject("longBylineText")), dur));
+        }
+        if (out.length() <= 1) throw new Exception("no up next");
+        return out;
+    }
+
+    /** A free Piped server's related videos. */
+    private static JSONArray relatedPiped(String api, String id) throws Exception {
+        JSONObject j = new JSONObject(get(api + "/streams/" + id, 8000));
+        JSONArray items = j.optJSONArray("relatedStreams");
+        if (items == null) throw new Exception("no related");
+        JSONArray out = new JSONArray();
+        out.put(new JSONObject().put("videoId", id).put("self", true));
+        for (int i = 0; i < items.length() && out.length() < 25; i++) {
+            JSONObject it = items.getJSONObject(i);
+            if (!"stream".equals(it.optString("type")) || it.optBoolean("isShort")) continue;
+            Matcher m = Pattern.compile("[?&]v=([\\w-]{11})").matcher(it.optString("url"));
+            if (!m.find()) continue;
+            long d = it.optLong("duration", -1);
+            if (d <= 0) continue;
+            out.put(video(m.group(1), it.optString("title"), it.optString("uploaderName"), fmt(d)));
+        }
+        if (out.length() <= 1) throw new Exception("no related");
+        return out;
     }
 
     private static String get(String url, int timeoutMs) throws Exception {
@@ -382,85 +494,6 @@ public final class OnlineMusic {
             }
         }
         if (out.length() == 0) throw new Exception("no results");
-        return out;
-    }
-
-    // ── The playing video's playlist ─────────────────────────────────────────
-
-    private String playlistFor(String id) {
-        if (id == null || !id.matches("[\\w-]{11}")) return null;
-        JSONArray a = null;
-        try { a = youTubeMix(id); } catch (Throwable ignored) { }
-        if (a == null || a.length() < 2) {
-            for (String api : PIPED) {
-                try { a = pipedRelated(api, id); if (a != null && a.length() > 1) break; } catch (Throwable ignored) { }
-            }
-        }
-        return a == null || a.length() < 2 ? null : a.toString();
-    }
-
-    /** YouTube's "Mix" for a video (the playlist it starts by itself), or the videos shown beside it. */
-    private static JSONArray youTubeMix(String id) throws Exception {
-        String html = get("https://www.youtube.com/watch?v=" + id + "&list=RD" + id + "&hl=en&gl=IN", 10000);
-        Matcher m = Pattern.compile("ytInitialData\\s*=\\s*(\\{.+?\\});\\s*</script>", Pattern.DOTALL).matcher(html);
-        if (!m.find()) throw new Exception("no data");
-        JSONObject data = new JSONObject(m.group(1));
-        JSONArray out = new JSONArray();
-        java.util.Set<String> seen = new java.util.HashSet<>();
-        collect(data, out, seen, 50);
-        return out;
-    }
-
-    /** Walks YouTube's page data for the playlist rows (and, failing that, the related videos). */
-    private static void collect(Object node, JSONArray out, java.util.Set<String> seen, int max) throws Exception {
-        if (out.length() >= max || node == null) return;
-        if (node instanceof JSONObject) {
-            JSONObject o = (JSONObject) node;
-            JSONObject pv = o.optJSONObject("playlistPanelVideoRenderer");
-            if (pv == null) pv = o.optJSONObject("compactVideoRenderer");
-            if (pv != null) {
-                String vid = pv.optString("videoId");
-                String dur = text(pv.optJSONObject("lengthText"));
-                if (!vid.isEmpty() && !dur.isEmpty() && seen.add(vid)) {
-                    String ch = text(pv.optJSONObject("shortBylineText"));
-                    if (ch.isEmpty()) ch = text(pv.optJSONObject("longBylineText"));
-                    out.put(video(vid, text(pv.optJSONObject("title")), ch, dur));
-                }
-                return;
-            }
-            JSONArray names = o.names();
-            if (names == null) return;
-            for (int i = 0; i < names.length(); i++) collect(o.opt(names.getString(i)), out, seen, max);
-        } else if (node instanceof JSONArray) {
-            JSONArray a = (JSONArray) node;
-            for (int i = 0; i < a.length() && out.length() < max; i++) collect(a.opt(i), out, seen, max);
-        }
-    }
-
-    private static String text(JSONObject t) {
-        if (t == null) return "";
-        if (t.has("simpleText")) return t.optString("simpleText");
-        JSONArray runs = t.optJSONArray("runs");
-        StringBuilder b = new StringBuilder();
-        if (runs != null) for (int i = 0; i < runs.length(); i++) b.append(runs.optJSONObject(i) == null ? "" : runs.optJSONObject(i).optString("text"));
-        return b.toString();
-    }
-
-    /** A free Piped server: the videos related to this one. */
-    private static JSONArray pipedRelated(String api, String id) throws Exception {
-        JSONObject j = new JSONObject(get(api + "/streams/" + id, 8000));
-        JSONArray rel = j.optJSONArray("relatedStreams");
-        JSONArray out = new JSONArray();
-        out.put(video(id, j.optString("title"), j.optString("uploader"), j.optLong("duration") > 0 ? fmt(j.optLong("duration")) : ""));
-        if (rel == null) return out;
-        for (int i = 0; i < rel.length() && out.length() < 30; i++) {
-            JSONObject it = rel.getJSONObject(i);
-            if (!"stream".equals(it.optString("type")) || it.optBoolean("isShort")) continue;
-            Matcher m = Pattern.compile("[?&]v=([\\w-]{11})").matcher(it.optString("url"));
-            if (!m.find()) continue;
-            long d = it.optLong("duration", -1);
-            out.put(video(m.group(1), it.optString("title"), it.optString("uploaderName"), d > 0 ? fmt(d) : ""));
-        }
         return out;
     }
 

@@ -60,8 +60,6 @@ public class StreamActivity extends Activity {
         @Override public void run() { update(); ui.postDelayed(this, 1000); }
     };
 
-    private ImageButton barPlay;
-
     private int dp(float v) { return Ui.dp(this, v); }
 
     @Override
@@ -77,42 +75,9 @@ public class StreamActivity extends Activity {
         setContentView(root);
         Ui.padForSystemBars(root);
 
-        // top bar: the same NKT MEDIA PLAYER bar as the Library, with STREAM as the subheading
-        LinearLayout top = new LinearLayout(this);
-        top.setGravity(Gravity.CENTER_VERTICAL);
-        ImageButton back = new ImageButton(this);
-        back.setBackgroundColor(Color.TRANSPARENT);
-        back.setImageResource(R.drawable.ic_back);
-        back.setColorFilter(getColor(R.color.accent));
-        back.setContentDescription(getString(R.string.cd_back));
-        back.setOnClickListener(v -> finish());
-        top.addView(back, new LinearLayout.LayoutParams(dp(44), dp(44)));
-        LinearLayout heads = new LinearLayout(this);
-        heads.setOrientation(LinearLayout.VERTICAL);
-        TextView title = text(getString(R.string.header), 15, R.color.accent, false);
-        title.setTypeface(Ui.orbitronBlack(this));
-        title.setLetterSpacing(0.08f);
-        title.setSingleLine(true);
-        Ui.gradient(title);
-        heads.addView(title);
-        TextView sub = text(getString(R.string.stream_caps), 9.5f, R.color.muted, false);
-        sub.setLetterSpacing(0.16f);
-        heads.addView(sub, lp(MATCH, WRAP, 2, 0));
-        LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        tl.setMarginStart(dp(6));
-        top.addView(heads, tl);
-        barPlay = new ImageButton(this);
-        barPlay.setBackgroundResource(R.drawable.bg_round_btn);
-        barPlay.setImageResource(R.drawable.ic_pause);
-        barPlay.setColorFilter(getColor(R.color.accent));
-        barPlay.setContentDescription(getString(R.string.cd_play));
-        barPlay.setOnClickListener(v -> { StreamHub.playPause(); ui.postDelayed(this::update, 300); });
-        top.addView(barPlay, new LinearLayout.LayoutParams(dp(44), dp(44)));
-        LinearLayout.LayoutParams topLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        topLp.topMargin = dp(8);
-        topLp.setMarginStart(-dp(14));          // the bar sits as far out as the Library's
-        topLp.setMarginEnd(-dp(12));
-        col.addView(top, topLp);
+        // top row: the same NKT bar as the Library, with Stream as the line under it
+        col.addView(Ui.appBar(this, getString(R.string.stream_caps), this::finish),
+                new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         // status card
         LinearLayout card = new LinearLayout(this);
@@ -626,10 +591,6 @@ public class StreamActivity extends Activity {
         }
         transport.setVisibility(on ? View.VISIBLE : View.GONE);
         nowHint.setVisibility(on ? View.VISIBLE : View.GONE);
-        if (barPlay != null) {
-            barPlay.setVisibility(StreamHub.running && StreamHub.hasItem() ? View.VISIBLE : View.INVISIBLE);
-            barPlay.setImageResource(StreamHub.isPlaying() ? R.drawable.ic_pause : R.drawable.ic_play);
-        }
         if (btnPlay != null) {
             btnPlay.setImageResource(StreamHub.isPlaying() ? R.drawable.ic_pause : R.drawable.ic_play);
             btnPlay.setColorFilter(getColor(R.color.accent));

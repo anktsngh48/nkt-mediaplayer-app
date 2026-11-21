@@ -27,7 +27,8 @@ final class StreamShare {
 
     /** The shared songs and videos. Runs on a background thread. */
     static List<MediaInfo> items(Context c) {
-        String key = StreamPrefs.shareMode(c) + "|" + StreamPrefs.picks(c) + "|" + Prefs.showHidden(c);
+        String key = StreamPrefs.shareMode(c) + "|" + StreamPrefs.picks(c) + "|" + Prefs.showHidden(c)
+                + "|" + Prefs.hideDot(c) + Prefs.hideNomedia(c) + Prefs.hideThumbDirs(c);
         synchronized (StreamShare.class) {
             if (cache != null && key.equals(cacheKey) && System.currentTimeMillis() - cacheAt < 60_000) return cache;
         }
@@ -43,7 +44,8 @@ final class StreamShare {
             for (MediaInfo m : im) if (hidden || !m.hidden) out.add(m);
         } else {
             Set<String> seen = new HashSet<>();
-            for (String p : StreamPrefs.picks(c)) walk(new File(p), hidden, out, seen, 0);
+            boolean dot = Prefs.hideDot(c), nomedia = Prefs.hideNomedia(c), thumbs = Prefs.hideThumbDirs(c);
+            for (String p : StreamPrefs.picks(c)) walk(new File(p), dot, nomedia, thumbs, out, seen, 0);
             Collections.sort(out, (x, y) -> x.title.compareToIgnoreCase(y.title));
         }
         synchronized (StreamShare.class) { cache = out; cacheAt = System.currentTimeMillis(); cacheKey = key; }
@@ -64,15 +66,18 @@ final class StreamShare {
         return n;
     }
 
-    private static void walk(File f, boolean hidden, List<MediaInfo> out, Set<String> seen, int depth) {
+    /** Follows the host's own "Show hidden files" rules (Settings → ALL FILES): dot-folders, .nomedia folders, .thumbnails. */
+    private static void walk(File f, boolean dot, boolean nomedia, boolean thumbs, List<MediaInfo> out, Set<String> seen, int depth) {
         if (out.size() >= MAX_FILES || depth > 12 || !f.exists()) return;
         String name = f.getName();
-        if (depth > 0 && name.startsWith(".") && !hidden) return;
+        if (depth > 0 && name.startsWith(".") && dot) return;
         if (f.isDirectory()) {
             if (isHiddenSystem(f)) return;
+            if (depth > 0 && thumbs && name.equalsIgnoreCase(".thumbnails")) return;
+            if (nomedia && new File(f, ".nomedia").exists()) return;
             File[] kids = f.listFiles();
             if (kids == null) return;
-            for (File k : kids) walk(k, hidden, out, seen, depth + 1);
+            for (File k : kids) walk(k, dot, nomedia, thumbs, out, seen, depth + 1);
         } else {
             int k = MediaInfo.kindOf(name);
             if (k != MediaInfo.AUDIO && k != MediaInfo.VIDEO && k != MediaInfo.IMAGE) return;

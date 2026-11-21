@@ -97,14 +97,14 @@ public final class Ui {
         }
     }
 
-    /** The bars come back (after a page's full-screen video). */
+    /** The status and navigation bars back after {@link #fullScreen}. */
     @SuppressWarnings("deprecation")
-    public static void exitFullScreen(Activity a) {
+    public static void showBars(Activity a) {
         if (Build.VERSION.SDK_INT >= 30) {
             WindowInsetsController c = a.getWindow().getInsetsController();
             if (c != null) c.show(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
         } else {
-            a.getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+            a.getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
         }
     }
 
@@ -260,15 +260,68 @@ public final class Ui {
     public static int dp(Context c, float v) { return Math.round(v * c.getResources().getDisplayMetrics().density); }
 
     /**
-     * Touches that start in a strip along the left or right edge belong to the system's back gesture: the video
-     * gestures (seek, brightness, volume, double-tap) leave them alone. Returns true for every event of such a touch.
+     * The NKT bar used at the top of the Library, for other screens: a back button, "NKT MEDIA PLAYER" in the
+     * gradient lettering, and the screen's name as the small line under it.
      */
-    public static boolean edgeTouch(View v, android.view.MotionEvent ev) {
-        if (ev.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) {
-            float edge = dp(v.getContext(), 28);
-            float x = ev.getX();
-            v.setTag(R.id.tag_edge_touch, x < edge || x > v.getWidth() - edge ? Boolean.TRUE : null);
-        }
-        return v.getTag(R.id.tag_edge_touch) != null;
+    public static android.widget.LinearLayout appBar(Activity a, String subheading, Runnable back) {
+        android.widget.LinearLayout bar = new android.widget.LinearLayout(a);
+        bar.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        bar.setPadding(0, dp(a, 8), 0, dp(a, 6));
+        android.widget.ImageButton b = new android.widget.ImageButton(a);
+        b.setBackgroundResource(R.drawable.bg_round_btn);
+        b.setImageResource(R.drawable.ic_back);
+        b.setColorFilter(a.getColor(R.color.accent));
+        b.setContentDescription(a.getString(R.string.cd_back));
+        b.setOnClickListener(v -> back.run());
+        bar.addView(b, new android.widget.LinearLayout.LayoutParams(dp(a, 48), dp(a, 48)));
+        android.widget.LinearLayout texts = new android.widget.LinearLayout(a);
+        texts.setOrientation(android.widget.LinearLayout.VERTICAL);
+        TextView title = new TextView(a);
+        title.setText(R.string.header);
+        title.setTypeface(orbitronBlack(a));
+        title.setTextSize(15);
+        title.setLetterSpacing(0.08f);
+        title.setMaxLines(1);
+        title.setTextColor(a.getColor(R.color.accent));
+        texts.addView(title);
+        gradient(title);
+        TextView sub = new TextView(a);
+        sub.setText(subheading);
+        sub.setTypeface(orbitron(a));
+        sub.setTextSize(9.5f);
+        sub.setLetterSpacing(0.16f);
+        sub.setMaxLines(1);
+        sub.setTextColor(a.getColor(R.color.muted));
+        android.widget.LinearLayout.LayoutParams sl = new android.widget.LinearLayout.LayoutParams(
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+        sl.topMargin = dp(a, 2);
+        texts.addView(sub, sl);
+        android.widget.LinearLayout.LayoutParams tl = new android.widget.LinearLayout.LayoutParams(0,
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        tl.setMarginStart(dp(a, 14));
+        bar.addView(texts, tl);
+        return bar;
+    }
+
+    /**
+     * How far in from the left and right edges a touch belongs to the system's back gesture (gesture navigation),
+     * plus a little room, so swipes that start there are left to Android. 0 with button navigation.
+     */
+    public static int edgeZone(View v) {
+        if (v == null || Build.VERSION.SDK_INT < 29) return 0;
+        WindowInsets wi = v.getRootWindowInsets();
+        if (wi == null) return 0;
+        android.graphics.Insets g = wi.getSystemGestureInsets();
+        int z = Math.max(g.left, g.right);
+        return z <= 0 ? 0 : z + dp(v.getContext(), 8);
+    }
+
+    /** True when this touch starts in the back-gesture strip at the left or right edge of the screen. */
+    public static boolean inEdgeZone(View v, android.view.MotionEvent e) {
+        int z = edgeZone(v);
+        if (z <= 0) return false;
+        float x = e.getRawX();
+        int w = v.getRootView() == null ? v.getWidth() : v.getRootView().getWidth();
+        return x < z || x > w - z;
     }
 }

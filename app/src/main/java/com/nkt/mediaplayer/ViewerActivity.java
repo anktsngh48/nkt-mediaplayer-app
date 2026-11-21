@@ -22,6 +22,7 @@ import android.widget.TextView;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.PagerSnapHelper;
 import androidx.recyclerview.widget.RecyclerView;
+import android.view.MotionEvent;
 
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -154,6 +155,20 @@ public class ViewerActivity extends Activity {
         pager.setLayoutManager(pagerLm);
         pager.setAdapter(new PageAdapter());
         new PagerSnapHelper().attachToRecyclerView(pager);
+        pager.addOnItemTouchListener(new RecyclerView.SimpleOnItemTouchListener() {
+            private boolean edge = false;           // a swipe from the back gesture's strip at the sides is left to Android
+            @Override public boolean onInterceptTouchEvent(RecyclerView rv, MotionEvent e) {
+                int a = e.getActionMasked();
+                if (a == MotionEvent.ACTION_DOWN) edge = Ui.inEdgeZone(rv, e);
+                boolean take = edge;
+                if (a == MotionEvent.ACTION_UP || a == MotionEvent.ACTION_CANCEL) edge = false;
+                return take;
+            }
+            @Override public void onTouchEvent(RecyclerView rv, MotionEvent e) {
+                int a = e.getActionMasked();
+                if (a == MotionEvent.ACTION_UP || a == MotionEvent.ACTION_CANCEL) edge = false;
+            }
+        });
         pager.scrollToPosition(current);
         pager.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override public void onScrollStateChanged(RecyclerView rv, int state) {

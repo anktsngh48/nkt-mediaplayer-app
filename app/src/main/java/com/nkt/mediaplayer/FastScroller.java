@@ -40,6 +40,16 @@ public class FastScroller extends View {
         paint.setColor(c.getColor(R.color.accent));
         track.setColor(0x2200E5FF);
         setAlpha(0f);
+        // kept clear of the back gesture's strip at the right edge, so dragging it never goes back
+        setOnApplyWindowInsetsListener((v, insets) -> {
+            if (android.os.Build.VERSION.SDK_INT >= 29 && getLayoutParams() instanceof android.view.ViewGroup.MarginLayoutParams) {
+                android.graphics.Insets g = insets.getSystemGestureInsets();
+                int r = g.right > 0 ? g.right + Math.round(4 * dp) : 0;
+                android.view.ViewGroup.MarginLayoutParams lp = (android.view.ViewGroup.MarginLayoutParams) getLayoutParams();
+                if (lp.getMarginEnd() != r) { lp.setMarginEnd(r); lp.rightMargin = r; setLayoutParams(lp); }
+            }
+            return insets;
+        });
     }
 
     public void attach(RecyclerView list, TextView bubbleView, Labeler l) {

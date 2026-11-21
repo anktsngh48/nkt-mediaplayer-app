@@ -532,7 +532,8 @@ public final class StreamHub {
                 String id = Lyrics.idOf(m.key());
                 if (map.containsKey(id)) continue;
                 map.put(id, m);
-                arr.put(new JSONArray().put(id).put(m.title).put(m.artist).put(m.durationMs / 1000).put(m.image ? 2 : m.video ? 1 : 0).put(m.size).put(m.folder).put(relPath(m)));     // kind: 0 song, 1 video, 2 photo; then where it sits, for the folder views
+                arr.put(new JSONArray().put(id).put(m.title).put(m.artist).put(m.durationMs / 1000).put(m.image ? 2 : m.video ? 1 : 0).put(m.size).put(m.folder)
+                        .put(folderPath(m)));     // kind: 0 song, 1 video, 2 photo; the last one is where it sits ("All files")
             }
             JSONObject o = new JSONObject();
             try { o.put("items", arr); } catch (Exception ignored) { }
@@ -543,19 +544,19 @@ public final class StreamHub {
         return libJson;
     }
 
-    /** Where a file sits, shown to listeners for the folder views: the path under the phone's storage ("DCIM/Camera/IMG_1.jpg"), never the full system path. */
-    @SuppressWarnings("deprecation")
-    private static String relPath(MediaInfo m) {
-        String p = m.path == null ? "" : m.path;
-        if (p.isEmpty()) return m.folder + "/" + m.title;
+    /** The folder a file is in, from the top of its storage ("DCIM/Camera", "SD card/Music"), for the listeners' All files. */
+    static String folderPath(MediaInfo m) {
+        if (m.path == null || m.path.isEmpty()) return m.folder;
+        java.io.File dir = new java.io.File(m.path).getParentFile();
+        if (dir == null) return m.folder;
+        String d = dir.getAbsolutePath();
+        @SuppressWarnings("deprecation")
         String root = android.os.Environment.getExternalStorageDirectory().getAbsolutePath();
-        if (p.startsWith(root + "/")) return p.substring(root.length() + 1);
-        if (p.startsWith("/storage/")) {                    // an SD card or USB stick: keep its short name
-            String rest = p.substring(9);
-            return rest;
-        }
-        int i = p.lastIndexOf('/');
-        return m.folder + "/" + (i >= 0 ? p.substring(i + 1) : p);
+        if (d.equals(root)) return "";
+        if (d.startsWith(root + "/")) return d.substring(root.length() + 1);
+        java.util.regex.Matcher sd = java.util.regex.Pattern.compile("^/storage/([^/]+)(/(.*))?$").matcher(d);
+        if (sd.find()) return "SD card" + (sd.group(3) == null ? "" : "/" + sd.group(3));
+        return d.startsWith("/") ? d.substring(1) : d;
     }
 
     /** A song or video a listener may play: what is in the queue, or (when allowed) the shared library. */

@@ -16,46 +16,47 @@ import android.view.ViewGroup;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
 import android.widget.TextView;
+
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 
 /**
  * Listen: the host's shared library. Tapping a song, video or photo plays it here, on this phone only (not in step with the
- * host); BACK TO LIVE on the Listen screen goes back to following the host.
+ * host); BACK TO LIVE on the Listen screen goes back to following the host. Every item is listed (a scrolling list that
+ * only builds the rows on screen), as one list or by folder.
  */
 public class ListenLibraryActivity extends Activity {
 
     private static final int MATCH = ViewGroup.LayoutParams.MATCH_PARENT, WRAP = ViewGroup.LayoutParams.WRAP_CONTENT;
 
     private final Handler ui = new Handler(Looper.getMainLooper());
-    private final List<String[]> items = new ArrayList<>();     // id, title, artist, seconds, kind, path under the host's storage
-    private LinearLayout list;
+    private final List<String[]> items = new ArrayList<>();     // id, title, artist, seconds, kind, size, folder
     private TextView message;
     private EditText search;
-    private final TextView[] kindPill = new TextView[4];
-    private int kind = 0;          // 0 songs, 1 videos, 2 photos, 3 all files (folders)
-    // folders: each kind can show a plain list or its folders; All files is always folders
-    private static final boolean[] folderView = {false, false, false, true};
-    private static final String[] dirOf = {"", "", "", ""};
-    private TextView viewList, viewFolders, pathText;
-    private ImageButton upBtn;
-    private LinearLayout folderBar, viewRow;
-    private static final int PAGE = 300;
-    private int drawnFiles = 0;           // the list grows as you scroll: nothing is left out
-    private final List<String[]> pending = new ArrayList<>();
-    private final List<String[]> shown = new ArrayList<>();      // what the list on screen holds, in order
+    private final TextView[] kindPill = new TextView[3];
+    private final TextView[] modePill = new TextView[2];
+    private int kind = 0;          // 0 songs, 1 videos, 2 photos
+    private boolean folders = false;
+    private String openFolder = null;
+    private final List<String[]> shown = new ArrayList<>();      // the items on screen, in order (what previous / next move through)
+    private final List<Object[]> rows = new ArrayList<>();       // {"back", name} · {"folder", name, count} · {"item", it, index}
     private boolean loaded = false;
-    private ScrollView sv;
+    private RecyclerView list;
+    private LinearLayoutManager lm;
+    private Adapter adapter;
     // thumbnails, picking several, and what to do with them
     private static final android.util.LruCache<String, android.graphics.Bitmap> thumbs = new android.util.LruCache<>(300);
     private static final java.util.concurrent.ExecutorService thumbPool = java.util.concurrent.Executors.newFixedThreadPool(3);
-    private final List<View> rowViews = new ArrayList<>();
+    private final java.util.Set<String> asking = new java.util.HashSet<>();
     private final java.util.LinkedHashSet<String> picked = new java.util.LinkedHashSet<>();
     private boolean selecting = false, lastDl = false;
     private TextView selBtn, shareBtn, saveBtn;
@@ -63,8 +64,10 @@ public class ListenLibraryActivity extends Activity {
     // where you were, kept for the next time the library is opened during this listening
     private static long lastStamp = 0;
     private static int lastKind = 0;
+    private static boolean lastFolders = false;
     private static String lastSearch = "";
-    private static final int[] lastScroll = new int[4];
+    private static final String[] lastFolder = new String[3];
+    private static final int[] lastScroll = new int[3];
 
     private int dp(float v) { return Ui.dp(this, v); }
 
@@ -73,9 +76,13 @@ public class ListenLibraryActivity extends Activity {
         super.onCreate(savedInstanceState);
         if (lastStamp != ListenService.startedAt) {        // a new connection: start from the top
             lastStamp = ListenService.startedAt;
-            lastKind = 0; lastSearch = ""; java.util.Arrays.fill(lastScroll, 0); java.util.Arrays.fill(dirOf, "");
+            lastKind = 0; lastSearch = ""; lastFolders = false;
+            java.util.Arrays.fill(lastScroll, 0);
+            java.util.Arrays.fill(lastFolder, null);
         }
         kind = lastKind;
+        folders = lastFolders;
+        openFolder = folders ? lastFolder[kind] : null;
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(getColor(R.color.bg));
@@ -117,23 +124,23 @@ public class ListenLibraryActivity extends Activity {
         search.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) { }
             @Override public void onTextChanged(CharSequence s, int a, int b, int c) { }
-            @Override public void afterTextChanged(Editable s) { draw(); if (sv != null) sv.scrollTo(0, 0); }
+            @Override public void afterTextChanged(Editable s) { draw(); if (lm != null) lm.scrollToPosition(0); }
         });
         LinearLayout.LayoutParams sl = new LinearLayout.LayoutParams(MATCH, dp(48));
         sl.topMargin = dp(4);
         root.addView(search, sl);
 
         LinearLayout pills = new LinearLayout(this);
-        String[] names = {getString(R.string.listen_library_songs), getString(R.string.listen_library_videos), getString(R.string.listen_library_photos), getString(R.string.listen_library_all)};
-        for (int i = 0; i < 4; i++) {
+        String[] names = {getString(R.string.listen_library_songs), getString(R.string.listen_library_videos), getString(R.string.listen_library_photos)};
+        for (int i = 0; i < 3; i++) {
             final int k = i;
-            TextView t = new TextView(this);
-            t.setText(names[i]);
-            t.setGravity(Gravity.CENTER);
-            t.setTextSize(11);
-            t.setLetterSpacing(0.08f);
-            t.setTypeface(null, android.graphics.Typeface.BOLD);
-            t.setOnClickListener(v -> { lastScroll[kind] = sv.getScrollY(); kind = k; paintPills(); draw(); restoreScroll(); });
+            TextView t = pillView(names[i]);
+            t.setOnClickListener(v -> {
+                rememberPlace();
+                kind = k;
+                openFolder = folders ? lastFolder[kind] : null;
+                paintPills(); draw(); restoreScroll();
+            });
             kindPill[i] = t;
             LinearLayout.LayoutParams pl = new LinearLayout.LayoutParams(0, dp(40), 1f);
             if (i > 0) pl.setMarginStart(dp(6));
@@ -143,48 +150,47 @@ public class ListenLibraryActivity extends Activity {
         pll.topMargin = dp(12);
         root.addView(pills, pll);
 
-        // LIST / FOLDERS, and the folder you are in
-        viewRow = new LinearLayout(this);
-        viewList = segText(getString(R.string.listen_view_list), v -> setFolderView(false));
-        viewFolders = segText(getString(R.string.listen_view_folders), v -> setFolderView(true));
-        viewRow.addView(viewList, new LinearLayout.LayoutParams(WRAP, dp(36)));
-        LinearLayout.LayoutParams vfl = new LinearLayout.LayoutParams(WRAP, dp(36));
-        vfl.setMarginStart(dp(6));
-        viewRow.addView(viewFolders, vfl);
-        LinearLayout.LayoutParams vrl = new LinearLayout.LayoutParams(MATCH, WRAP);
-        vrl.topMargin = dp(8);
-        root.addView(viewRow, vrl);
-        folderBar = new LinearLayout(this);
-        folderBar.setGravity(Gravity.CENTER_VERTICAL);
-        upBtn = new ImageButton(this);
-        upBtn.setBackgroundResource(R.drawable.bg_round_btn);
-        upBtn.setImageResource(R.drawable.ic_arrow_up);
-        upBtn.setColorFilter(getColor(R.color.accent));
-        upBtn.setContentDescription(getString(R.string.stream_up));
-        upBtn.setOnClickListener(v -> goUp());
-        folderBar.addView(upBtn, new LinearLayout.LayoutParams(dp(44), dp(44)));
-        pathText = text("", 13, R.color.muted, false);
-        pathText.setSingleLine(true);
-        pathText.setEllipsize(android.text.TextUtils.TruncateAt.START);
-        LinearLayout.LayoutParams ptl = new LinearLayout.LayoutParams(0, WRAP, 1f);
-        ptl.setMarginStart(dp(10));
-        folderBar.addView(pathText, ptl);
-        LinearLayout.LayoutParams fbl = new LinearLayout.LayoutParams(MATCH, WRAP);
-        fbl.topMargin = dp(8);
-        root.addView(folderBar, fbl);
+        // every item in one list, or by folder
+        LinearLayout modes = new LinearLayout(this);
+        String[] mn = {getString(R.string.listen_library_all), getString(R.string.listen_library_folders)};
+        for (int i = 0; i < 2; i++) {
+            final boolean f = i == 1;
+            TextView t = pillView(mn[i]);
+            t.setCompoundDrawablesRelativeWithIntrinsicBounds(f ? R.drawable.ic_folder : R.drawable.ic_list, 0, 0, 0);
+            t.setCompoundDrawablePadding(dp(6));
+            t.setPadding(dp(12), 0, dp(14), 0);
+            t.setOnClickListener(v -> {
+                if (folders == f) { if (f && openFolder != null) { openFolder = null; draw(); lm.scrollToPosition(0); } return; }
+                rememberPlace();
+                folders = f;
+                openFolder = f ? lastFolder[kind] : null;
+                paintPills(); draw(); lm.scrollToPosition(0);
+            });
+            modePill[i] = t;
+            LinearLayout.LayoutParams pl = new LinearLayout.LayoutParams(WRAP, dp(34));
+            if (i > 0) pl.setMarginStart(dp(6));
+            modes.addView(t, pl);
+        }
+        LinearLayout.LayoutParams ml = new LinearLayout.LayoutParams(MATCH, WRAP);
+        ml.topMargin = dp(8);
+        root.addView(modes, ml);
         paintPills();
 
         message = text(getString(R.string.listen_library_loading), 13, R.color.muted, false);
         message.setPadding(0, dp(18), 0, 0);
         root.addView(message, new LinearLayout.LayoutParams(MATCH, WRAP));
 
-        sv = new ScrollView(this);
-        list = new LinearLayout(this);
-        list.setOrientation(LinearLayout.VERTICAL);
-        sv.addView(list, new ViewGroup.LayoutParams(MATCH, WRAP));
+        list = new RecyclerView(this);
+        lm = new LinearLayoutManager(this);
+        list.setLayoutManager(lm);
+        list.setItemAnimator(null);
+        list.setClipToPadding(false);
+        list.setPadding(0, 0, 0, dp(12));
+        adapter = new Adapter();
+        list.setAdapter(adapter);
         LinearLayout.LayoutParams svl = new LinearLayout.LayoutParams(MATCH, 0, 1f);
         svl.topMargin = dp(6);
-        root.addView(sv, svl);
+        root.addView(list, svl);
 
         selBar = new LinearLayout(this);
         selBar.setPadding(0, dp(8), 0, dp(8));
@@ -197,17 +203,23 @@ public class ListenLibraryActivity extends Activity {
         selBar.addView(saveBtn, sb2);
         selBar.setVisibility(View.GONE);
         root.addView(selBar, new LinearLayout.LayoutParams(MATCH, WRAP));
-        sv.setOnScrollChangeListener((v, x, y, ox, oy) -> {
-            if (drawnFiles < pending.size() && y + sv.getHeight() > list.getHeight() - dp(1200)) drawMore();
-            loadVisible();
-        });
 
         load();
     }
 
+    private TextView pillView(String label) {
+        TextView t = new TextView(this);
+        t.setText(label);
+        t.setGravity(Gravity.CENTER);
+        t.setTextSize(11);
+        t.setLetterSpacing(0.08f);
+        t.setTypeface(null, android.graphics.Typeface.BOLD);
+        return t;
+    }
+
     private void load() {
         new Thread(() -> {
-            String body = ListenService.fetch("/api/library", 20000);
+            String body = ListenService.fetch("/api/library", 30000);
             final List<String[]> got = new ArrayList<>();
             boolean ok = false;
             try {
@@ -215,9 +227,9 @@ public class ListenLibraryActivity extends Activity {
                     JSONArray a = new JSONObject(body).optJSONArray("items");
                     for (int i = 0; a != null && i < a.length(); i++) {
                         JSONArray x = a.getJSONArray(i);
-                        String path = x.optString(7, "");
-                        if (path.isEmpty()) path = x.optString(6, "Other") + "/" + x.getString(1);
-                        got.add(new String[]{x.getString(0), x.getString(1), x.optString(2), String.valueOf(x.optLong(3)), String.valueOf(x.optInt(4)), path});
+                        String folder = x.optString(6, "");
+                        got.add(new String[]{x.getString(0), x.getString(1), x.optString(2), String.valueOf(x.optLong(3)), String.valueOf(x.optInt(4)),
+                                String.valueOf(x.optLong(5)), folder.isEmpty() ? "Other" : folder});
                     }
                     ok = true;
                 }
@@ -236,191 +248,176 @@ public class ListenLibraryActivity extends Activity {
         }, "nkt-listen-lib").start();
     }
 
-    private boolean inKind(String[] it) { return kind == 3 || String.valueOf(kind).equals(it[4]); }
-
-    private static String parentOf(String path) { int k = path.lastIndexOf('/'); return k < 0 ? "" : path.substring(0, k); }
-
+    /** Builds the rows for the kind, the mode (all or folders) and the search; every match is listed. */
     private void draw() {
-        list.removeAllViews();
         shown.clear();
-        rowViews.clear();
-        pending.clear();
-        drawnFiles = 0;
-        if (!loaded) return;
+        rows.clear();
+        if (!loaded) { adapter.notifyDataSetChanged(); return; }
         String term = search.getText().toString().trim().toLowerCase();
-        boolean fv = folderView[kind];
-        int n = 0;
-        if (fv) {
-            String dir = dirOf[kind], pre = dir.isEmpty() ? "" : dir + "/";
-            java.util.TreeMap<String, Integer> subs = new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        String k = String.valueOf(kind);
+        if (folders && openFolder == null) {
+            Map<String, Integer> by = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
             for (String[] it : items) {
-                if (!inKind(it)) continue;
-                String d = parentOf(it[5]);
-                if (d.equals(dir)) {
-                    if (term.isEmpty() || (it[1] + " " + it[2]).toLowerCase().contains(term)) pending.add(it);
-                    continue;
-                }
-                if (!dir.isEmpty() && !d.startsWith(pre)) continue;
-                String name = d.substring(pre.length()).split("/")[0];
-                if (name.isEmpty() || (!term.isEmpty() && !name.toLowerCase().contains(term))) continue;
-                Integer c = subs.get(name);
-                subs.put(name, c == null ? 1 : c + 1);
+                if (!k.equals(it[4])) continue;
+                Integer n = by.get(it[6]);
+                by.put(it[6], n == null ? 1 : n + 1);
             }
-            for (java.util.Map.Entry<String, Integer> e : subs.entrySet()) { list.addView(folderRow(e.getKey(), e.getValue())); n++; }
+            for (Map.Entry<String, Integer> e : by.entrySet()) {
+                if (!term.isEmpty() && !e.getKey().toLowerCase().contains(term)) continue;
+                rows.add(new Object[]{"folder", e.getKey(), e.getValue()});
+            }
         } else {
+            if (folders) rows.add(new Object[]{"back", openFolder});
             for (String[] it : items) {
-                if (!inKind(it)) continue;
+                if (!k.equals(it[4])) continue;
+                if (folders && !openFolder.equalsIgnoreCase(it[6])) continue;
                 if (!term.isEmpty() && !(it[1] + " " + it[2]).toLowerCase().contains(term)) continue;
-                pending.add(it);
+                shown.add(new String[]{it[0], it[1], it[4]});
+                rows.add(new Object[]{"item", it, shown.size() - 1});
             }
         }
-        for (String[] it : pending) shown.add(new String[]{it[0], it[1], it[4]});
-        n += pending.size();
-        drawMore();
-        if (n == 0 && message.getVisibility() != View.VISIBLE) {
-            TextView none = text(getString(R.string.listen_library_empty), 13, R.color.muted, false);
-            none.setPadding(0, dp(18), 0, 0);
-            list.addView(none);
+        boolean any = false;
+        for (Object[] r : rows) if (!"back".equals(r[0])) { any = true; break; }
+        if (!any && message.getVisibility() != View.VISIBLE) rows.add(new Object[]{"none"});
+        adapter.notifyDataSetChanged();
+    }
+
+    private final class Adapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+        @Override public int getItemCount() { return rows.size(); }
+
+        @Override public int getItemViewType(int position) {
+            String t = (String) rows.get(position)[0];
+            return "item".equals(t) ? 0 : "folder".equals(t) ? 1 : "back".equals(t) ? 2 : 3;
         }
-        sv.post(this::loadVisible);
+
+        @Override public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int type) {
+            View v = type == 3 ? noneView() : rowShell();
+            return new RecyclerView.ViewHolder(v) { };
+        }
+
+        @Override public void onBindViewHolder(RecyclerView.ViewHolder h, int position) {
+            Object[] r = rows.get(position);
+            String t = (String) r[0];
+            if ("item".equals(t)) bindItem((LinearLayout) h.itemView, (String[]) r[1], (Integer) r[2]);
+            else if ("folder".equals(t)) bindFolder((LinearLayout) h.itemView, (String) r[1], (Integer) r[2]);
+            else if ("back".equals(t)) bindBack((LinearLayout) h.itemView, (String) r[1]);
+        }
     }
 
-    /** Adds the next rows of the list; called again as you scroll near the end, until everything is there. */
-    private void drawMore() {
-        int end = Math.min(pending.size(), drawnFiles + PAGE);
-        for (int i = drawnFiles; i < end; i++) list.addView(row(pending.get(i), i));
-        drawnFiles = end;
+    private View noneView() {
+        TextView none = text(getString(R.string.listen_library_empty), 13, R.color.muted, false);
+        none.setPadding(0, dp(18), 0, 0);
+        none.setLayoutParams(new RecyclerView.LayoutParams(MATCH, WRAP));
+        return none;
     }
 
-    private View folderRow(final String name, int count) {
+    /** One row: picture · two lines · (tick box or download button). Filled in by the bind methods. */
+    private LinearLayout rowShell() {
         LinearLayout r = new LinearLayout(this);
         r.setGravity(Gravity.CENTER_VERTICAL);
         r.setPadding(dp(10), dp(8), dp(6), dp(8));
-        r.setBackground(stroked(0xFF111827, 0x1400E5FF, 14));
-        android.widget.ImageView ic = new android.widget.ImageView(this);
-        ic.setImageResource(R.drawable.ic_folder);
-        ic.setColorFilter(getColor(R.color.accent));
-        ic.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
-        ic.setPadding(dp(12), dp(12), dp(12), dp(12));
-        ic.setBackground(stroked(0x1A00E5FF, 0x1400E5FF, 8));
-        r.addView(ic, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        r.setMinimumHeight(dp(64));
+        final android.widget.ImageView th = new android.widget.ImageView(this);
+        th.setBackground(stroked(0xFF0B1222, 0x1400E5FF, 8));
+        th.setClipToOutline(true);
+        r.addView(th, new LinearLayout.LayoutParams(dp(48), dp(48)));
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
-        TextView t = text(name, 14, R.color.text, true);
-        t.setSingleLine(true);
-        t.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        col.addView(t);
-        col.addView(text(getResources().getQuantityString(R.plurals.stream_items, count, count), 12, R.color.muted, false));
+        TextView a = text("", 14, R.color.text, true);
+        a.setSingleLine(true);
+        a.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        col.addView(a);
+        TextView b = text("", 12, R.color.muted, false);
+        b.setSingleLine(true);
+        b.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        col.addView(b);
         LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(0, WRAP, 1f);
         cl.setMarginStart(dp(12));
         r.addView(col, cl);
-        r.setOnClickListener(v -> {
-            dirOf[kind] = dirOf[kind].isEmpty() ? name : dirOf[kind] + "/" + name;
-            paintPills(); draw(); sv.scrollTo(0, 0);
-        });
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(MATCH, WRAP);
+        FrameLayoutEnd end = new FrameLayoutEnd(this);
+        r.addView(end, new LinearLayout.LayoutParams(WRAP, WRAP));
+        RecyclerView.LayoutParams lp = new RecyclerView.LayoutParams(MATCH, WRAP);
         lp.topMargin = dp(6);
         r.setLayoutParams(lp);
         return r;
     }
 
-    private void goUp() {
-        String d = dirOf[kind];
-        if (d.isEmpty()) return;
-        dirOf[kind] = parentOf(d);
-        paintPills(); draw(); sv.scrollTo(0, 0);
+    /** The place at the end of a row for the tick box or the download button. */
+    private static final class FrameLayoutEnd extends android.widget.FrameLayout {
+        FrameLayoutEnd(android.content.Context c) { super(c); }
     }
 
-    private void setFolderView(boolean on) {
-        if (kind == 3) return;
-        folderView[kind] = on;
-        paintPills(); draw(); sv.scrollTo(0, 0);
+    private android.widget.ImageView thumbOf(LinearLayout r) { return (android.widget.ImageView) r.getChildAt(0); }
+    private TextView line(LinearLayout r, int i) { return (TextView) ((LinearLayout) r.getChildAt(1)).getChildAt(i); }
+    private FrameLayoutEnd endOf(LinearLayout r) { return (FrameLayoutEnd) r.getChildAt(2); }
+
+    private void bindFolder(LinearLayout r, String name, int count) {
+        r.setBackground(stroked(0xFF111827, 0x1400E5FF, 14));
+        android.widget.ImageView th = thumbOf(r);
+        th.setTag(null);
+        thumbPlaceholder(th, R.drawable.ic_folder);
+        th.setColorFilter(getColor(R.color.accent));
+        line(r, 0).setText(name);
+        int what = kind == 2 ? R.plurals.items : kind == 1 ? R.plurals.videos : R.plurals.songs;
+        line(r, 1).setText(getResources().getQuantityString(what, count, count));
+        endOf(r).removeAllViews();
+        r.setOnClickListener(v -> {
+            lastScroll[kind] = lm.findFirstVisibleItemPosition();
+            openFolder = name;
+            draw();
+            lm.scrollToPosition(0);
+        });
+        r.setOnLongClickListener(null);
+        r.setLongClickable(false);
     }
 
-    private TextView segText(String s, View.OnClickListener l) {
-        TextView t = text(s, 11, R.color.muted, true);
-        t.setGravity(Gravity.CENTER);
-        t.setLetterSpacing(0.12f);
-        t.setPadding(dp(16), 0, dp(16), 0);
-        t.setOnClickListener(l);
-        return t;
+    private void bindBack(LinearLayout r, String name) {
+        r.setBackground(stroked(0xFF111827, 0x1F00E5FF, 14));
+        android.widget.ImageView th = thumbOf(r);
+        th.setTag(null);
+        thumbPlaceholder(th, R.drawable.ic_back);
+        th.setColorFilter(getColor(R.color.accent));
+        line(r, 0).setText(name);
+        line(r, 1).setText(getResources().getQuantityString(R.plurals.items, shown.size(), shown.size()));
+        endOf(r).removeAllViews();
+        r.setOnClickListener(v -> closeFolder());
+        r.setOnLongClickListener(null);
+        r.setLongClickable(false);
     }
 
-    /** All files: a song asks first, then plays here and carries on through the songs of its folder. */
-    private void askSong(final String[] it, final int at) {
-        long sec = 0;
-        try { sec = Long.parseLong(it[3]); } catch (Exception ignored) { }
-        String sub = (it[2].isEmpty() ? "" : it[2] + " · ") + Ui.time(sec * 1000);
-        Dialogs.builder(this)
-                .setTitle(R.string.listen_play_song_title)
-                .setMessage(it[1] + "\n" + sub + "\n\n" + getString(R.string.listen_play_song_msg))
-                .setPositiveButton(R.string.listen_play_caps, (d, w) -> playFrom(at))
-                .setNegativeButton(R.string.cancel, null)
-                .show();
+    private void closeFolder() {
+        openFolder = null;
+        draw();
+        final int p = lastScroll[kind];
+        list.post(() -> lm.scrollToPositionWithOffset(Math.max(0, p), 0));
     }
 
-    /** Plays item {@code at} of the list: a song with the folder's songs, a photo or video with the folder's photos and videos. */
-    private void playFrom(int at) {
-        String[] it = pending.get(at);
-        boolean song = "0".equals(it[4]);
-        List<String[]> q = new ArrayList<>();
-        int idx = 0;
-        for (int i = 0; i < pending.size(); i++) {
-            String[] x = pending.get(i);
-            boolean xs = "0".equals(x[4]);
-            if (folderView[kind] && xs != song) continue;
-            if (i == at) idx = q.size();
-            q.add(new String[]{x[0], x[1], x[4]});
-        }
-        ListenService.playOwn(this, q, idx);         // previous and next move through this list
-        finish();
-    }
-
-    private View row(final String[] it, final int at) {
+    private void bindItem(LinearLayout r, final String[] it, final int at) {
         final String id = it[0];
         final boolean dl = ListenService.dlOn;
-        LinearLayout r = new LinearLayout(this);
-        r.setGravity(Gravity.CENTER_VERTICAL);
-        r.setPadding(dp(10), dp(8), dp(6), dp(8));
         boolean on = selecting && picked.contains(id);
         r.setBackground(stroked(on ? 0xFF10213A : 0xFF111827, on ? getColor(R.color.accent) : 0x1400E5FF, 14));
-
-        final android.widget.ImageView th = new android.widget.ImageView(this);
-        th.setBackground(stroked(0xFF0B1222, 0x1400E5FF, 8));
-        th.setClipToOutline(true);
+        final android.widget.ImageView th = thumbOf(r);
         th.setTag(id);
         int ph = "2".equals(it[4]) ? R.drawable.ic_image : "1".equals(it[4]) ? R.drawable.ic_play : R.drawable.ic_music;
-        thumbPlaceholder(th, ph);
         android.graphics.Bitmap have = thumbs.get(id);
         if (have != null) thumbShow(th, have);
-        r.addView(th, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        rowViews.add(r);
-        r.setTag(R.id.tag_row_thumb, th);
-
-        LinearLayout col = new LinearLayout(this);
-        col.setOrientation(LinearLayout.VERTICAL);
-        TextView t = text(it[1], 14, R.color.text, true);
-        t.setSingleLine(true);
-        t.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        col.addView(t);
+        else { thumbPlaceholder(th, ph); fetchThumb(id, th); }
+        line(r, 0).setText(it[1]);
         long sec = 0;
         try { sec = Long.parseLong(it[3]); } catch (Exception ignored) { }
         String sub = (it[2].isEmpty() ? "" : it[2] + " · ") + ("2".equals(it[4]) ? getString(R.string.listen_library_photo) : Ui.time(sec * 1000));
-        TextView sTv = text(sub, 12, R.color.muted, false);
-        sTv.setSingleLine(true);
-        sTv.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        col.addView(sTv);
-        LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(0, WRAP, 1f);
-        cl.setMarginStart(dp(12));
-        r.addView(col, cl);
-
+        if (!folders) sub = sub + " · " + it[6];
+        line(r, 1).setText(sub);
+        FrameLayoutEnd end = endOf(r);
+        end.removeAllViews();
         if (selecting) {                                       // a tick box
             TextView box = text(on ? "✓" : "", 15, R.color.accent, true);
             box.setGravity(Gravity.CENTER);
             box.setBackground(stroked(on ? 0x2200E5FF : Color.TRANSPARENT, getColor(R.color.accent), 6));
-            LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(dp(26), dp(26));
+            android.widget.FrameLayout.LayoutParams bl = new android.widget.FrameLayout.LayoutParams(dp(26), dp(26));
             bl.setMarginEnd(dp(10));
-            r.addView(box, bl);
+            end.addView(box, bl);
         } else if (dl) {                                       // save this one
             ImageButton d = new ImageButton(this);
             d.setBackgroundResource(R.drawable.bg_round_btn);
@@ -428,18 +425,15 @@ public class ListenLibraryActivity extends Activity {
             d.setColorFilter(getColor(R.color.accent));
             d.setContentDescription(getString(R.string.listen_download_caps));
             d.setOnClickListener(v -> ListenService.download(this, id));
-            r.addView(d, new LinearLayout.LayoutParams(dp(44), dp(44)));
+            end.addView(d, new android.widget.FrameLayout.LayoutParams(dp(44), dp(44)));
         }
         r.setOnClickListener(v -> {
             if (selecting) { togglePick(id); return; }
-            if (kind == 3 && "0".equals(it[4])) { askSong(it, at); return; }
-            playFrom(at);
+            ListenService.playOwn(this, new ArrayList<>(shown), at);         // previous and next move through this list
+            finish();
         });
         if (dl) r.setOnLongClickListener(v -> { if (!selecting) startSelect(id); else togglePick(id); return true; });
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(MATCH, WRAP);
-        lp.topMargin = dp(6);
-        r.setLayoutParams(lp);
-        return r;
+        else { r.setOnLongClickListener(null); r.setLongClickable(false); }
     }
 
     private void thumbPlaceholder(android.widget.ImageView iv, int res) {
@@ -456,25 +450,19 @@ public class ListenLibraryActivity extends Activity {
         iv.setImageBitmap(b);
     }
 
-    /** Fetches the small pictures of the rows that are on screen (and a screen more), a few at a time. */
-    private void loadVisible() {
-        if (rowViews.isEmpty() || sv == null) return;
-        int top = sv.getScrollY() - sv.getHeight() / 2, bottom = sv.getScrollY() + sv.getHeight() * 3 / 2;
-        for (View r : rowViews) {
-            if (r.getBottom() < top || r.getTop() > bottom) continue;
-            final android.widget.ImageView th = (android.widget.ImageView) r.getTag(R.id.tag_row_thumb);
-            if (th == null || th.getTag(R.id.tag_thumb_done) != null) continue;
-            final String id = (String) th.getTag();
-            th.setTag(R.id.tag_thumb_done, Boolean.TRUE);
-            if (thumbs.get(id) != null) continue;
-            thumbPool.execute(() -> {
-                byte[] b = ListenService.fetchBytes("/th/" + id, 8000);
-                final android.graphics.Bitmap bmp = b == null ? null : android.graphics.BitmapFactory.decodeByteArray(b, 0, b.length);
-                if (bmp == null) return;
+    /** Fetches the small picture of a row that has come on screen (a few at a time). */
+    private void fetchThumb(final String id, final android.widget.ImageView th) {
+        if (!asking.add(id)) return;
+        thumbPool.execute(() -> {
+            byte[] b = ListenService.fetchBytes("/th/" + id, 8000);
+            final android.graphics.Bitmap bmp = b == null ? null : android.graphics.BitmapFactory.decodeByteArray(b, 0, b.length);
+            ui.post(() -> {
+                asking.remove(id);
+                if (bmp == null || isFinishing()) return;
                 thumbs.put(id, bmp);
-                ui.post(() -> { if (id.equals(th.getTag()) && !isFinishing()) thumbShow(th, bmp); });
+                if (id.equals(th.getTag())) thumbShow(th, bmp);
             });
-        }
+        });
     }
 
     // ── Picking several ──
@@ -516,9 +504,7 @@ public class ListenLibraryActivity extends Activity {
         saveBtn.setText(getString(R.string.listen_save_caps) + (any ? " (" + picked.size() + ")" : ""));
         shareBtn.setAlpha(any ? 1f : 0.35f);
         saveBtn.setAlpha(any ? 1f : 0.35f);
-        int y = sv.getScrollY();
-        draw();
-        sv.post(() -> sv.scrollTo(0, y));
+        adapter.notifyDataSetChanged();
     }
 
     private void saveSelected() {
@@ -589,21 +575,17 @@ public class ListenLibraryActivity extends Activity {
     }
 
     private void paintPills() {
-        boolean fv = folderView[kind];
-        viewRow.setVisibility(kind == 3 ? View.GONE : View.VISIBLE);
-        viewList.setTextColor(getColor(fv ? R.color.muted : R.color.accent));
-        viewList.setBackground(fv ? null : stroked(0x2400E5FF, 0x00000000, 18));
-        viewFolders.setTextColor(getColor(fv ? R.color.accent : R.color.muted));
-        viewFolders.setBackground(fv ? stroked(0x2400E5FF, 0x00000000, 18) : null);
-        folderBar.setVisibility(fv ? View.VISIBLE : View.GONE);
-        String top = kind == 3 ? getString(R.string.listen_all_files) : kindPill[kind].getText().toString();
-        pathText.setText(dirOf[kind].isEmpty() ? top : top + " › " + dirOf[kind].replace("/", " › "));
-        upBtn.setAlpha(dirOf[kind].isEmpty() ? 0.35f : 1f);
-        upBtn.setEnabled(!dirOf[kind].isEmpty());
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 3; i++) {
             boolean on = i == kind;
             kindPill[i].setTextColor(on ? getColor(R.color.accent) : getColor(R.color.muted));
             kindPill[i].setBackground(on ? stroked(0x1A00E5FF, getColor(R.color.accent), 20) : stroked(0xFF111827, 0x1F00E5FF, 20));
+        }
+        for (int i = 0; i < 2; i++) {
+            boolean on = (i == 1) == folders;
+            int c = on ? getColor(R.color.accent) : getColor(R.color.muted);
+            modePill[i].setTextColor(c);
+            modePill[i].setCompoundDrawableTintList(android.content.res.ColorStateList.valueOf(c));
+            modePill[i].setBackground(on ? stroked(0x1A00E5FF, getColor(R.color.accent), 17) : stroked(0xFF111827, 0x1F00E5FF, 17));
         }
     }
 
@@ -635,16 +617,29 @@ public class ListenLibraryActivity extends Activity {
 
     private void refreshSelectBar() { selBtn.setVisibility(ListenService.dlOn ? View.VISIBLE : View.GONE); }
 
+    private void rememberPlace() {
+        if (!loaded) return;
+        if (!(folders && openFolder != null)) lastScroll[kind] = lm.findFirstVisibleItemPosition();
+        lastFolder[kind] = folders ? openFolder : lastFolder[kind];
+    }
+
     private void restoreScroll() {
-        final int y = lastScroll[kind];
-        sv.post(() -> sv.scrollTo(0, y));
+        final int p = folders && openFolder != null ? 0 : lastScroll[kind];
+        list.post(() -> lm.scrollToPositionWithOffset(Math.max(0, p), 0));
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (folders && openFolder != null) { closeFolder(); return; }
+        super.onBackPressed();
     }
 
     @Override
     protected void onPause() {
+        rememberPlace();
         lastKind = kind;
+        lastFolders = folders;
         lastSearch = search.getText().toString();
-        if (loaded) lastScroll[kind] = sv.getScrollY();
         ui.removeCallbacks(watch);
         super.onPause();
     }

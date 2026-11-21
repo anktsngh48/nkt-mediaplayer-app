@@ -44,10 +44,10 @@ public final class Players {
                 .setAudioAttributes(new AudioAttributes.Builder()
                         .setUsage(C.USAGE_MEDIA)
                         .setContentType(music ? C.AUDIO_CONTENT_TYPE_MUSIC : C.AUDIO_CONTENT_TYPE_MOVIE)
-                        .build(), /* handleAudioFocus= */ false)       // the app holds the sound itself: calls don't pause it
+                        .build(), /* handleAudioFocus= */ false)
                 .setHandleAudioBecomingNoisy(true)
                 .build();
-        KeepPlaying.attach(app, p, null);
+        CallFocus.attach(app, p, music, null);          // the sound focus is kept here: playing carries on during a call
         return p;
     }
 

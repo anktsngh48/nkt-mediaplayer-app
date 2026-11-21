@@ -90,6 +90,7 @@ public class PlayerActivity extends Activity {
     private AudioManager audio;
     private boolean zoomed = false, scaling = false, holding = false, inPip = false;
     private int scrollMode = 0;          // 0 = undecided, 1 = brightness, 2 = volume, 3 = seek
+    private boolean edgeTouch = false;   // a touch that began in the back gesture's strip
     private float volumeAcc = 0, scaleAcc = 1, speedBeforeHold = 1f;
     private long seekStartPos = 0, seekTarget = -1;
     private final List<MediaInfo> items = new ArrayList<>();
@@ -348,8 +349,10 @@ public class PlayerActivity extends Activity {
 
         playerView.setOnTouchListener((v, ev) -> {
             if (inPip) return false;
-            if (Ui.edgeTouch(v, ev) && !holding) return false;          // the edges are for the back gesture
             int act = ev.getActionMasked();
+            // a touch that starts in the back gesture's strip at the sides is left to Android
+            if (act == MotionEvent.ACTION_DOWN) edgeTouch = !holding && Ui.inEdgeZone(v, ev);
+            if (edgeTouch) { if (act == MotionEvent.ACTION_UP || act == MotionEvent.ACTION_CANCEL) edgeTouch = false; return true; }
             if (holding && (act == MotionEvent.ACTION_UP || act == MotionEvent.ACTION_CANCEL)) { endHold(); return true; }
             if (holding) return true;
             if (act == MotionEvent.ACTION_UP || act == MotionEvent.ACTION_CANCEL) {

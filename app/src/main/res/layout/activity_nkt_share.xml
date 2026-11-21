@@ -146,6 +146,58 @@
             android:textColor="@color/muted"
             android:textSize="13sp" />
 
+        <!-- Receive from other devices: browse, stream and copy from other phones and computers -->
+        <LinearLayout
+            android:id="@+id/sh_remote_row"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:background="@drawable/bg_options_bar"
+            android:gravity="center_vertical"
+            android:minHeight="72dp"
+            android:orientation="horizontal"
+            android:paddingStart="16dp"
+            android:paddingTop="10dp"
+            android:paddingEnd="10dp"
+            android:paddingBottom="10dp">
+
+            <ImageView
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_devices"
+                android:tint="@color/accent" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="14dp"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/other_devices"
+                    android:textColor="@color/text"
+                    android:textSize="14sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/receive_devices_sub"
+                    android:textColor="@color/muted"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <ImageView
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_chevron_right"
+                android:tint="@color/muted" />
+        </LinearLayout>
+
         <TextView
             style="@style/NKTSectionLabel"
             android:layout_marginTop="22dp"
@@ -299,77 +351,6 @@
                         android:textColor="@color/muted"
                         android:textSize="12sp" />
                 </LinearLayout>
-            </LinearLayout>
-        </LinearLayout>
-
-        <!-- Other devices: phones running NKT Share, or any FTP server, browsed from here -->
-        <TextView
-            style="@style/NKTSectionLabel"
-            android:layout_marginTop="22dp"
-            android:text="@string/other_devices_caps" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:text="@string/devices_hint"
-            android:textColor="@color/muted"
-            android:textSize="12sp" />
-
-        <LinearLayout
-            android:id="@+id/sh_devices"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:background="@drawable/bg_options_bar"
-            android:orientation="vertical"
-            android:padding="6dp">
-
-            <LinearLayout
-                android:id="@+id/sh_remote_row"
-                android:layout_width="match_parent"
-                android:layout_height="60dp"
-                android:background="?android:attr/selectableItemBackground"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:paddingStart="10dp"
-                android:paddingEnd="10dp">
-
-                <ImageView
-                    android:layout_width="22dp"
-                    android:layout_height="22dp"
-                    android:contentDescription="@null"
-                    android:src="@drawable/ic_devices"
-                    android:tint="@color/accent" />
-
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="14dp"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/other_devices"
-                        android:textColor="@color/text"
-                        android:textSize="14sp" />
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/share_devices_sub"
-                        android:textColor="@color/muted"
-                        android:textSize="12sp" />
-                </LinearLayout>
-
-                <ImageView
-                    android:layout_width="24dp"
-                    android:layout_height="24dp"
-                    android:contentDescription="@null"
-                    android:src="@drawable/ic_chevron_right"
-                    android:tint="@color/muted" />
             </LinearLayout>
         </LinearLayout>
     </LinearLayout>

@@ -84,44 +84,6 @@ a{text-decoration:none;color:inherit}
 .dlb{width:44px;height:44px;display:flex;align-items:center;justify-content:center;flex:none;border-radius:50%}
 #search{width:100%;height:48px;background:#0B1222;border:1px solid rgba(0,229,255,.12);border-radius:24px;padding:0 16px 0 44px;color:#E8F0FE;font-size:14px;outline:none}
 #search:focus{border-color:#00E5FF}
-/* folders (All files and the FOLDERS view) */
-.seg2{display:flex;padding:2px;border:1px solid rgba(0,229,255,.25);border-radius:22px}
-.seg2 button{height:36px;padding:0 16px;border:0;border-radius:18px;background:transparent;color:#8A9AB2;font-size:11px;font-weight:700;letter-spacing:.12em;cursor:pointer}
-.seg2 button.on{background:rgba(0,229,255,.14);color:#00E5FF}
-.fpath{flex:1;min-width:0;font-size:13px;color:#8A9AB2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:rtl;text-align:left}
-.fpath b{color:#00E5FF;font-weight:400}
-.litem.dir .th{background:rgba(0,229,255,.1)}
-.more{padding:14px 4px;font-size:13px;color:#8A9AB2;text-align:center}
-#ask{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:40;display:none;align-items:center;justify-content:center;padding:20px}
-#ask.on{display:flex}
-#ask .askc{width:min(440px,100%);padding:22px}
-#ask .th0{width:52px;height:52px;border-radius:10px;background:#0B1222;display:flex;align-items:center;justify-content:center;flex:none}
-/* TV and laptop: a wider page, bigger type, two columns */
-@media (min-width:900px){
-  .wrap{max-width:1180px;padding:32px 48px 32px}
-  .logo{font-size:20px}
-  .tab{flex:none;min-width:180px;height:50px;font-size:13px}
-  #tabsRow{gap:12px!important}
-  #live #pArt[style*="display: flex"],#live #pArt[style*="display:flex"]{display:grid!important;grid-template-columns:400px 1fr;column-gap:48px;align-items:start}
-  #live #pArt #bigArt{grid-row:1/span 6;width:400px!important;height:400px!important;margin-top:24px!important}
-  #live #pArt > *:not(#bigArt){grid-column:2;align-self:stretch;text-align:left!important}
-  #live #pArt #aTitle{font-size:28px;margin-top:28px!important}
-  #live #pArt #aArtist{font-size:17px}
-  #live #pArt #syncChip{justify-self:start}
-  #wait #waitArt{width:360px!important;height:360px!important}
-  #wait #stopBtn2{align-self:center!important;width:420px}
-  #vizBox{height:460px}
-  #lyr{min-height:460px}
-  .lc{font-size:30px}.l1{font-size:20px}
-  #libList{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-  #libList > .more,#libList > .muted{grid-column:1/-1}
-  .litem{min-height:76px}
-  .litem .th{width:56px;height:56px}
-  .litem .a{font-size:16px}.litem .b{font-size:13px}
-  #search{height:54px;font-size:16px}
-  .pill{height:44px;font-size:12px}
-}
-@media (min-width:1400px){ #libList{grid-template-columns:repeat(3,minmax(0,1fr))} }
 /* messages & pin */
 #pinIn{width:180px;height:56px;text-align:center;font-size:28px;letter-spacing:.4em;background:#0B1222;border:1px solid rgba(0,229,255,.3);border-radius:12px;color:#E8F0FE;outline:none}
 /* TV / video */
@@ -188,6 +150,103 @@ a.pcb{display:inline-flex;align-items:center;justify-content:center;text-decorat
 #tv .ctl .nud .vsl{flex:1 1 auto;width:auto;min-width:28px;max-width:11.7vw}
 #tv .ctl .nud>button{flex:none}
 #tv .ctl .stl{height:max(44px,4.5vw);flex:none;justify-content:center;margin-left:0}
+/* folders in the library */
+.litem .fc{font-size:12px;color:#8A9AB2;margin-right:12px;flex:none}
+.litem.back{border-color:rgba(0,229,255,.3)}
+#ph .phTop .x svg{display:block;margin:auto}
+#ph:fullscreen,#ph:-webkit-full-screen{width:100vw;height:100vh}
+/* All files: folder path, folders, a file's length; the play arrow of a row (TV / laptop) */
+#crumbs{margin-top:10px;font-size:12px;display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+#crumbs span[data-path]{color:#00E5FF;cursor:pointer}
+#crumbs span[data-path]:last-child{color:#E8F0FE;cursor:default}
+.litem .th .dur{position:absolute;right:3px;bottom:3px;font-size:9px;padding:1px 4px;border-radius:4px;background:rgba(0,0,0,.7);color:#fff;display:none}
+.litem .pa{display:none;width:32px;height:32px;align-items:center;justify-content:center;flex:none;margin-right:6px}
+#kinds{flex-wrap:wrap}
+#kinds .kc{display:none;margin-left:auto;font-weight:400;color:#8A9AB2;letter-spacing:0}
+.wideonly,.libHead{display:none!important}
+/* ask before the first song plays */
+#ask{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:20px}
+#ask.on{display:flex}
+#ask .card{max-width:400px;width:100%;padding:20px;text-align:center}
+/* the photo viewer, as in the app's gallery: arrows at the sides and the strip of this folder at the bottom */
+#ph .pha{position:absolute;top:50%;transform:translateY(-50%);width:48px;height:76px;border:1px solid rgba(0,229,255,.35);background:rgba(5,8,15,.6);color:#00E5FF;font-size:30px;line-height:1;border-radius:12px;cursor:pointer;display:none;z-index:3;padding:0}
+#ph.own.multi .pha{display:block}
+#phL{left:14px}#phR{right:14px}
+#phStrip{position:absolute;left:0;right:0;bottom:max(12px,env(safe-area-inset-bottom));display:none;gap:6px;overflow-x:auto;padding:6px 16px;z-index:3;scrollbar-width:none}
+#ph.own.multi #phStrip{display:flex}
+#phStrip button{flex:none;width:56px;height:56px;border-radius:8px;border:2px solid transparent;background:#0B1222;padding:0;overflow:hidden;position:relative;cursor:pointer}
+#phStrip button.on{border-color:#00E5FF}
+#phStrip img{width:100%;height:100%;object-fit:cover;display:block}
+#phStrip i{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-style:normal;font-size:16px;text-shadow:0 0 4px #000}
+#ph.own.multi .phCap{padding-bottom:96px}
+#ph.own.multi .phCtl{bottom:178px}
+/* full screen for songs and photos: on a TV or a laptop */
+@media (max-width:899px){#fsAudio,#oFs,#phFs{display:none!important}}
+/* TV and laptop (a wide screen): the player beside its details, a bigger stage, the library in columns */
+@media (min-width:900px){
+  .wideonly{display:block!important}
+  #s-main{position:relative}
+  #tabsRow{position:absolute;top:26px;left:250px;margin:0!important}
+  #tabsRow .tab{height:38px;width:130px;flex:none}
+  .litem .pa{display:flex}
+  /* LIVE beside the library: the player on the left, the host's library on the right */
+  #s-main.split.on{display:grid;grid-template-columns:minmax(340px,33%) 1fr;grid-template-rows:auto 1fr;column-gap:44px;height:100vh;padding-bottom:20px}
+  #s-main.split>.row:first-child{grid-column:1/-1}
+  #s-main.split #wait,#s-main.split #live{grid-column:1;grid-row:2;min-height:0;overflow:auto;padding-right:4px}
+  #s-main.split #lib{grid-column:2;grid-row:2;min-height:0;overflow:auto;display:flex!important;padding-right:4px}
+  #s-main.split .libHead{display:flex!important}
+  #s-main.split #pArt[style*="flex"]{display:flex!important}
+  #s-main.split #pArt>#bigArt{width:min(100%,340px)!important;height:auto!important;aspect-ratio:1/1;margin-top:16px!important}
+  #s-main.split #pArt>#aTitle{text-align:center!important;font-size:22px!important;margin-top:18px!important}
+  #s-main.split #pArt>#aArtist{text-align:center!important;font-size:14px!important}
+  #s-main.split #pArt>#syncChip{justify-self:auto}
+  #s-main.split #wait .art{width:min(100%,320px)!important;height:auto!important;aspect-ratio:1/1}
+  #s-main.split #wait #stopBtn2{align-self:stretch!important;width:auto}
+  #s-main.split #vizBox{height:44vh}
+  #s-main.split #lyr{min-height:44vh}
+  #s-main.split #libList{grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}
+  /* LIBRARY on its own: the kinds down the side, with how many each has */
+  #s-main.libfull #lib[style*="flex"]{display:grid!important;grid-template-columns:210px 1fr;column-gap:32px;align-items:start;align-content:start}
+  #s-main.libfull #lib>*{grid-column:2}
+  #s-main.libfull #lib>#kinds{grid-column:1;grid-row:1/span 30;flex-direction:column;align-items:stretch;gap:6px;margin-top:12px!important;position:sticky;top:16px}
+  #s-main.libfull #kinds .pill{text-align:left;display:flex;align-items:center;height:44px;border-radius:12px}
+  #s-main.libfull #kinds .kc{display:inline}
+  /* All files as tiles, like the gallery */
+  #libList.allf{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))!important;gap:12px}
+  #libList.allf>div{position:relative;display:block!important}
+  #libList.allf .litem{flex-direction:column;align-items:stretch;gap:6px;padding:0 0 8px;min-height:0;height:100%}
+  #libList.allf .litem .th{width:100%;height:auto;aspect-ratio:1/1;border-radius:12px 12px 0 0}
+  #libList.allf .litem .th svg{width:34px;height:34px}
+  #libList.allf .litem .tx{padding:0 8px}
+  #libList.allf .litem .a{font-size:12.5px}.allf .litem .b{font-size:11px}
+  #libList.allf .litem .pa{display:none}
+  #libList.allf .litem .th .dur{display:block}
+  #libList.allf .dlb,#libList.allf .cbx{position:absolute;top:6px;right:6px;background:rgba(5,8,15,.75);border-radius:50%;width:38px;height:38px}
+  #libList.allf>div[style*="1/-1"] .litem{flex-direction:row;align-items:center;padding:0 12px;min-height:56px}
+  #libList.allf>div[style*="1/-1"] .litem .th{width:40px;height:40px;aspect-ratio:auto;border-radius:8px}
+  .wrap{max-width:1240px;padding:32px 48px 28px}
+  .logo{font-size:18px}
+  .tab{max-width:240px}
+  #s-tap .art{width:300px!important;height:300px!important}
+  #tapTitle{font-size:28px!important}
+  #pArt[style*="flex"]{display:grid!important;grid-template-columns:minmax(320px,46%) 1fr;column-gap:56px;align-items:start;align-content:start}
+  #pArt>#bigArt{grid-column:1;grid-row:1/span 8;width:100%!important;height:auto!important;aspect-ratio:1/1;max-width:600px;margin-top:22px!important}
+  #pArt>*:not(#bigArt){grid-column:2}
+  #pArt>#aTitle{text-align:left!important;font-size:32px!important;line-height:1.2;margin-top:30px!important}
+  #pArt>#aArtist{text-align:left!important;font-size:18px!important}
+  #pArt>#syncChip{justify-self:start}
+  #pArt>#foot{padding-top:12px!important}
+  #vizBox{height:64vh}
+  #lyr{min-height:64vh;gap:24px}
+  .lc{font-size:36px}.l1{font-size:22px}.l0{font-size:19px}
+  #wait .art{width:min(380px,40vw)!important;height:min(380px,40vw)!important}
+  #wait #stopBtn2{align-self:center!important;width:min(420px,60vw)}
+  #libList{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:8px}
+  #lib #search{max-width:720px}
+  #own{max-width:900px}
+  #selBar{width:min(560px,92vw)}
+  .pcb{min-width:64px}
+}
 @media (max-width:700px){
   #tv .r1{flex-direction:column;align-items:stretch;gap:8px}
   #tv .r1 .pc{flex:none;width:100%}
@@ -250,12 +309,21 @@ a.pcb{display:inline-flex;align-items:center;justify-content:center;text-decorat
   <div id="wait" style="display:none;flex-direction:column;align-items:center;flex:1">
     <div class="art" id="waitArt" style="margin-top:28px;width:min(300px,80vw);height:min(300px,80vw)"></div>
     <div class="chip warn" id="waitT" style="margin-top:22px;height:auto;min-height:28px;padding:8px 16px;white-space:normal;text-align:center;line-height:1.4">WAITING FOR THE HOST TO PLAY SOMETHING</div>
+    <div class="card wideonly" style="align-self:stretch;margin-top:18px;padding:4px 14px">
+      <div class="row" style="height:56px;gap:8px">
+        <div style="font-size:14px;width:54px">Volume</div>
+        <button class="round" id="volM3" aria-label="Volume down" style="width:38px;height:38px;flex:none">−</button>
+        <div class="sl" id="volSl3" role="slider" aria-label="Volume" aria-valuemin="0" aria-valuemax="100" tabindex="0"><div class="t"></div><div class="f"></div><div class="k"></div></div>
+        <button class="round" id="volP3" aria-label="Volume up" style="width:38px;height:38px;flex:none">+</button>
+        <div id="volT3" class="muted" style="width:26px;text-align:right;font-size:12px">70</div>
+      </div>
+    </div>
     <button class="btn" id="stopBtn2" style="margin-top:auto;align-self:stretch">STOP LISTENING</button>
   </div>
 
   <!-- LIVE -->
   <div id="live" style="display:flex;flex-direction:column;flex:1">
-    <div class="row" id="dlRow" hidden style="justify-content:flex-end;margin-top:12px"><a class="pcb" id="dlLive" download aria-label="Download what is playing">DOWNLOAD</a></div>
+    <div class="row" id="dlRow" style="justify-content:flex-end;gap:8px;margin-top:12px"><a class="pcb" id="dlLive" hidden download aria-label="Download what is playing">DOWNLOAD</a><button class="pcb" id="fsAudio" hidden aria-label="Full screen">FULL SCREEN</button></div>
     <div class="seg" id="views" style="margin-top:12px">
       <button data-v="0">VISUALISER</button><button data-v="1">LYRICS</button><button data-v="2">ART</button>
     </div>
@@ -326,34 +394,28 @@ a.pcb{display:inline-flex;align-items:center;justify-content:center;text-decorat
 
   <!-- LIBRARY -->
   <div id="lib" style="display:none;flex-direction:column;flex:1">
+    <div class="row libHead" style="justify-content:space-between;gap:12px"><div class="orb" style="font-size:12px">LIBRARY</div><div class="muted" id="libHint" style="font-size:12px">Play something yourself while you wait</div></div>
     <div style="position:relative;margin-top:12px"><svg style="position:absolute;left:14px;top:14px" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8A9AB2" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input id="search" placeholder="Search songs and videos" autocomplete="off"></div>
-    <div class="row" style="gap:8px;margin-top:12px" id="kinds"><button class="pill on" data-k="0">SONGS</button><button class="pill" data-k="1">VIDEOS</button><button class="pill" data-k="2">PHOTOS</button><button class="pill" data-k="3">ALL FILES</button></div>
-    <div class="row" style="gap:8px;margin-top:8px" id="lview"><div class="seg2"><button data-f="0" class="on">LIST</button><button data-f="1">FOLDERS</button></div></div>
-    <div class="row" id="fbar" hidden style="gap:10px;margin-top:10px"><button class="round" id="fUp" aria-label="Up one folder" style="flex:none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00E5FF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="M6 11l6-6 6 6"/></svg></button><div id="fPath" class="fpath"></div></div>
+    <div class="row" style="gap:8px;margin-top:12px" id="kinds"><button class="pill on" data-k="0">SONGS<span class="kc"></span></button><button class="pill" data-k="1">VIDEOS<span class="kc"></span></button><button class="pill" data-k="2">PHOTOS<span class="kc"></span></button><button class="pill" data-k="3">ALL FILES<span class="kc"></span></button></div>
+    <div class="row" style="gap:8px;margin-top:8px" id="modes"><button class="pill on" data-m="0">ALL</button><button class="pill" data-m="1">FOLDERS</button></div>
     <div class="row" style="margin-top:8px"><button class="pill on" id="autoNext">AUTO-PLAY NEXT: ON</button><button class="pill" id="selBtn" hidden>SELECT</button></div>
     <div id="dlNote" class="muted" hidden style="margin-top:8px;font-size:12px">The host has allowed downloads. The arrow saves a copy to this device.</div>
+    <div id="crumbs" hidden></div>
     <div id="libList"></div>
     <div class="card" id="own" hidden style="margin-top:auto;margin-top:14px;padding:12px 14px;border-color:rgba(0,229,255,.25)">
       <div class="row" style="gap:12px"><div style="flex:1;min-width:0"><div id="oTitle" style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div><div class="muted" style="font-size:12px;margin-top:2px">Not synced with the host</div></div>
         <button class="btn" id="backLive" style="height:44px;padding:0 16px;font-size:11px;letter-spacing:.12em">BACK TO LIVE</button></div>
       <div class="bar" style="margin-top:8px"><b id="oBar" style="background:#7B61FF"></b></div>
-      <div class="pc" style="margin-top:12px"><button class="pcb" id="oPrev">PREV</button><button class="pcb" id="oBack">−10s</button><button class="pcb" id="oPlay">PAUSE</button><button class="pcb" id="oFwd">+10s</button><button class="pcb" id="oNext">NEXT</button></div>
+      <div class="pc" style="margin-top:12px"><button class="pcb" id="oPrev">PREV</button><button class="pcb" id="oBack">−10s</button><button class="pcb" id="oPlay">PAUSE</button><button class="pcb" id="oFwd">+10s</button><button class="pcb" id="oNext">NEXT</button><button class="pcb" id="oFs" hidden aria-label="Full screen">FULL</button></div>
     </div>
   </div>
 </div>
 
-<!-- A song picked in All files -->
-<div id="ask" role="dialog" aria-modal="true" aria-labelledby="askT"><div class="askc card">
-  <div class="orb" id="askT" style="font-size:13px">PLAY THIS SONG?</div>
-  <div class="row" style="gap:14px;margin-top:16px"><div class="th0"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00E5FF" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg></div><div style="min-width:0"><div id="askN" style="font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div><div id="askS" class="muted" style="font-size:13px;margin-top:2px"></div></div></div>
-  <div class="muted" style="font-size:13px;line-height:1.5;margin-top:14px">It plays on this device, not in step with the host, then carries on with the other songs in this folder. BACK TO LIVE returns you to what the host plays.</div>
-  <div class="row" style="gap:10px;margin-top:20px;justify-content:flex-end"><button class="pill" id="askNo">CANCEL</button><button class="btn" id="askYes" style="padding:0 30px;background:#00E5FF;color:#05080F;border-color:#00E5FF">PLAY</button></div>
-</div></div>
-
 <!-- Video: for a TV or a laptop -->
 <div id="selBar"><button class="pcb" id="selDl">DOWNLOAD</button><button class="pcb" id="selAll">ALL</button><button class="pcb" id="selDone">DONE</button></div>
 <!-- Photo the host is showing -->
-<div id="ph"><img id="phImg" alt=""><div class="phTop"><div class="logo">NKT STREAM</div><div class="chip"><i></i><span id="phChipT">LIVE PHOTO</span></div><a class="pcb" id="phDl" download hidden aria-label="Download this photo">DOWNLOAD</a><button class="x" id="phX" aria-label="Hide this photo">×</button></div><div class="pc phCtl"><button class="pcb" id="phPrev">PREV</button><button class="pcb" id="phPlay">PAUSE</button><button class="pcb" id="phNext">NEXT</button></div><div class="phCap"><b id="phT"></b><span class="muted" id="phN" style="font-size:13px"></span></div></div>
+<div id="ask"><div class="card"><div class="orb" style="font-size:12px">PLAY HERE?</div><div id="askT" style="margin-top:12px;font-size:17px;font-weight:700"></div><div class="muted" style="margin-top:8px;font-size:13px;line-height:1.5">The songs and videos of this folder then play one after another on this device.</div><div class="row" style="gap:8px;margin-top:18px"><button class="btn" id="askNo" style="flex:1">CANCEL</button><button class="btn" id="askGo" style="flex:1;background:#00E5FF;color:#05080F">PLAY</button></div></div></div>
+<div id="ph"><img id="phImg" alt=""><button class="pha" id="phL" aria-label="Previous">‹</button><button class="pha" id="phR" aria-label="Next">›</button><div id="phStrip"></div><div class="phTop"><div class="logo">NKT STREAM</div><div class="chip"><i></i><span id="phChipT">LIVE PHOTO</span></div><a class="pcb" id="phDl" download hidden aria-label="Download this photo">DOWNLOAD</a><button class="x" id="phFs" hidden aria-label="Full screen"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00E5FF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button><button class="x" id="phX" style="margin-left:0" aria-label="Hide this photo">×</button></div><div class="pc phCtl"><button class="pcb" id="phPrev">PREV</button><button class="pcb" id="phPlay">PAUSE</button><button class="pcb" id="phNext">NEXT</button></div><div class="phCap"><b id="phT"></b><span class="muted" id="phN" style="font-size:13px"></span></div></div>
 
 <div id="tv">
   <video id="vid" playsinline preload="auto"></video>
@@ -580,6 +642,7 @@ function syncTick() {
   var el = curEl;
   if (el.getAttribute('data-src') !== st.id) { ensureSource(); return; }
   if (shift) { var bh = Math.max(0, expected() + nudge - el.currentTime * 1000); setChips('BEHIND LIVE · ' + fmt(bh), true); return; }
+  if (held && !st.video) { if (!el.paused) el.pause(); setChips('PAUSED HERE · PLAY TO CATCH UP', true); return; }
   if (anchorPending) { if (el.paused) { var p0 = el.play(); if (p0 && p0.catch) p0.catch(function () {}); } setChips('SYNCING…', true); return; }
   var exp = expected() + nudge, pos = el.currentTime * 1000;
   if (st.dur && exp > st.dur) { return; }          // the song is over; the host's end comes next
@@ -689,20 +752,31 @@ function render() {
   $('#tabLive').classList.toggle('on', tab === 'live');
   $('#tabLib').classList.toggle('on', tab === 'lib');
   var waiting = !!(listening && !own && tab === 'live' && !st.has && !tv);
-  $('#tabsRow').style.display = 'flex';                  // the LIBRARY tab stays reachable while the host plays nothing
+  $('#tabsRow').style.display = waiting && !libOn ? 'none' : 'flex';      // nothing playing yet: the library can still be opened
+  // a TV or a laptop: LIVE shows the host's library beside the player; LIBRARY has its kinds down the side
+  var wide = isWide(), split = !!(wide && listening && libOn && tab === 'live' && !tv);
+  $('#s-main').classList.toggle('split', split);
+  $('#s-main').classList.toggle('libfull', !!(wide && tab === 'lib'));
+  if (split) {
+    if (!libLoaded) libOpen();
+    $('#libHint').textContent = own ? 'Your pick · not synced with the host' : st.has ? 'Play something yourself' : 'Play something yourself while you wait';
+    renderLibState();
+  }
   $('#wait').style.display = waiting ? 'flex' : 'none';
   $('#live').style.display = tab === 'live' && !waiting ? 'flex' : 'none';
   $('#lib').style.display = tab === 'lib' ? 'flex' : 'none';
   if (waiting) {
     var wa = $('#waitArt'); if (!wa.firstChild || wa.firstChild.tagName !== 'IMG') wa.innerHTML = '<img alt="NKT" src="'+NKT_LOGO+'" style="width:72%;height:72%;object-fit:contain;display:block">';
     $('#waitT').textContent = st.priv ? 'THE HOST IS PLAYING SOMETHING PRIVATELY' : 'WAITING FOR THE HOST TO PLAY SOMETHING';
+    setSlider('#volSl3', effVol(), 0, 1); $('#volT3').textContent = Math.round(effVol() * 100);
     return;
   }
   if (tv) { renderTv(); return; }
   if (tab === 'lib') { renderLibState(); return; }
   var ldl = !!(st.dl && st.has && st.ok && !own);
-  $('#dlRow').hidden = !ldl;
+  $('#dlLive').hidden = !ldl;
   if (ldl) $('#dlLive').href = dlHref(st.id);
+  $('#fsAudio').hidden = !fsAvail();
   var vs = document.querySelectorAll('#views button');
   for (var i = 0; i < vs.length; i++) vs[i].classList.toggle('on', +vs[i].getAttribute('data-v') === view);
   $('#pArt').style.display = view === 2 ? 'flex' : 'none';
@@ -725,6 +799,8 @@ function render() {
   ['#volSl', '#volSl2', '#volM', '#volP', '#volM2', '#volP2'].forEach(function (k) { var e = $(k); e.classList.toggle('locked', lk); if (e.tagName === 'BUTTON') e.disabled = lk; });
   setSlider('#nudSl', nudge, -500, 500); $('#nudT').textContent = (nudge > 0 ? '+' : '') + nudge + ' ms';
 }
+function isWide() { return !!(window.matchMedia && window.matchMedia('(min-width:900px)').matches); }
+window.addEventListener('resize', function () { if (listening) render(); });
 function renderTv() {
   var o = own && own.video;
   $('#tvTitle').textContent = o ? own.title : st.title;
@@ -768,6 +844,9 @@ function setVolume(v) { v = Math.max(0, Math.min(1, v)); if (hostVol >= 0) hvLoc
 function setNudge(v) { nudge = Math.max(-500, Math.min(500, Math.round(v / 10) * 10)); store('nudge', String(nudge)); render(); }
 dragSlider('#volSl', 0, 1, function (v) { setVolume(v); });
 dragSlider('#volSl2', 0, 1, function (v) { setVolume(v); });
+dragSlider('#volSl3', 0, 1, function (v) { setVolume(v); });
+$('#volM3').onclick = function () { setVolume(effVol() - 0.1); };
+$('#volP3').onclick = function () { setVolume(effVol() + 0.1); };
 dragSlider('#nudSl', -500, 500, function (v) { setNudge(v); });
 $('#nudM').onclick = function () { setNudge(nudge - 50); };
 $('#nudP').onclick = function () { setNudge(nudge + 50); };
@@ -795,6 +874,8 @@ $('#tvPip').onclick = function () {
 function fsOn() { return !!(document.fullscreenElement || document.webkitFullscreenElement); }
 function fsChanged() {
   $('#tvFsT').textContent = fsOn() ? 'Exit full screen' : 'Full screen';
+  $('#fsAudio').textContent = fsOn() ? 'EXIT FULL SCREEN' : 'FULL SCREEN';
+  $('#oFs').textContent = fsOn() ? 'EXIT FULL' : 'FULL';
   wake();                                    // the controls come back when the screen changes size
 }
 document.addEventListener('fullscreenchange', fsChanged);
@@ -818,12 +899,79 @@ $('#tv').addEventListener('click', function (e) {
   if (wasQuiet) { wake(); return; }
   if (e.target === vid || e.target.className === 'g1' || e.target.className === 'g2') { tv.classList.add('quiet'); clearTimeout(quietT); } else wake();
 });
+// Keys on a laptop or a TV remote: play / pause, next, previous, seek, volume, mute, full screen, go live
+function fsAvail() { return !!(document.fullscreenEnabled || document.webkitFullscreenEnabled); }
+function fsToggle(el) {
+  try {
+    if (fsOn()) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    else (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
+  } catch (x) {}
+}
+function fsTarget() { return $('#tv').classList.contains('on') ? $('#tv') : $('#ph').classList.contains('on') ? $('#ph') : document.documentElement; }
+var held = false;                        // the live song paused on this device only (PLAY catches up with the host)
+function actPlay(want) {
+  if (!listening) { if ($('#s-tap').classList.contains('on')) $('#tapBtn').click(); return; }
+  if (own && own.photo) { $('#phPlay').click(); return; }
+  if (own) { if (want === undefined || want === curEl.paused) ownToggle(); return; }
+  if (st.has && st.ok && st.video) { if (want === undefined || want === curEl.paused) $('#tvLPlay').click(); return; }
+  if (st.has) { var h = want === undefined ? !held : !want; if (h !== held) { held = h; syncTick(); render(); } }
+}
+function actNext() { if (own) ownStep(1); }
+function actPrev() { if (!own) return; if (!own.photo && curEl.currentTime > 3) { curEl.currentTime = 0; return; } ownStep(-1); }
+function actSeek(sec) {
+  if (own && own.photo) { ownStep(sec > 0 ? 1 : -1); return; }
+  if (own) { ownSeek(sec); return; }
+  if (st.has && st.ok && st.video) liveSeekTo(curEl.currentTime * 1000 + sec * 1000);
+}
+var muteFrom = -1;
+function actMute() { if (effVol() > 0) { muteFrom = effVol(); setVolume(0); } else setVolume(muteFrom > 0 ? muteFrom : 0.7); }
+function onControl(t) { return !!(t && t.closest && t.closest('button,a,input,textarea,select,[role=slider],[tabindex]')); }
 document.addEventListener('keydown', function (e) {
-  if (!$('#tv').classList.contains('on')) return;
-  if (e.key === 'ArrowUp') setVolume(effVol() + 0.05);
-  if (e.key === 'ArrowDown') setVolume(effVol() - 0.05);
-  wake();
+  if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+  var t = e.target, tag = t && t.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
+  var k = e.key, c = e.keyCode, nav = onControl(t), done = true;
+  if (k === 'MediaPlayPause' || c === 179 || ((k === ' ' || k === 'Spacebar') && !nav) || k === 'k' || k === 'K') actPlay();
+  else if (k === 'MediaPlay' || c === 415) actPlay(true);
+  else if (k === 'MediaPause' || c === 19) actPlay(false);
+  else if (k === 'MediaTrackNext' || c === 176 || k === 'n' || k === 'N' || k === 'PageDown') actNext();
+  else if (k === 'MediaTrackPrevious' || c === 177 || k === 'p' || k === 'P' || k === 'PageUp') actPrev();
+  else if (k === 'MediaFastForward' || c === 417 || k === 'l' || k === 'L' || (k === 'ArrowRight' && !nav)) actSeek(10);
+  else if (k === 'MediaRewind' || c === 412 || k === 'j' || k === 'J' || (k === 'ArrowLeft' && !nav)) actSeek(-10);
+  else if ((k === 'ArrowUp' || k === 'Up') && !nav) setVolume(effVol() + 0.05);
+  else if ((k === 'ArrowDown' || k === 'Down') && !nav) setVolume(effVol() - 0.05);
+  else if (k === 'm' || k === 'M') actMute();
+  else if (k === 'f' || k === 'F') { if (fsAvail()) fsToggle(fsTarget()); }
+  else if ((k === 'g' || k === 'G') && shift) goLiveShift();
+  else done = false;
+  if (done) e.preventDefault();
+  if ($('#tv').classList.contains('on')) wake();
 });
+// the laptop's media keys, a TV remote's play / next keys and the media notification
+function msSet(a, f) { try { navigator.mediaSession.setActionHandler(a, f); } catch (x) {} }
+if ('mediaSession' in navigator) {
+  msSet('play', function () { actPlay(true); });
+  msSet('pause', function () { actPlay(false); });
+  msSet('nexttrack', actNext);
+  msSet('previoustrack', actPrev);
+  msSet('seekforward', function () { actSeek(10); });
+  msSet('seekbackward', function () { actSeek(-10); });
+}
+var msKey = '';
+function msUpdate() {
+  if (!('mediaSession' in navigator)) return;
+  var o = own && !own.photo, id = o ? own.id : (st.has ? st.id : ''), t = o ? own.title : (st.has ? st.title : '');
+  var a = o ? 'Your pick' : (st.has ? (st.artist || '') : ''), k = id + '|' + t + '|' + a;
+  try {
+    if (k !== msKey && typeof MediaMetadata !== 'undefined') {
+      msKey = k;
+      navigator.mediaSession.metadata = new MediaMetadata({ title: t || 'NKT Stream', artist: a, album: hostName ? 'Live from ' + hostName : 'NKT Stream',
+        artwork: id ? [{ src: location.origin + B + 'art/' + id + '?c=' + encodeURIComponent(C), sizes: '512x512', type: 'image/jpeg' }] : [] });
+    }
+    navigator.mediaSession.playbackState = listening && !curEl.paused ? 'playing' : 'paused';
+  } catch (x) {}
+}
+setInterval(msUpdate, 1000);
 
 function goLive() { tab = 'live'; render(); }
 $('#tabLive').onclick = goLive;
@@ -1147,8 +1295,13 @@ function renderPhoto() {
   var op = own && own.photo, ph = op ? { id: own.id, title: own.title, n: ownIdx() + 1, of: ownList.length } : st.photo;
   if (photoHidden && (!ph || ph.id !== photoHidden)) photoHidden = '';
   var on = !!(listening && ph && (op || photoHidden !== ph.id));
+  var phWas = $('#ph').classList.contains('on');
   $('#ph').classList.toggle('on', on);
+  $('#phFs').hidden = !fsAvail();
+  if (phWas && !on) { var fe = document.fullscreenElement || document.webkitFullscreenElement; if (fe === $('#ph')) fsToggle($('#ph')); }
   $('#ph').classList.toggle('own', !!(on && op));
+  $('#ph').classList.toggle('multi', !!(on && op && ownList.length > 1));
+  if (on && op) drawStrip();
   $('#phDl').hidden = !(on && st.dl && ph);
   if (on && st.dl && ph) $('#phDl').href = dlHref(ph.id);
   if (on && shownPhoto !== ph.id) {
@@ -1164,6 +1317,31 @@ function renderPhoto() {
   }
   if (!on) { clearTimeout(slideT); if (!ph) shownPhoto = ''; }
 }
+var stripKey = '';
+function drawStrip() {
+  var key = ownList.map(function (x) { return x[0]; }).join(',') + '|' + (own ? own.id : '');
+  if (key === stripKey) return;
+  stripKey = key;
+  var box = $('#phStrip'), html = '';
+  ownList.forEach(function (it) {
+    html += '<button data-id="' + it[0] + '" class="' + (own && own.id === it[0] ? 'on' : '') + '" aria-label="' + esc(it[1]) + '"><img loading="lazy" alt="" src="' + B + 'th/' + it[0] + '?c=' + encodeURIComponent(C) + '">' + (it[4] === 1 ? '<i>▶</i>' : '') + '</button>';
+  });
+  box.innerHTML = html;
+  var cur = box.querySelector('button.on');
+  if (cur) { try { cur.scrollIntoView({ block: 'nearest', inline: 'center' }); } catch (x) {} }
+}
+$('#phStrip').onclick = function (e) { var b = e.target.closest ? e.target.closest('button') : null; if (!b) return; var it = byId(b.getAttribute('data-id')); if (it) playOwn(it); };
+$('#phL').onclick = function () { ownStep(-1); };
+$('#phR').onclick = function () { ownStep(1); };
+(function () {                                    // swipe the photo left or right
+  var x0 = null;
+  $('#phImg').addEventListener('pointerdown', function (e) { x0 = e.clientX; });
+  $('#phImg').addEventListener('pointerup', function (e) {
+    if (x0 === null || !(own && own.photo)) { x0 = null; return; }
+    var dx = e.clientX - x0; x0 = null;
+    if (Math.abs(dx) > 60) ownStep(dx < 0 ? 1 : -1);
+  });
+})();
 function slide() {
   clearTimeout(slideT);
   if (own && own.photo && autoNextP && slidePlaying) slideT = setTimeout(function () { ownStep(1); }, 5000);
@@ -1172,6 +1350,9 @@ $('#phImg').onload = slide;
 $('#phPlay').onclick = function () { if (!autoNextP) { autoNextP = true; store('autonextp', '1'); setAuto(); slidePlaying = true; } else slidePlaying = !slidePlaying; slide(); render(); };
 $('#phPrev').onclick = function () { ownStep(-1); };
 $('#phNext').onclick = function () { ownStep(1); };
+$('#phFs').onclick = function () { fsToggle($('#ph')); };
+$('#fsAudio').onclick = function () { fsToggle(document.documentElement); };
+$('#oFs').onclick = function () { fsToggle(document.documentElement); };
 $('#phX').onclick = function () { if (own && own.photo) { closeOwn(); return; } if (st.photo) photoHidden = st.photo.id; render(); };
 $('#tvLib').onclick = function () { tab = 'lib'; libOpen(); render(); };
 
@@ -1216,23 +1397,31 @@ $('#tvLPlay').onclick = function () {
 
 // ── Library: pick your own songs and videos, not synced with the host ──
 var lib = { items: [] }, libLoaded = false, kind = 0, q = '', ownList = [], curShown = [], autoNext = store('autonext') !== '0', autoNextP = store('autonextp') === '1';
-var libScroll = [0, 0, 0, 0], libRestoring = false;      // where you were in each list (songs, videos, photos, all files)
-var folderView = [store('fv0') === '1', store('fv1') === '1', store('fv2') === '1', true], libDir = ['', '', '', ''];   // FOLDERS view per kind; All files is always folders
-var PAGE = 300, libShown = PAGE;                       // the list grows by itself as you scroll: nothing is left out
+var libScroll = [0, 0, 0], libRestoring = false;      // where you were in each list (songs, videos, photos)
 function libRestore() {
   libRestoring = true;
   requestAnimationFrame(function () { window.scrollTo(0, libScroll[kind] || 0); requestAnimationFrame(function () { libRestoring = false; }); });
 }
 window.addEventListener('scroll', function () {
-  if (tab === 'lib' && !libRestoring && $('#lib').style.display !== 'none') libScroll[kind] = window.pageYOffset;
-  if (tab === 'lib' && libLoaded && libShown < libTotal && window.innerHeight + window.pageYOffset > document.body.scrollHeight - 1600) { libShown += PAGE; drawLib(true); }
+  if (tab === 'lib' && !libRestoring && $('#lib').style.display !== 'none' && !(libFolders && openFolder[kind] !== null)) libScroll[kind] = window.pageYOffset;
 }, { passive: true });
+var libLoading = false;
+function libCounts() {
+  var n = [0, 0, 0, lib.items.length];
+  lib.items.forEach(function (it) { if (n[it[4]] !== undefined && it[4] < 3) n[it[4]]++; });
+  var ks = document.querySelectorAll('#kinds button');
+  for (var i = 0; i < ks.length; i++) { var c = ks[i].querySelector('.kc'); if (c) c.textContent = n[+ks[i].getAttribute('data-k')] || ''; }
+}
 function libOpen() {
+  if (!libLoaded && libLoading) return;
   libRestoring = true;
   if (libLoaded) { drawLib(); libRestore(); return; }
+  libLoading = true;
   api('api/library').then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (j) {
-    lib = { items: j.items || [] }; libLoaded = true; drawLib(); libRestore();
-  }).catch(function () { $('#libList').innerHTML = '<div class="muted" style="padding:16px 4px;font-size:13px">The library isn\'t available right now.</div>'; });
+    libLoading = false;
+    lib = { items: j.items || [] }; libLoaded = true; libCounts(); drawLib(); libRestore();
+  }).catch(function () {
+    libLoading = false; $('#libList').innerHTML = '<div class="muted" style="padding:16px 4px;font-size:13px">The library isn\'t available right now.</div>'; });
 }
 function setAuto() { var on = kind === 2 ? autoNextP : autoNext, b = $('#autoNext'); b.classList.toggle('on', on); b.textContent = 'AUTO-PLAY NEXT: ' + (on ? 'ON' : 'OFF'); }
 $('#autoNext').onclick = function () { if (kind === 2) { autoNextP = !autoNextP; store('autonextp', autoNextP ? '1' : '0'); } else { autoNext = !autoNext; store('autonext', autoNext ? '1' : '0'); } setAuto(); slide(); render(); };
@@ -1244,13 +1433,10 @@ function updOwnBtns() {
 }
 function renderLibState() {
   $('#own').hidden = !(own && !own.photo);
+  $('#oFs').hidden = !fsAvail();
   $('#oTitle').textContent = own ? own.title : '';
   var ks = document.querySelectorAll('#kinds button');
   for (var i = 0; i < ks.length; i++) ks[i].classList.toggle('on', +ks[i].getAttribute('data-k') === kind);
-  $('#lview').hidden = kind === 3;
-  var fv = document.querySelectorAll('#lview button');
-  for (var f = 0; f < fv.length; f++) fv[f].classList.toggle('on', +fv[f].getAttribute('data-f') === (folderView[kind] ? 1 : 0));
-  $('#search').placeholder = folderView[kind] ? 'Search in this folder' : 'Search songs and videos';
   drawLib();
 }
 var byId = function (id) { for (var i = 0; i < lib.items.length; i++) if (lib.items[i][0] === id) return lib.items[i]; return null; };
@@ -1260,7 +1446,7 @@ function selUi() {
   if (selecting && !st.dl) { selecting = false; picked = {}; }
   var n = pickedIds().length;
   $('#selBtn').hidden = !st.dl; $('#selBtn').textContent = selecting ? 'CANCEL' : 'SELECT'; $('#selBtn').classList.toggle('on', selecting);
-  $('#selBar').classList.toggle('on', selecting && libOn && tab === 'lib');
+  $('#selBar').classList.toggle('on', selecting && libOn && (tab === 'lib' || $('#s-main').classList.contains('split')));
   $('#selDl').textContent = n ? 'DOWNLOAD (' + n + ')' : 'DOWNLOAD'; $('#selDl').disabled = !n;
   $('#libList').style.paddingBottom = selecting ? '84px' : '';
 }
@@ -1273,105 +1459,149 @@ $('#selDl').onclick = function () {
     setTimeout(function () { var a = document.createElement('a'); a.href = B + 'dl/' + id + '?c=' + encodeURIComponent(C); a.download = ''; document.body.appendChild(a); a.click(); a.remove(); }, i * 500);
   });
 };
-var libTotal = 0;
-function inKind(it) { return kind === 3 || it[4] === kind; }
-function dirOf(it) { var p = it[7] || ((it[6] || 'Other') + '/' + it[1]); var k = p.lastIndexOf('/'); return k < 0 ? '' : p.substring(0, k); }
-function folderRows(term) {          // what sits in the open folder: its subfolders first, then its files
-  var dir = libDir[kind], pre = dir ? dir + '/' : '', subs = {}, files = [];
-  lib.items.forEach(function (it) {
-    if (!inKind(it)) return;
-    var d = dirOf(it);
-    if (d === dir) { if (!term || (it[1] + ' ' + it[2]).toLowerCase().indexOf(term) >= 0) files.push(it); return; }
-    if (dir && d.indexOf(pre) !== 0) return;
-    var rest = d.substring(pre.length), name = rest.split('/')[0];
-    if (!name) return;
-    if (term && name.toLowerCase().indexOf(term) < 0) return;
-    subs[name] = (subs[name] || 0) + 1;
-  });
-  var names = Object.keys(subs).sort(function (a, b) { return a.toLowerCase() < b.toLowerCase() ? -1 : 1; });
-  return { dirs: names.map(function (n) { return [n, subs[n]]; }), files: files };
-}
-function folderSvg() { return '<svg width="22" height="22" viewBox="0 0 24 24" fill="#00E5FF" aria-hidden="true"><path d="M10,4H4c-1.1,0 -1.99,0.9 -1.99,2L2,18c0,1.1 0.9,2 2,2h16c1.1,0 2,-0.9 2,-2V8c0,-1.1 -0.9,-2 -2,-2h-8l-2,-2z"/></svg>'; }
-function itemRow(it) {
-  var on = own && own.id === it[0], pk = selecting && picked[it[0]];
-  var thumb = on ? bars() : artSvgSmall() + '<img class="tim" loading="lazy" alt="" src="' + B + 'th/' + it[0] + '?c=' + encodeURIComponent(C) + '" onerror="this.remove()">';
-  var sub = it[4] === 0 ? (it[2] ? it[2] + ' · ' : '') + fmt(it[3] * 1000) : it[4] === 1 ? (folderView[kind] ? 'Video · ' : esc(it[6] || 'video') + ' · ') + fmt(it[3] * 1000) : (folderView[kind] ? 'Photo' : (it[6] || 'photo'));
-  return '<div style="display:flex;align-items:center;gap:4px"><button class="litem' + (on ? ' on' : '') + (pk ? ' sel' : '') + '" data-id="' + it[0] + '"><div class="th">' + thumb + '</div><div class="tx"><div class="a">' + esc(it[1]) + '</div><div class="b">' + (on ? 'Your pick · on this device only' : esc(sub)) + '</div></div></button>' +
-    (selecting ? '<button class="cbx" data-id="' + it[0] + '" aria-label="Select ' + esc(it[1]) + '"><i>' + (pk ? '✓' : '') + '</i></button>'
-      : st.dl ? '<a class="dlb" aria-label="Download ' + esc(it[1]) + '" href="' + B + 'dl/' + it[0] + '?c=' + encodeURIComponent(C) + '" download><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00E5FF" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/></svg></a>' : '') + '</div>';
-}
-function drawLib(more) {
+var libFolders = store('libfolders') === '1', openFolder = [null, null, null], libKey = '';
+function folderOf(it) { return it[6] || (it[4] === 1 ? 'Videos' : it[4] === 2 ? 'Photos' : 'Other'); }
+function setModes() { var ms = document.querySelectorAll('#modes button'); for (var i = 0; i < ms.length; i++) ms[i].classList.toggle('on', (+ms[i].getAttribute('data-m') === 1) === libFolders); }
+function drawLib() {
   var box = $('#libList'), html = '';
-  if (!libLoaded) { box.innerHTML = '<div class="muted" style="padding:16px 4px;font-size:13px">Loading…</div>'; return; }
+  if (!libLoaded) { libKey = ''; box.innerHTML = '<div class="muted" style="padding:16px 4px;font-size:13px">Loading…</div>'; return; }
   if (selecting && !st.dl) { selecting = false; picked = {}; }
-  if (!more) libShown = PAGE;
-  var term = q.toLowerCase(), fv = folderView[kind];
+  $('#modes').style.display = kind === 3 ? 'none' : 'flex';
+  $('#crumbs').hidden = kind !== 3;
+  box.classList.toggle('allf', kind === 3);
+  if (kind === 3) { drawAll(box); return; }
+  var term = q.toLowerCase(), folder = libFolders ? openFolder[kind] : null;
+  // the list is only built again when something it shows has changed (it can be very long)
+  var key = [lib.items.length, kind, term, libFolders, folder, own ? own.id : '', selecting, pickedIds().join(','), !!st.dl].join('|');
+  if (key === libKey && box.firstChild) { selUi(); return; }
+  libKey = key;
   curShown = [];
-  $('#fbar').hidden = !fv;
-  if (fv) {
-    var dir = libDir[kind], parts = dir ? dir.split('/') : [];
-    var top = kind === 3 ? 'All files' : ['Songs', 'Videos', 'Photos'][kind];
-    $('#fPath').innerHTML = '<bdi>' + esc(top) + (parts.length ? ' › ' + parts.slice(0, -1).map(esc).join(' › ') + (parts.length > 1 ? ' › ' : '') + '<b>' + esc(parts[parts.length - 1]) + '</b>' : '') + '</bdi>';
-    $('#fUp').disabled = !dir;
-    var fr = folderRows(term);
-    fr.dirs.forEach(function (d) {
-      html += '<button class="litem dir" data-dir="' + esc(d[0]) + '"><div class="th">' + folderSvg() + '</div><div class="tx"><div class="a">' + esc(d[0]) + '</div><div class="b">' + d[1] + (d[1] === 1 ? ' item' : ' items') + '</div></div></button>';
+  if (libFolders && folder === null) {                // the folders of this kind, with how many each holds
+    var by = {}, names = [];
+    lib.items.forEach(function (it) { if (it[4] !== kind) return; var f = folderOf(it); if (!by[f]) { by[f] = 0; names.push(f); } by[f]++; });
+    names.sort(function (a, b) { return a.toLowerCase() < b.toLowerCase() ? -1 : a.toLowerCase() > b.toLowerCase() ? 1 : 0; });
+    names.forEach(function (f) {
+      if (term && f.toLowerCase().indexOf(term) < 0) return;
+      html += '<div style="display:flex;align-items:center;gap:4px"><button class="litem" data-folder="' + esc(f) + '"><div class="th">' + folderSvg() + '</div><div class="tx"><div class="a">' + esc(f) + '</div><div class="b">' + by[f] + (kind === 0 ? (by[f] === 1 ? ' song' : ' songs') : kind === 1 ? (by[f] === 1 ? ' video' : ' videos') : (by[f] === 1 ? ' photo' : ' photos')) + '</div></div></button></div>';
     });
-    libTotal = fr.files.length;
-    fr.files.forEach(function (it, n) { curShown.push(it); if (n < libShown) html += itemRow(it); });
-  } else {
-    var all = [];
-    lib.items.forEach(function (it) {
-      if (!inKind(it)) return;
-      if (term && (it[1] + ' ' + it[2]).toLowerCase().indexOf(term) < 0) return;
-      all.push(it);
-    });
-    libTotal = all.length;
-    all.forEach(function (it, n) { curShown.push(it); if (n < libShown) html += itemRow(it); });
+    box.innerHTML = html || '<div class="muted" style="padding:16px 4px;font-size:13px">Nothing to show</div>';
+    selUi();
+    return;
   }
-  if (libTotal > libShown) html += '<div class="more">Showing ' + libShown + ' of ' + libTotal + ' · scroll for more</div>';
+  var rows = [];
+  lib.items.forEach(function (it) {
+    if (it[4] !== kind) return;
+    if (folder !== null && folderOf(it) !== folder) return;
+    if (term && (it[1] + ' ' + it[2]).toLowerCase().indexOf(term) < 0) return;
+    curShown.push(it);
+    var on = own && own.id === it[0], pk = selecting && picked[it[0]];
+    var thumb = on ? bars() : artSvgSmall() + '<img class="tim" loading="lazy" alt="" src="' + B + 'th/' + it[0] + '?c=' + encodeURIComponent(C) + '" onerror="this.remove()">';
+    rows.push('<div style="display:flex;align-items:center;gap:4px"><button class="litem' + (on ? ' on' : '') + (pk ? ' sel' : '') + '" data-id="' + it[0] + '"><div class="th">' + thumb + '</div><div class="tx"><div class="a">' + esc(it[1]) + '</div><div class="b">' + (on ? 'Your pick · on this device only' : esc((it[2] ? it[2] + ' · ' : '') + (it[4] === 1 ? esc(it[6] || 'video') + ' · ' : it[4] === 2 ? esc(it[6] || 'photo') : '') + (it[4] === 2 ? '' : fmt(it[3] * 1000)))) + '</div></div>' + playArrow() + '</button>' +
+      (selecting ? '<button class="cbx" data-id="' + it[0] + '" aria-label="Select ' + esc(it[1]) + '"><i>' + (pk ? '✓' : '') + '</i></button>'
+        : st.dl ? '<a class="dlb" aria-label="Download ' + esc(it[1]) + '" href="' + B + 'dl/' + it[0] + '?c=' + encodeURIComponent(C) + '" download><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00E5FF" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/></svg></a>' : '') + '</div>');
+  });
+  if (folder !== null) html = '<div style="display:flex;align-items:center;gap:4px;grid-column:1/-1"><button class="litem back" data-back="1"><div class="th"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00E5FF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></div><div class="tx"><div class="a">' + esc(folder) + '</div><div class="b">' + curShown.length + ' · all folders</div></div></button></div>';
+  box.innerHTML = html + (rows.join('') || '<div class="muted" style="padding:16px 4px;font-size:13px">Nothing to show</div>');
+  selUi();
+}
+// ── All files: the host's shared songs, videos and photos in their own folders ──
+var allPath = '', playAsked = false, askFor = null;
+function pathOf(it) { return it[7] !== undefined && it[7] !== null ? String(it[7]) : folderOf(it); }
+function ci(a, b) { a = String(a).toLowerCase(); b = String(b).toLowerCase(); return a < b ? -1 : a > b ? 1 : 0; }
+/** The folders and files directly inside the open folder. */
+function allView() {
+  var pre = allPath ? allPath + '/' : '', count = {}, names = [], files = [];
+  lib.items.forEach(function (it) {
+    var p = pathOf(it);
+    if (p === allPath) { files.push(it); return; }
+    if (allPath && p.indexOf(pre) !== 0) return;
+    var n = p.slice(pre.length).split('/')[0];
+    if (!n) return;
+    if (!(n in count)) { count[n] = 0; names.push(n); }
+    count[n]++;
+  });
+  names.sort(ci);
+  files.sort(function (a, b) { return ci(a[1], b[1]); });
+  return { names: names, count: count, files: files };
+}
+function kindSvg(k) {
+  if (k === 2) return '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8A9AB2" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/></svg>';
+  if (k === 1) return '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8A9AB2" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9.5v5l4.5-2.5z" fill="#8A9AB2"/></svg>';
+  return artSvgSmall();
+}
+function playArrow() { return '<span class="pa" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="#00E5FF"><path d="M8 5v14l11-7z"/></svg></span>'; }
+function dlLink(it) { return '<a class="dlb" aria-label="Download ' + esc(it[1]) + '" href="' + B + 'dl/' + it[0] + '?c=' + encodeURIComponent(C) + '" download><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00E5FF" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/></svg></a>'; }
+function drawAll(box) {
+  var term = q.toLowerCase(), v = allView();
+  var key = ['all', lib.items.length, allPath, term, own ? own.id : '', selecting, pickedIds().join(','), !!st.dl].join('|');
+  if (key === libKey && box.firstChild) { selUi(); return; }
+  libKey = key;
+  // where you are: All files › DCIM › Camera
+  var parts = allPath ? allPath.split('/') : [], crumbs = '<span data-path="">All files</span>', acc = '';
+  parts.forEach(function (pt) { acc = acc ? acc + '/' + pt : pt; crumbs += ' › <span data-path="' + esc(acc) + '">' + esc(pt) + '</span>'; });
+  $('#crumbs').innerHTML = crumbs;
+  var html = '';
+  if (allPath) {
+    var up = parts.slice(0, -1).join('/');
+    html += '<div style="display:flex;align-items:center;gap:4px;grid-column:1/-1"><button class="litem back" data-path="' + esc(up) + '"><div class="th"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00E5FF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></div><div class="tx"><div class="a">' + esc(parts[parts.length - 1]) + '</div><div class="b">Up to ' + esc(up ? up.split('/').pop() : 'All files') + '</div></div></button></div>';
+  }
+  v.names.forEach(function (n) {
+    if (term && n.toLowerCase().indexOf(term) < 0) return;
+    var full = allPath ? allPath + '/' + n : n;
+    html += '<div style="display:flex;align-items:center;gap:4px"><button class="litem" data-path="' + esc(full) + '"><div class="th">' + folderSvg() + '</div><div class="tx"><div class="a">' + esc(n) + '</div><div class="b">' + v.count[n] + (v.count[n] === 1 ? ' file' : ' files') + '</div></div></button></div>';
+  });
+  curShown = [];
+  v.files.forEach(function (it) {
+    if (term && (it[1] + ' ' + it[2]).toLowerCase().indexOf(term) < 0) return;
+    curShown.push(it);
+    var on = own && own.id === it[0], pk = selecting && picked[it[0]];
+    var thumb = on ? bars() : kindSvg(it[4]) + '<img class="tim" loading="lazy" alt="" src="' + B + 'th/' + it[0] + '?c=' + encodeURIComponent(C) + '" onerror="this.remove()">' + (it[4] !== 2 && it[3] ? '<span class="dur">' + fmt(it[3] * 1000) + '</span>' : '');
+    var sub = on ? 'Playing here' : (it[4] === 2 ? 'Photo' : it[4] === 1 ? 'Video · ' + fmt(it[3] * 1000) : (it[2] ? it[2] + ' · ' : '') + fmt(it[3] * 1000));
+    html += '<div style="display:flex;align-items:center;gap:4px"><button class="litem' + (on ? ' on' : '') + (pk ? ' sel' : '') + '" data-id="' + it[0] + '" data-all="1"><div class="th">' + thumb + '</div><div class="tx"><div class="a">' + esc(it[1]) + '</div><div class="b">' + esc(sub) + '</div></div>' + playArrow() + '</button>' +
+      (selecting ? '<button class="cbx" data-id="' + it[0] + '" aria-label="Select ' + esc(it[1]) + '"><i>' + (pk ? '✓' : '') + '</i></button>' : st.dl ? dlLink(it) : '') + '</div>';
+  });
   box.innerHTML = html || '<div class="muted" style="padding:16px 4px;font-size:13px">Nothing to show</div>';
   selUi();
 }
+function goPath(p) { allPath = p; libKey = ''; drawLib(); var lb = $('#lib'); if (lb.scrollTop) lb.scrollTop = 0; window.scrollTo(0, 0); }
+$('#crumbs').onclick = function (e) { var t = e.target.closest ? e.target.closest('[data-path]') : null; if (t) goPath(t.getAttribute('data-path')); };
+/** A file picked in All files: photos and videos open like the gallery; songs ask once, then the folder plays on. */
+function openAll(it) {
+  var here = allView().files;
+  if (it[4] === 0) {
+    var songs = here.filter(function (x) { return x[4] !== 2; });
+    if (!playAsked) { askFor = { it: it, list: songs }; $('#askT').textContent = it[1]; $('#ask').classList.add('on'); try { $('#askGo').focus(); } catch (x) {} return; }
+    ownList = songs; playOwn(it); return;
+  }
+  ownList = here.filter(function (x) { return x[4] !== 0; });
+  playOwn(it);
+}
+$('#askGo').onclick = function () { var a = askFor; askFor = null; $('#ask').classList.remove('on'); if (!a) return; playAsked = true; ownList = a.list; playOwn(a.it); };
+$('#askNo').onclick = function () { askFor = null; $('#ask').classList.remove('on'); };
+function folderSvg() { return '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00E5FF" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2h8.5A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>'; }
 function artSvgSmall() { return '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8A9AB2" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg>'; }
 function bars() { return '<svg width="20" height="20" viewBox="0 0 24 24" fill="#00E5FF" aria-hidden="true"><rect x="4" y="10" width="3.5" height="10" rx="1"/><rect x="10.2" y="4" width="3.5" height="16" rx="1"/><rect x="16.5" y="8" width="3.5" height="12" rx="1"/></svg>'; }
 $('#libList').onclick = function (e) {
   var b = e.target.closest ? e.target.closest('button') : null;
   if (!b) return;
-  if (b.getAttribute('data-dir') != null && selecting) { libDir[kind] = (libDir[kind] ? libDir[kind] + '/' : '') + b.getAttribute('data-dir'); window.scrollTo(0, 0); drawLib(); return; }
+  if (b.hasAttribute('data-path')) { goPath(b.getAttribute('data-path')); return; }
+  if (b.hasAttribute('data-folder')) { libScroll[kind] = window.pageYOffset; openFolder[kind] = b.getAttribute('data-folder'); drawLib(); window.scrollTo(0, 0); return; }
+  if (b.hasAttribute('data-back')) { openFolder[kind] = null; drawLib(); libRestore(); return; }
   if (selecting) { var sid = b.getAttribute('data-id'); if (picked[sid]) delete picked[sid]; else picked[sid] = 1; var sy = window.pageYOffset; drawLib(); window.scrollTo(0, sy); return; }
-  var dn = b.getAttribute('data-dir');
-  if (dn != null) { libDir[kind] = (libDir[kind] ? libDir[kind] + '/' : '') + dn; window.scrollTo(0, 0); drawLib(); return; }
   var it = byId(b.getAttribute('data-id'));
-  if (!it) return;
-  if (folderView[kind]) {
-    // in a folder: photos and videos open together (swipe or step through both), songs carry on through the folder's songs
-    var song = it[4] === 0;
-    var list = curShown.filter(function (x) { return song ? x[4] === 0 : x[4] !== 0; });
-    if (song && kind === 3) { askSong(it, list); return; }
-    ownList = list; playOwn(it); return;
-  }
-  ownList = curShown.slice(); playOwn(it);
+  if (it && b.hasAttribute('data-all')) { openAll(it); return; }
+  if (it) { ownList = curShown.slice(); playOwn(it); }
 };
-var asking = null;
-function askSong(it, list) {
-  asking = { it: it, list: list };
-  $('#askN').textContent = it[1];
-  $('#askS').textContent = (it[2] ? it[2] + ' · ' : '') + fmt(it[3] * 1000);
-  $('#ask').classList.add('on');
-  $('#askYes').focus();
-}
-function askClose() { asking = null; $('#ask').classList.remove('on'); }
-$('#askNo').onclick = askClose;
-$('#ask').onclick = function (e) { if (e.target === this) askClose(); };
-$('#askYes').onclick = function () { var a = asking; askClose(); if (a) { ownList = a.list; playOwn(a.it); } };
-document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && asking) askClose(); });
-$('#fUp').onclick = function () { var d = libDir[kind]; var k = d.lastIndexOf('/'); libDir[kind] = k < 0 ? '' : d.substring(0, k); drawLib(); };
-var fvb = document.querySelectorAll('#lview button');
-for (var fi = 0; fi < fvb.length; fi++) fvb[fi].onclick = function () { folderView[kind] = this.getAttribute('data-f') === '1'; store('fv' + kind, folderView[kind] ? '1' : '0'); window.scrollTo(0, 0); renderLibState(); };
 var kb = document.querySelectorAll('#kinds button');
 for (var ki = 0; ki < kb.length; ki++) kb[ki].onclick = function () { libRestoring = true; kind = +this.getAttribute('data-k'); setAuto(); renderLibState(); libRestore(); };
 $('#search').oninput = function () { q = this.value; drawLib(); };
+var mbs = document.querySelectorAll('#modes button');
+for (var mi = 0; mi < mbs.length; mi++) mbs[mi].onclick = function () {
+  var f = +this.getAttribute('data-m') === 1;
+  if (f === libFolders) { if (f && openFolder[kind] !== null) { openFolder[kind] = null; drawLib(); window.scrollTo(0, 0); } return; }
+  libFolders = f; store('libfolders', f ? '1' : '0'); setModes(); drawLib(); window.scrollTo(0, 0);
+};
+setModes();
 function ownIdx() { if (!own) return -1; for (var i = 0; i < ownList.length; i++) if (ownList[i][0] === own.id) return i; return -1; }
 function ownStep(d) {
   var i = ownIdx(), n = i + d;

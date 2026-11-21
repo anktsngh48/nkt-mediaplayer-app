@@ -48,6 +48,7 @@ public class ListenService extends Service {
     public static final String ACTION_LIVE = "com.nkt.mediaplayer.LIVE_LISTEN";
     public static final String ACTION_STEP = "com.nkt.mediaplayer.STEP_LISTEN";
     public static final String ACTION_SHIFT = "com.nkt.mediaplayer.SHIFT_LISTEN";
+    public static final String ACTION_TOGGLE = "com.nkt.mediaplayer.TOGGLE_LISTEN";
     public static final String EXTRA_BASE = "base";
     public static final String EXTRA_COOKIE = "cookie";
     private static final String CHANNEL = "nkt_listen";
@@ -384,6 +385,7 @@ public class ListenService extends Service {
         if (p == null || !running) return;
         main.removeCallbacks(slide);
         slideArmed = false;
+        held = false;
         own = true;
         timeshift = false;
         ownId = pid;
@@ -444,6 +446,10 @@ public class ListenService extends Service {
             if (running) shift(intent.getIntExtra("op", 0), intent.getLongExtra("ms", 0));
             return START_NOT_STICKY;
         }
+        if (intent != null && ACTION_TOGGLE.equals(intent.getAction())) {
+            if (running) toggle();
+            return START_NOT_STICKY;
+        }
         if (intent != null && ACTION_LIVE.equals(intent.getAction())) {
             if (running) leaveOwn();
             return START_NOT_STICKY;
@@ -461,23 +467,64 @@ public class ListenService extends Service {
         return START_NOT_STICKY;
     }
 
-    /** This phone's own music was playing when listening began: it carries on when listening ends. */
-    private static boolean resumeMain = false;
-
     @Override
     public void onDestroy() {
         teardown();
-        if (resumeMain) {
-            resumeMain = false;
-            PlaybackService ps = PlaybackService.instance;
-            if (ps != null) new Handler(Looper.getMainLooper()).postDelayed(ps::resumeNow, 400);
+        held = false;
+        if (resumeMusic && !focusLost) {                        // listening stopped: back to the playlist that was playing
+            resumeMusic = false;
+            try {
+                PlaybackService ps = PlaybackService.instance;
+                ExoPlayer mp = ps == null ? null : ps.streamPlayer();
+                if (mp != null && mp.getMediaItemCount() > 0) Media.play(mp);
+            } catch (Throwable ignored) { }
         }
         super.onDestroy();
+    }
+
+    /** Paused on this phone only (the host's song or video carries on; PLAY catches up with it again). */
+    public static volatile boolean held;
+    /** The app's own music was playing when listening began: it carries on when listening stops. */
+    private boolean resumeMusic = false, focusLost = false;
+
+    /** Play / pause from the mini player: your own pick, the live video (going back in it), or the live song (paused here). */
+    public static void togglePause(android.content.Context c) {
+        c.startService(new Intent(c, ListenService.class).setAction(ACTION_TOGGLE));
+    }
+
+    /** True while sound or picture is moving on this phone. */
+    public static boolean playingHere() {
+        ExoPlayer p = player;
+        if (!running || p == null || held) return false;
+        if (own && ownKind == 2) return false;
+        return p.getPlayWhenReady() && p.getPlaybackState() != Player.STATE_ENDED && p.getPlaybackState() != Player.STATE_IDLE;
+    }
+
+    private void toggle() {
+        ExoPlayer p = player;
+        if (p == null) return;
+        if (own) {
+            if (ownKind == 2) return;
+            if (p.getPlaybackState() == Player.STATE_ENDED) { p.seekTo(0); p.setPlayWhenReady(true); }
+            else p.setPlayWhenReady(!p.getPlayWhenReady());
+            return;
+        }
+        if (stHas && stOk && stVideo && !loadedId.isEmpty()) { held = false; shift(2, 0); return; }
+        held = !held;
+        sync();
+        notifyNow();
     }
 
     private void begin() {
         final int my = ++session;
         running = true;
+        held = false;
+        focusLost = false;
+        try {                                                   // the app's own music steps aside while listening
+            PlaybackService ps = PlaybackService.instance;
+            ExoPlayer mp = ps == null ? null : ps.streamPlayer();
+            if (mp != null && mp.getPlayWhenReady()) { resumeMusic = true; mp.pause(); }
+        } catch (Throwable ignored) { }
         startedAt = System.nanoTime();
         endNote = "";
         status = getString(R.string.listen_connecting);
@@ -495,7 +542,7 @@ public class ListenService extends Service {
         if (!cookie.isEmpty()) hf.setDefaultRequestProperties(Collections.singletonMap("Cookie", cookie));
         ExoPlayer p = new ExoPlayer.Builder(this)
                 .setMediaSourceFactory(new DefaultMediaSourceFactory(hf))
-                .setAudioAttributes(new AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), false)   // calls don't pause it (KeepPlaying)
+                .setAudioAttributes(new AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), false)
                 .setHandleAudioBecomingNoisy(true)
                 .setWakeMode(C.WAKE_MODE_NETWORK)
                 .build();
@@ -509,11 +556,9 @@ public class ListenService extends Service {
                 loadedId = "";      // loaded again on the next tick
             }
         });
-        // another app took the sound for good (the user started their own music): step aside. Calls don't count.
-        KeepPlaying.attach(this, p, () -> { if (running && player == p) finish(getString(R.string.listen_focus)); });
+        // the sound focus is kept by the app (playing carries on during a call); another app's music for good: step aside
+        CallFocus.attach(this, p, true, () -> { if (running && player == p) { focusLost = true; finish(getString(R.string.listen_focus)); } });
         player = p;
-        // what this phone was playing before listening comes back when listening ends
-        resumeMain = PlaybackService.instance != null && PlaybackService.instance.playingNow();
 
         new Thread(() -> netLoop(my), "nkt-listen-net").start();
         new Thread(() -> helloLoop(my), "nkt-listen-hello").start();
@@ -777,6 +822,11 @@ public class ListenService extends Service {
             int os = p.getPlaybackState();
             if (os == Player.STATE_ENDED && autoNext(this) && ownIdx + 1 < ownQueue.size()) { stepOwn(1); return; }
             status = getString(os == Player.STATE_BUFFERING ? R.string.listen_buffering : os == Player.STATE_ENDED ? R.string.listen_own_done : R.string.listen_own_status);
+            return;
+        }
+        if (held && stHas && !(stOk && stVideo)) {                 // paused here: the host carries on, PLAY catches up
+            if (p.getPlayWhenReady()) p.setPlayWhenReady(false);
+            status = getString(R.string.listen_paused_here);
             return;
         }
         if (!stHas) { timeshift = false; status = getString(R.string.listen_waiting); if (p.getPlayWhenReady()) p.setPlayWhenReady(false); return; }
