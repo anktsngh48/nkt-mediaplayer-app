@@ -100,10 +100,12 @@ final class CallFocus implements Player.Listener, AudioManager.OnAudioFocusChang
         pausedByUs = comeBack;
     }
 
-    private final Runnable checkTransient = () -> {
-        // a short interruption that turned out not to be a call: pause until it is over
+    /** A short interruption that turned out not to be a call: pause until it is over. */
+    private void afterTransient() {
         if (transientLoss && !inCall() && player.getPlayWhenReady()) pauseHere(true);
-    };
+    }
+
+    private final Runnable checkTransient = this::afterTransient;
 
     @Override
     public void onAudioFocusChange(int change) {
