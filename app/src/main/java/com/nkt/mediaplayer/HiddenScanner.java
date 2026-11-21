@@ -51,6 +51,7 @@ public final class HiddenScanner {
         public final List<MediaInfo> audio = new ArrayList<>();
         public final List<MediaInfo> video = new ArrayList<>();
         public final List<MediaInfo> images = new ArrayList<>();
+        public final List<MediaInfo> pdfs = new ArrayList<>();       // so the PDFs page (and its search) finds hidden ones too
     }
 
     /** True when the app may read every folder (needed for hidden files and NKT Share). */
@@ -98,7 +99,7 @@ public final class HiddenScanner {
             k.size = k.file.length();
             k.date = k.file.lastModified();
             Meta m = cache.get(k.file.getAbsolutePath());
-            if (m != null && m.size == k.size && m.date == k.date) k.meta = m; else if (k.kind != IMG) todo.add(k);
+            if (m != null && m.size == k.size && m.date == k.date) k.meta = m; else if (k.kind != IMG && k.kind != PDF) todo.add(k);
         }
 
         if (!todo.isEmpty() && early != null) {
@@ -129,13 +130,14 @@ public final class HiddenScanner {
         Collections.sort(r.audio, (a, b) -> a.title.compareToIgnoreCase(b.title));
         Collections.sort(r.video, (a, b) -> Long.compare(b.dateMs, a.dateMs));
         Collections.sort(r.images, (a, b) -> Long.compare(b.dateMs, a.dateMs));
+        Collections.sort(r.pdfs, (a, b) -> Long.compare(b.dateMs, a.dateMs));
     }
 
     public static boolean isThumbnailPath(String path) {
         return path != null && path.toLowerCase(Locale.ROOT).contains("/.thumbnails");
     }
 
-    private static final int AUD = 0, VID = 1, IMG = 2;
+    private static final int AUD = 0, VID = 1, IMG = 2, PDF = 3;
 
     /** A media file found by the walk. */
     private static final class Cand {
@@ -209,7 +211,7 @@ public final class HiddenScanner {
             int dot = n.lastIndexOf('.');
             if (dot <= 0) return;                                        // (also leaves out files such as ".nomedia")
             String ext = n.substring(dot + 1).toLowerCase(Locale.ROOT);
-            int kind = AUDIO.contains(ext) ? AUD : VIDEO.contains(ext) ? VID : IMAGE.contains(ext) ? IMG : -1;
+            int kind = AUDIO.contains(ext) ? AUD : VIDEO.contains(ext) ? VID : IMAGE.contains(ext) ? IMG : "pdf".equals(ext) ? PDF : -1;
             if (kind < 0) return;
             Cand k = new Cand();
             k.file = f; k.folder = folder; k.kind = kind;
@@ -257,6 +259,14 @@ public final class HiddenScanner {
             }
         }
         if (k.kind == AUD && dur > 0 && dur < 10000) return;      // skip tiny clips, like the main library does
+        if (k.kind == PDF) {
+            MediaInfo p = new MediaInfo(-1, Uri.fromFile(f), base, "", "", -1, k.folder, 0, false);
+            p.other = true; p.hidden = true;
+            p.dateMs = k.date; p.size = k.size;
+            p.path = f.getAbsolutePath(); p.fileName = n;
+            r.pdfs.add(p);
+            return;
+        }
         MediaInfo mi = new MediaInfo(-1, Uri.fromFile(f), base, artist, album, -1, k.folder, dur, k.kind == VID);
         mi.hidden = true;
         mi.image = k.kind == IMG;

@@ -170,7 +170,7 @@ body.clean #live #pArt>#bigArt{position:fixed;inset:0;margin:auto!important;widt
 body.clean #live #pViz>#vizBox{position:fixed;inset:0;height:100vh!important;margin:0!important;border-radius:0;border:0;z-index:30}
 body.clean #live #pLyr>#lyr{position:fixed;inset:0;margin:0!important;min-height:100vh;border-radius:0;border:0;z-index:30;background:#05080F}
 body.clean::before{content:"";position:fixed;inset:0;background:#000;z-index:29}
-#cleanX{position:fixed;top:16px;right:16px;z-index:31;display:none}
+#cleanX{position:fixed;top:16px;right:16px;z-index:31;display:none;height:36px;min-width:0;padding:0 16px;border-radius:18px;align-items:center;justify-content:center;line-height:1;font-size:11px;letter-spacing:.12em;border-width:1px;box-sizing:border-box}
 body.clean.peek #cleanX{display:inline-flex}
 #bigArt,#vizBox,#lyr{cursor:pointer}
 /* the photo viewer with nothing on it */
@@ -271,6 +271,33 @@ body.clean.peek #cleanX{display:inline-flex}
   #own{max-width:900px}
   #selBar{width:min(560px,92vw)}
   .pcb{min-width:64px}
+  /* small text on a TV or a laptop: the sizes of buttons and the player stay as they are */
+  body{font-size:13px}
+  .logo{font-size:16px}
+  .orb{font-size:11px!important}
+  .chip{font-size:10px}
+  .tab,.btn{font-size:11px}
+  .seg button,.pill{font-size:10.5px}
+  .pcb{font-size:11px}
+  .muted{font-size:12px}
+  #search{font-size:13px}
+  .litem .a{font-size:13px}
+  .litem .b{font-size:11px}
+  #libList.allf .litem .a{font-size:12px}#libList.allf .litem .b{font-size:10.5px}
+  #crumbs{font-size:11px}
+  #pArt>#aTitle{font-size:18px!important}
+  #pArt>#aArtist{font-size:13px!important}
+  #mTitle,#oTitle{font-size:13px!important}
+  #mArtist,#mTime{font-size:11px!important}
+  .lc{font-size:28px}.l1{font-size:18px}.l0{font-size:16px}
+  #tv .logo{font-size:max(14px,1.4vw)}
+  #tv .chip{font-size:max(10px,.95vw)}
+  #tv .ti{font-size:max(16px,1.6vw)}
+  #tv .ar{font-size:max(12px,1.05vw)}
+  #tv .tm{font-size:max(11px,1.05vw)}
+  #tv .stl,#tv .nud{font-size:max(12px,1.1vw)}
+  #tv .pcb{font-size:max(11px,1vw)}
+  #ph .phCap b{font-size:15px}
 }
 @media (max-width:700px){
   #tv .r1{flex-direction:column;align-items:stretch;gap:8px}
@@ -1557,15 +1584,17 @@ function drawLib() {
       if (term && f.toLowerCase().indexOf(term) < 0) return;
       html += '<div style="display:flex;align-items:center;gap:4px"><button class="litem" data-folder="' + esc(f) + '"><div class="th">' + folderSvg() + '</div><div class="tx"><div class="a">' + esc(f) + '</div><div class="b">' + by[f] + (kind === 0 ? (by[f] === 1 ? ' song' : ' songs') : kind === 1 ? (by[f] === 1 ? ' video' : ' videos') : (by[f] === 1 ? ' photo' : ' photos')) + '</div></div></button></div>';
     });
-    box.innerHTML = html || '<div class="muted" style="padding:16px 4px;font-size:13px">Nothing to show</div>';
-    selUi();
-    return;
+    if (!term) {
+      box.innerHTML = html || '<div class="muted" style="padding:16px 4px;font-size:13px">Nothing to show</div>';
+      selUi();
+      return;
+    }
   }
-  var rows = [];
+  var rows = [], everyFolder = libFolders && folder === null;     // searching the folders: the files of every folder as well
   lib.items.forEach(function (it) {
     if (it[4] !== kind) return;
-    if (folder !== null && folderOf(it) !== folder) return;
-    if (term && (it[1] + ' ' + it[2]).toLowerCase().indexOf(term) < 0) return;
+    if (!everyFolder && folder !== null && folderOf(it) !== folder) return;
+    if (term && !hitOf(it, term)) return;
     curShown.push(it);
     var on = own && own.id === it[0], pk = selecting && picked[it[0]];
     var thumb = on ? bars() : artSvgSmall() + '<img class="tim" loading="lazy" alt="" src="' + B + 'th/' + it[0] + '?c=' + encodeURIComponent(C) + '" onerror="this.remove()">';
@@ -1574,9 +1603,11 @@ function drawLib() {
         : st.dl ? '<a class="dlb" aria-label="Download ' + esc(it[1]) + '" href="' + B + 'dl/' + it[0] + '?c=' + encodeURIComponent(C) + '" download><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00E5FF" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/></svg></a>' : '') + '</div>');
   });
   if (folder !== null) html = '<div style="display:flex;align-items:center;gap:4px;grid-column:1/-1"><button class="litem back" data-back="1"><div class="th"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00E5FF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></div><div class="tx"><div class="a">' + esc(folder) + '</div><div class="b">' + curShown.length + ' · all folders</div></div></button></div>';
-  box.innerHTML = html + (rows.join('') || '<div class="muted" style="padding:16px 4px;font-size:13px">Nothing to show</div>');
+  box.innerHTML = (html + rows.join('')) || '<div class="muted" style="padding:16px 4px;font-size:13px">Nothing to show</div>';
   selUi();
 }
+/** A search finds a file by its name, its artist, or any folder it sits in. */
+function hitOf(it, term) { return (it[1] + ' ' + it[2] + ' ' + pathOf(it)).toLowerCase().indexOf(term) >= 0; }
 // ── All files: the host's shared songs, videos and photos in their own folders ──
 var allPath = '', playAsked = false, askFor = null;
 function pathOf(it) { return it[7] !== undefined && it[7] !== null ? String(it[7]) : folderOf(it); }
@@ -1618,29 +1649,53 @@ function drawAll(box) {
     var up = parts.slice(0, -1).join('/');
     html += '<div style="display:flex;align-items:center;gap:4px;grid-column:1/-1"><button class="litem back" data-path="' + esc(up) + '"><div class="th"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00E5FF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></div><div class="tx"><div class="a">' + esc(parts[parts.length - 1]) + '</div><div class="b">Up to ' + esc(up ? up.split('/').pop() : 'All files') + '</div></div></button></div>';
   }
+  if (term) v = deepView(term);
   v.names.forEach(function (n) {
-    if (term && n.toLowerCase().indexOf(term) < 0) return;
-    var full = allPath ? allPath + '/' + n : n;
-    html += '<div style="display:flex;align-items:center;gap:4px"><button class="litem" data-path="' + esc(full) + '"><div class="th">' + folderSvg() + '</div><div class="tx"><div class="a">' + esc(n) + '</div><div class="b">' + v.count[n] + (v.count[n] === 1 ? ' file' : ' files') + '</div></div></button></div>';
+    if (!v.deep && term && n.toLowerCase().indexOf(term) < 0) return;
+    var full = v.deep ? n : allPath ? allPath + '/' + n : n, label = v.deep ? n.split('/').pop() : n;
+    var parent = v.deep ? n.split('/').slice(0, -1).join(' / ') : '';
+    html += '<div style="display:flex;align-items:center;gap:4px"><button class="litem" data-path="' + esc(full) + '"><div class="th">' + folderSvg() + '</div><div class="tx"><div class="a">' + esc(label) + '</div><div class="b">' + v.count[n] + (v.count[n] === 1 ? ' file' : ' files') + (parent ? ' · ' + esc(parent) : '') + '</div></div></button></div>';
   });
   curShown = [];
   v.files.forEach(function (it) {
-    if (term && (it[1] + ' ' + it[2]).toLowerCase().indexOf(term) < 0) return;
     curShown.push(it);
     var on = own && own.id === it[0], pk = selecting && picked[it[0]];
     var thumb = on ? bars() : kindSvg(it[4]) + '<img class="tim" loading="lazy" alt="" src="' + B + 'th/' + it[0] + '?c=' + encodeURIComponent(C) + '" onerror="this.remove()">' + (it[4] !== 2 && it[3] ? '<span class="dur">' + fmt(it[3] * 1000) + '</span>' : '');
-    var sub = on ? 'Playing here' : (it[4] === 2 ? 'Photo' : it[4] === 1 ? 'Video · ' + fmt(it[3] * 1000) : (it[2] ? it[2] + ' · ' : '') + fmt(it[3] * 1000));
+    var sub = on ? 'Playing here' : v.deep ? (pathOf(it) ? pathOf(it).split('/').join(' / ') : 'All files') + (it[4] !== 2 && it[3] ? ' · ' + fmt(it[3] * 1000) : '')
+      : (it[4] === 2 ? 'Photo' : it[4] === 1 ? 'Video · ' + fmt(it[3] * 1000) : (it[2] ? it[2] + ' · ' : '') + fmt(it[3] * 1000));
     html += '<div style="display:flex;align-items:center;gap:4px"><button class="litem' + (on ? ' on' : '') + (pk ? ' sel' : '') + '" data-id="' + it[0] + '" data-all="1"><div class="th">' + thumb + '</div><div class="tx"><div class="a">' + esc(it[1]) + '</div><div class="b">' + esc(sub) + '</div></div>' + playArrow() + '</button>' +
       (selecting ? '<button class="cbx" data-id="' + it[0] + '" aria-label="Select ' + esc(it[1]) + '"><i>' + (pk ? '✓' : '') + '</i></button>' : st.dl ? dlLink(it) : '') + '</div>';
   });
   box.innerHTML = html || '<div class="muted" style="padding:16px 4px;font-size:13px">Nothing to show</div>';
   selUi();
 }
-function goPath(p) { allPath = p; libKey = ''; drawLib(); var lb = $('#lib'); if (lb.scrollTop) lb.scrollTop = 0; window.scrollTo(0, 0); }
+/** Searching All files: every folder and file below the open folder whose name matches; each knows where it is. */
+function deepView(term) {
+  var pre = allPath ? allPath + '/' : '', count = {}, all = [], names = [], files = [];
+  lib.items.forEach(function (it) {
+    var p = pathOf(it);
+    if (allPath && p !== allPath && p.indexOf(pre) !== 0) return;
+    var rel = p === allPath ? '' : p.slice(pre.length);
+    if (rel) {
+      var segs = rel.split('/'), acc = allPath;
+      for (var i = 0; i < segs.length; i++) {
+        acc = acc ? acc + '/' + segs[i] : segs[i];
+        if (!(acc in count)) { count[acc] = 0; all.push(acc); }
+        count[acc]++;
+      }
+    }
+    if ((it[1] + ' ' + it[2] + ' ' + rel).toLowerCase().indexOf(term) >= 0) files.push(it);
+  });
+  all.forEach(function (f) { if (f.split('/').pop().toLowerCase().indexOf(term) >= 0) names.push(f); });
+  names.sort(ci);
+  files.sort(function (a, b) { return ci(a[1], b[1]); });
+  return { names: names, count: count, files: files, deep: true };
+}
+function goPath(p) { if (q) { q = ''; $('#search').value = ''; } allPath = p; libKey = ''; drawLib(); var lb = $('#lib'); if (lb.scrollTop) lb.scrollTop = 0; window.scrollTo(0, 0); }
 $('#crumbs').onclick = function (e) { var t = e.target.closest ? e.target.closest('[data-path]') : null; if (t) goPath(t.getAttribute('data-path')); };
 /** A file picked in All files: photos and videos open like the gallery; songs ask once, then the folder plays on. */
 function openAll(it) {
-  var here = allView().files;
+  var where = pathOf(it), here = lib.items.filter(function (x) { return pathOf(x) === where; }).sort(function (a, b) { return ci(a[1], b[1]); });
   if (it[4] === 0) {
     var songs = here.filter(function (x) { return x[4] !== 2; });
     if (!playAsked) { askFor = { it: it, list: songs }; $('#askT').textContent = it[1]; $('#ask').classList.add('on'); try { $('#askGo').focus(); } catch (x) {} return; }

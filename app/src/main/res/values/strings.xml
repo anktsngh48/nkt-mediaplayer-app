@@ -1122,6 +1122,12 @@
     <string name="clear_browser_done">Browser data cleared</string>
     <string name="mini_stream_from">Stream from %1$s</string>
     <string name="mini_stream_own">Stream · your pick, on this phone</string>
+    <string name="mini_streaming">Streaming</string>
+    <string name="mini_streaming_with">Streaming · %1$s</string>
+    <plurals name="mini_streaming_n">
+        <item quantity="one">Streaming · %d listening</item>
+        <item quantity="other">Streaming · %d listening</item>
+    </plurals>
     <string name="listen_paused_here">PAUSED ON THIS PHONE · TAP TO PLAY</string>
     <string name="wallpaper_adjust_caps">SET AS WALLPAPER</string>
     <string name="wallpaper_adjust_hint">Pinch to zoom, drag to place. What you see is the wallpaper.</string>

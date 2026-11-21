@@ -229,7 +229,7 @@ public class ListenLibraryActivity extends Activity {
                         JSONArray x = a.getJSONArray(i);
                         String folder = x.optString(6, "");
                         got.add(new String[]{x.getString(0), x.getString(1), x.optString(2), String.valueOf(x.optLong(3)), String.valueOf(x.optInt(4)),
-                                String.valueOf(x.optLong(5)), folder.isEmpty() ? "Other" : folder});
+                                String.valueOf(x.optLong(5)), folder.isEmpty() ? "Other" : folder, x.optString(7, folder)});
                     }
                     ok = true;
                 }
@@ -266,12 +266,19 @@ public class ListenLibraryActivity extends Activity {
                 if (!term.isEmpty() && !e.getKey().toLowerCase().contains(term)) continue;
                 rows.add(new Object[]{"folder", e.getKey(), e.getValue()});
             }
+            if (!term.isEmpty()) {                           // searching: the files themselves too, from every folder
+                for (String[] it : items) {
+                    if (!k.equals(it[4]) || !hit(it, term)) continue;
+                    shown.add(new String[]{it[0], it[1], it[4]});
+                    rows.add(new Object[]{"item", it, shown.size() - 1});
+                }
+            }
         } else {
             if (folders) rows.add(new Object[]{"back", openFolder});
             for (String[] it : items) {
                 if (!k.equals(it[4])) continue;
                 if (folders && !openFolder.equalsIgnoreCase(it[6])) continue;
-                if (!term.isEmpty() && !(it[1] + " " + it[2]).toLowerCase().contains(term)) continue;
+                if (!term.isEmpty() && !hit(it, term)) continue;
                 shown.add(new String[]{it[0], it[1], it[4]});
                 rows.add(new Object[]{"item", it, shown.size() - 1});
             }
@@ -280,6 +287,12 @@ public class ListenLibraryActivity extends Activity {
         for (Object[] r : rows) if (!"back".equals(r[0])) { any = true; break; }
         if (!any && message.getVisibility() != View.VISIBLE) rows.add(new Object[]{"none"});
         adapter.notifyDataSetChanged();
+    }
+
+    /** Title, artist, or any folder it sits in (all the way up), so a search finds everything inside a folder. */
+    private static boolean hit(String[] it, String term) {
+        String where = it.length > 7 && it[7] != null ? it[7] : it.length > 6 ? it[6] : "";
+        return (it[1] + " " + it[2] + " " + where).toLowerCase().contains(term);
     }
 
     private final class Adapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {

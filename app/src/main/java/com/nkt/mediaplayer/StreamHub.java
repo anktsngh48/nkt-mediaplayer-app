@@ -217,7 +217,12 @@ public final class StreamHub {
         if ((p != videoPlayer && p != viewerPlayer) || mi.video || mi.uri == null) return mi;
         String key = mi.key();
         String t = it.mediaMetadata.title == null ? names.get(key) : it.mediaMetadata.title.toString();
-        if (t == null) {
+        if (t == null && "content".equals(mi.uri.getScheme()) && Looper.myLooper() == Looper.getMainLooper()) {
+            lookUpName(key, mi.uri);                                // asking for the name can be slow: never on the screen's thread
+            t = mi.fileName != null && !mi.fileName.isEmpty() ? mi.fileName : (mi.uri.getLastPathSegment() == null ? "Video" : mi.uri.getLastPathSegment());
+            int dot = t.lastIndexOf('.');
+            if (dot > 0) t = t.substring(0, dot);
+        } else if (t == null) {
             t = mi.uri.getLastPathSegment() == null ? "Video" : mi.uri.getLastPathSegment();
             try {
                 if ("content".equals(mi.uri.getScheme())) {
@@ -233,6 +238,35 @@ public final class StreamHub {
         MediaInfo v = new MediaInfo(mi.id, mi.uri, t, mi.artist, mi.album, -1, "", Math.max(0, dur), true);
         v.path = mi.path; v.fileName = mi.fileName;
         return v;
+    }
+
+    private static final java.util.Set<String> naming = Collections.synchronizedSet(new java.util.HashSet<>());
+    private static final java.util.concurrent.ExecutorService namer = java.util.concurrent.Executors.newSingleThreadExecutor();
+    private static boolean nameRebuildPosted = false;
+
+    /** Finds a video's file name in the background; the queue is rebuilt with it once it is known. */
+    private static void lookUpName(String key, android.net.Uri uri) {
+        if (app == null || !naming.add(key)) return;
+        namer.execute(() -> {
+            String t = null;
+            try (android.database.Cursor c = app.getContentResolver().query(uri, new String[]{android.provider.OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+                if (c != null && c.moveToFirst()) t = c.getString(0);
+            } catch (Throwable ignored) { }
+            if (t == null) t = uri.getLastPathSegment() == null ? "Video" : uri.getLastPathSegment();
+            int dot = t.lastIndexOf('.');
+            if (dot > 0) t = t.substring(0, dot);
+            final String name = t;
+            main.post(() -> {
+                names.put(key, name);
+                naming.remove(key);
+                if (nameRebuildPosted) return;                  // many names at once: the queue is rebuilt once, a moment later
+                nameRebuildPosted = true;
+                main.postDelayed(() -> {
+                    nameRebuildPosted = false;
+                    if (running && !draining) { queueDirty = true; capture(); }
+                }, 300);
+            });
+        });
     }
 
     private static void attachAll() {
@@ -520,8 +554,12 @@ public final class StreamHub {
 
     // ── Library for listeners ──
 
+    /** Kept apart from everything else, so building the list (it reads the disk) never holds up the screen. */
+    private static final Object LIB_LOCK = new Object();
+
     /** Runs on a server thread. */
-    static synchronized String library() {
+    static String library() {
+      synchronized (LIB_LOCK) {
         List<MediaInfo> items = StreamShare.items(app);
         if (libJson == null || libFor != items) {
             Map<String, MediaInfo> map = new LinkedHashMap<>();
@@ -542,6 +580,7 @@ public final class StreamHub {
             libFor = items;
         }
         return libJson;
+      }
     }
 
     /** The folder a file is in, from the top of its storage ("DCIM/Camera", "SD card/Music"), for the listeners' All files. */
@@ -658,7 +697,11 @@ public final class StreamHub {
     private static int sN = 0;
     private static int songNoSeen = 0;
 
-    private static synchronized void setViz(boolean on) {
+    /** The visualiser's own lock: the screen's half-second timer only ever waits for a few samples, never for the library. */
+    private static final Object VIZ_LOCK = new Object();
+
+    private static void setViz(boolean on) {
+      synchronized (VIZ_LOCK) {
         if (on == vizOn) return;
         vizOn = on;
         if (on) {
@@ -669,6 +712,7 @@ public final class StreamHub {
             AudioAnalyzer.stop();
             if (vizH != null) vizH.removeCallbacks(sampler);
         }
+      }
     }
 
     private static final Runnable sampler = new Runnable() {
@@ -678,7 +722,7 @@ public final class StreamHub {
             Snap s = snap;
             if (s.has && s.playing) {
                 long pos = s.pos + Math.round((System.currentTimeMillis() - s.at) * s.speed);
-                synchronized (StreamHub.class) {
+                synchronized (VIZ_LOCK) {
                     int i = sN % RING;
                     sT[i] = pos;
                     sHz[i] = AudioAnalyzer.pitchHz;
@@ -692,9 +736,10 @@ public final class StreamHub {
     };
 
     /** Samples newer than {@code after} (a song time in ms), as JSON. */
-    static synchronized String vizJson(long after) {
+    static String vizJson(long after) {
         JSONObject o = new JSONObject();
         JSONArray a = new JSONArray();
+        synchronized (VIZ_LOCK) {
         try {
             int from = Math.max(0, sN - RING);
             for (int k = from; k < sN; k++) {
@@ -708,6 +753,7 @@ public final class StreamHub {
             o.put("song", AudioAnalyzer.songNo);
             o.put("on", vizOn);
         } catch (Exception ignored) { }
+        }
         return o.toString();
     }
 

@@ -8,5 +8,6 @@ public class NktApp extends Application {
     public void onCreate() {
         super.onCreate();
         Net.init(this);
+        TypeStop.install(this);
     }
 }

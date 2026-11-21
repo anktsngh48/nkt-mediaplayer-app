@@ -21,7 +21,13 @@ public final class Dialogs {
     public interface NameCallback { void done(String name); }
 
     public static AlertDialog.Builder builder(Activity a) {
-        return new AlertDialog.Builder(a, R.style.Theme_NKT_Dialog);
+        return new AlertDialog.Builder(a, R.style.Theme_NKT_Dialog) {
+            @Override public AlertDialog create() {
+                AlertDialog d = super.create();
+                TypeStop.watch(d);                       // a text box in it stops editing when the keyboard is put away
+                return d;
+            }
+        };
     }
 
     public static void newPlaylist(Activity a, NameCallback cb) {

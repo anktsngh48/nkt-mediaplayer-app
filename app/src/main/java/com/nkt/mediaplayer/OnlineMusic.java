@@ -155,6 +155,7 @@ public final class OnlineMusic {
     public void destroy() {
         pool.shutdownNow();
         if (rec != null) { rec.destroy(); rec = null; }
+        unmuteBeep();
         if (web != null) { web.destroy(); web = null; }
     }
 
@@ -186,8 +187,42 @@ public final class OnlineMusic {
                 .putExtra(android.speech.RecognizerIntent.EXTRA_MAX_RESULTS, 1)
                 .putExtra(android.speech.RecognizerIntent.EXTRA_CALLING_PACKAGE, a.getPackageName());
         listening = true;
+        muteBeep();
         try { rec.startListening(i); }
-        catch (Exception e) { listening = false; voiceError(R.string.online_no_voice); }
+        catch (Exception e) { listening = false; unmuteBeep(); voiceError(R.string.online_no_voice); }
+    }
+
+    // ── No beep when listening starts ──
+
+    private final java.util.List<Integer> muted = new java.util.ArrayList<>();
+    private final Runnable unmute = this::unmuteBeep;
+
+    /** The phone's speech service plays a beep as it starts; those sounds are muted for that moment only. */
+    private void muteBeep() {
+        unmuteBeep();
+        android.media.AudioManager am = (android.media.AudioManager) a.getSystemService(android.content.Context.AUDIO_SERVICE);
+        if (am == null) return;
+        java.util.List<Integer> streams = new java.util.ArrayList<>(java.util.Arrays.asList(
+                android.media.AudioManager.STREAM_NOTIFICATION, android.media.AudioManager.STREAM_SYSTEM));
+        if (!am.isMusicActive()) streams.add(android.media.AudioManager.STREAM_MUSIC);     // never cut into a song that is playing
+        for (int st : streams) {
+            try {
+                if (am.isStreamMute(st)) continue;
+                am.adjustStreamVolume(st, android.media.AudioManager.ADJUST_MUTE, 0);
+                muted.add(st);
+            } catch (Throwable ignored) { }                   // Do Not Disturb may not allow it: then there is nothing to do
+        }
+        ui.postDelayed(unmute, 4000);                         // the sound always comes back, even if the service never answers
+    }
+
+    private void unmuteBeep() {
+        ui.removeCallbacks(unmute);
+        if (muted.isEmpty()) return;
+        android.media.AudioManager am = (android.media.AudioManager) a.getSystemService(android.content.Context.AUDIO_SERVICE);
+        for (int st : muted) {
+            try { if (am != null) am.adjustStreamVolume(st, android.media.AudioManager.ADJUST_UNMUTE, 0); } catch (Throwable ignored) { }
+        }
+        muted.clear();
     }
 
     /** "Done speaking": the recognizer turns what it heard so far into a result. */
@@ -200,6 +235,7 @@ public final class OnlineMusic {
         if (rec != null && listening) {
             listening = false;
             rec.cancel();
+            unmuteBeep();
             js("window.NKTvoiceStopped && NKTvoiceStopped()");
         }
     }
@@ -210,8 +246,12 @@ public final class OnlineMusic {
     }
 
     private final class Listener implements RecognitionListener {
-        @Override public void onReadyForSpeech(Bundle b) { js("NKTlistening()"); }
-        @Override public void onBeginningOfSpeech() { }
+        @Override public void onReadyForSpeech(Bundle b) {
+            js("NKTlistening()");
+            ui.removeCallbacks(unmute);
+            ui.postDelayed(unmute, 700);                      // the beep plays just as it gets ready
+        }
+        @Override public void onBeginningOfSpeech() { unmuteBeep(); }
         @Override public void onRmsChanged(float rms) {
             long now = System.currentTimeMillis();
             if (now - lastLevel < 70) return;                 // about 14 updates a second is plenty for the bars
@@ -222,6 +262,7 @@ public final class OnlineMusic {
         @Override public void onBufferReceived(byte[] buffer) { }
         @Override public void onEndOfSpeech() { js("NKTlevel(0)"); }
         @Override public void onError(int error) {
+            unmuteBeep();
             if (!listening) return;                           // we cancelled it ourselves
             switch (error) {
                 case SpeechRecognizer.ERROR_NO_MATCH:
@@ -237,6 +278,7 @@ public final class OnlineMusic {
             }
         }
         @Override public void onResults(Bundle b) {
+            unmuteBeep();
             listening = false;
             String text = first(b);
             if (text == null) js("NKTvoiceError(" + JSONObject.quote(a.getString(R.string.online_no_speech)) + ")");

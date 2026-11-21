@@ -49,6 +49,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -689,18 +690,20 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
     @SuppressWarnings("unchecked")
     private List<MediaInfo>[] publishWithHidden(List<MediaInfo> a, List<MediaInfo> v, List<MediaInfo> im, List<MediaInfo> pd,
                                                 HiddenScanner.Result h, boolean hideDot, boolean hideNomedia, boolean done) {
-        List<MediaInfo> a2 = new ArrayList<>(a), v2 = new ArrayList<>(v), im2 = new ArrayList<>(im);
+        List<MediaInfo> a2 = new ArrayList<>(a), v2 = new ArrayList<>(v), im2 = new ArrayList<>(im), pd2 = new ArrayList<>(pd);
         addMissing(a2, h.audio);
         addMissing(v2, h.video);
         addMissing(im2, h.images);
+        addMissing(pd2, h.pdfs);
         // Settings → ALL FILES: one kind of hidden folder can stay hidden while the other shows
         if (hideDot || hideNomedia) {
             java.util.Map<String, Boolean> nomedia = new java.util.HashMap<>();
             dropHidden(a2, hideDot, hideNomedia, nomedia);
             dropHidden(v2, hideDot, hideNomedia, nomedia);
             dropHidden(im2, hideDot, hideNomedia, nomedia);
+            dropHidden(pd2, hideDot, hideNomedia, nomedia);
         }
-        publish(a2, v2, im2, pd, done);
+        publish(a2, v2, im2, pd2, done);
         return new List[]{a2, v2, im2};
     }
 
@@ -954,7 +957,25 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
                 || m.artist.toLowerCase(Locale.ROOT).contains(filter)
                 || m.album.toLowerCase(Locale.ROOT).contains(filter)
                 || m.folder.toLowerCase(Locale.ROOT).contains(filter)
-                || m.fileName.toLowerCase(Locale.ROOT).contains(filter);
+                || m.fileName.toLowerCase(Locale.ROOT).contains(filter)
+                || placeOf(m).contains(filter);                 // any folder above it: "wedding" finds Wedding 2024/Sangeet/…
+    }
+
+    private final Map<String, String> places = new HashMap<>();
+
+    /** The folders a file sits in, from the top of its storage, lower case ("dcim/wedding 2024/sangeet"). */
+    private String placeOf(MediaInfo m) {
+        if (m.path == null || m.path.isEmpty()) return "";
+        String p = places.get(m.path);
+        if (p != null) return p;
+        int cut = m.path.lastIndexOf('/');
+        String dir = cut > 0 ? m.path.substring(0, cut) : "";
+        if (dir.startsWith("/storage/emulated/")) { int s = dir.indexOf('/', 18); dir = s < 0 ? "" : dir.substring(s + 1); }
+        else if (dir.startsWith("/storage/")) { int s = dir.indexOf('/', 9); dir = s < 0 ? "" : dir.substring(s + 1); }
+        else if (dir.startsWith("/sdcard/")) dir = dir.substring(8);
+        p = dir.toLowerCase(Locale.ROOT);
+        places.put(m.path, p);
+        return p;
     }
 
     private boolean matchesText(String s) { return filter.isEmpty() || s.toLowerCase(Locale.ROOT).contains(filter); }
@@ -1146,8 +1167,14 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
             case "old": Collections.sort(entries, (a, b) -> Long.compare(newest(a.getValue()), newest(b.getValue()))); break;
             case "large": Collections.sort(entries, (a, b) -> Long.compare(total(b.getValue()), total(a.getValue()))); break;
         }
+        int shownFolders = 0;
+        List<MediaInfo> loose = new ArrayList<>();
         for (Map.Entry<String, List<MediaInfo>> e : entries) {
-            if (!matchesText(e.getKey())) continue;
+            if (!matchesText(e.getKey())) {
+                if (!filter.isEmpty()) for (MediaInfo m : e.getValue()) if (matches(m)) loose.add(m);    // searching: the videos themselves, from every folder
+                continue;
+            }
+            shownFolders++;
             List<MediaInfo> l = sorted(e.getValue(), "new");
             long ms = 0;
             for (MediaInfo m : l) ms += m.durationMs;
@@ -1158,7 +1185,25 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
             fr.pick = l;                                   // long-press picks the whole folder
             out.add(fr);
         }
+        if (!filter.isEmpty()) {
+            for (Map.Entry<String, List<MediaInfo>> e : entries)
+                if (matchesText(e.getKey())) for (MediaInfo m : e.getValue()) if (matches(m)) loose.add(m);
+            for (MediaInfo m : sorted(loose, currentSort()))
+                out.add(RowAdapter.Row.media(m, Ui.time(m.durationMs) + " · " + (placeOf(m).isEmpty() ? m.folder : relPlace(m))));
+            tabHint.setText(getResources().getQuantityString(R.plurals.folders, shownFolders, shownFolders) + " · "
+                    + getResources().getQuantityString(R.plurals.videos, loose.size(), loose.size()));
+            return;
+        }
         tabHint.setText(getResources().getQuantityString(R.plurals.folders, entries.size(), entries.size()));
+    }
+
+    /** Where a video sits, as the user sees it ("DCIM / Wedding 2024"). */
+    private String relPlace(MediaInfo m) {
+        int cut = m.path.lastIndexOf('/');
+        String dir = cut > 0 ? m.path.substring(0, cut) : "";
+        String low = placeOf(m);
+        String shown = dir.length() >= low.length() ? dir.substring(dir.length() - low.length()) : low;
+        return shown.replace("/", " / ");
     }
 
     private static long newest(List<MediaInfo> l) { long t = 0; for (MediaInfo m : l) t = Math.max(t, m.dateMs); return t; }
@@ -1388,7 +1433,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
             java.util.ArrayDeque<File> queue = new java.util.ArrayDeque<>();
             queue.add(start);
             long lastPost = System.currentTimeMillis();
-            while (!queue.isEmpty() && gen == searchGen && found.size() < 1000) {
+            while (!queue.isEmpty() && gen == searchGen && found.size() < 5000) {
                 File dir = queue.poll();
                 File[] kids = dir.listFiles();
                 if (kids == null) continue;
@@ -2484,7 +2529,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
     /** While listening to another phone's Stream, the mini player and the round button show (and control) that. */
     private final Runnable listenTick = new Runnable() {
         @Override public void run() {
-            if (ListenService.running || listenShown) updateMini();
+            if (ListenService.running || listenShown || StreamService.running || streamShown) updateMini();
             if (resumed) ui.postDelayed(this, 1000);
         }
     };
@@ -2503,7 +2548,7 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         miniTitle.setText(t);
         String from = host.isEmpty() ? getString(R.string.stream) : getString(R.string.mini_stream_from, host);
         String st = ListenService.status == null ? "" : ListenService.status;
-        miniSub.setText(ListenService.own ? getString(R.string.mini_stream_own) : st.isEmpty() ? from : from + " · " + st);
+        setMiniSub(ListenService.own ? getString(R.string.mini_stream_own) : st.isEmpty() ? from : from + " · " + st, false);
         miniPlay.setImageResource(on ? R.drawable.ic_pause : R.drawable.ic_play);
         View next = findViewById(R.id.mini_next);
         boolean canNext = ListenService.own && ListenService.ownIdx + 1 < ListenService.ownQueue.size();
@@ -2513,6 +2558,17 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         if (art != null) Thumbs.showBitmap(miniArt, art);
         else Thumbs.showPlaceholder(miniArt, R.drawable.ic_wifi);
         return true;
+    }
+
+    private boolean streamShown = false;
+
+    /** The line under the title: hidden when there is nothing to say, so the title sits in the middle. */
+    private void setMiniSub(CharSequence text, boolean streaming) {
+        boolean empty = text == null || text.toString().trim().isEmpty();
+        miniSub.setVisibility(empty ? View.GONE : View.VISIBLE);
+        miniSub.setText(empty ? "" : text);
+        miniSub.setTextColor(getColor(streaming ? R.color.success : R.color.muted));
+        miniSub.setTypeface(null, streaming ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
     }
 
     private void updateMini() {
@@ -2537,7 +2593,14 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
         if (!show) { rows.setPlaying(controller.getCurrentMediaItem().mediaId); return; }
         MediaMetadata md = controller.getMediaMetadata();
         miniTitle.setText(md.title == null ? getString(R.string.unknown) : md.title);
-        miniSub.setText(Media.isVideo(md) ? getString(R.string.video_in_background) : md.artist == null ? "" : md.artist);
+        String sub = Media.isVideo(md) ? getString(R.string.video_in_background) : md.artist == null ? "" : md.artist.toString();
+        streamShown = StreamService.running && !StreamService.draining && !StreamHub.nowPrivate();
+        if (streamShown) {                                  // this phone is streaming: say so, in green
+            int n = StreamHub.listenerCount();
+            String s = n > 0 ? getResources().getQuantityString(R.plurals.mini_streaming_n, n, n)
+                    : sub.isEmpty() ? getString(R.string.mini_streaming) : getString(R.string.mini_streaming_with, sub);
+            setMiniSub("● " + s, true);
+        } else setMiniSub(sub, false);
         miniPlay.setImageResource(controller.isPlaying() ? R.drawable.ic_pause : R.drawable.ic_play);
         Bitmap art = null;
         if (md.artworkData != null) {
