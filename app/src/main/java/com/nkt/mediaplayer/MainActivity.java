@@ -415,6 +415,21 @@ public class MainActivity extends Activity implements RowAdapter.Listener, Selec
             if (Net.off()) { Ui.toast(this, R.string.net_off_toast); return; }
             startActivity(new Intent(this, BrowserActivity.class));
         }, null));
+        boolean[] nlogOn = new boolean[1];
+        String nlogSub = NotifLog.status(this, nlogOn);
+        View nlogRow = menuRow(R.drawable.ic_bell, getString(R.string.nlog_caps_plain), nlogSub, false, false, () -> {
+            closeDrawer();
+            startActivity(new Intent(this, NotifLogActivity.class));
+        }, null);
+        if (nlogOn[0]) {                                   // logging: the line under it in green, like Stream
+            try {
+                TextView sub = (TextView) ((LinearLayout) ((LinearLayout) nlogRow).getChildAt(1)).getChildAt(1);
+                sub.setText("● " + nlogSub);
+                sub.setTextColor(getColor(R.color.success));
+                sub.setTypeface(null, android.graphics.Typeface.BOLD);
+            } catch (Throwable ignored) { }
+        }
+        drawerItems.addView(nlogRow);
         drawerItems.addView(menuRow(R.drawable.ic_settings, getString(R.string.menu_settings), null, page == SETTINGS, false, () -> {
             closeDrawer();
             setPage(SETTINGS);

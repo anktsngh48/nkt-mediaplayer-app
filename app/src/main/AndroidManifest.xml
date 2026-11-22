@@ -55,6 +55,11 @@
         <intent>
             <action android:name="android.speech.RecognitionService" />
         </intent>
+        <!-- Notifications Log: the apps to choose from -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
     </queries>
 
     <application
@@ -240,6 +245,22 @@
             android:name=".BinCleanupJob"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- Notifications Log: the screen, one app's log, and the service Android hands notifications to -->
+        <activity android:name=".NotifLogActivity" android:exported="false" />
+        <activity
+            android:name=".NotifLogViewActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+        <service
+            android:name=".NotifListener"
+            android:exported="true"
+            android:label="@string/nlog_caps_plain"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
 
         <!-- WhatsApp status saver -->
         <activity android:name=".StatusActivity" android:exported="false" />
